@@ -2,4 +2,19 @@ The new MATLAB script replaces the first version's single-limit check with a fou
 
 The redundancy determination rests on identifying which tests carry the same information. Tests with similar names are grouped using Jaccard distance, the proportion of name-tokens two tests share. Within each group, an R-squared quantifies how much of one test's pass/fail margin can be predicted from the other tests in the group; a high R-squared indicates that a test is redundant because its result is already implied by its neighbors. Each cluster is also pooled with an empirical-Bayes model that shrinks a single test's failure-rate estimate toward its group and discounts the effective sample size according to the correlation between tests, preventing a set of tests that move together from being treated as multiple independent confirmations. A test is marked individually removable only if it has zero real failures, an adequate margin, sufficient history, and a low statistical upper bound on its true failure rate. An entire group is removed only when the group collectively satisfies those same criteria.
 
-Before finalizing, the script identifies sets of tests that historically fail together and retains at least two members of each set, ensuring no failure signature loses all of its detectors. It labels each redundant cluster with the parameter ranges (such as frequency bands) over which the cluster has always passed, and separately identifies the "key" tests that are irreplaceable because they are the sole detector of certain failures. The output consists of approximately a dozen CSV files and a printed report: a full per-test table, the individually redundant tests, the redundant clusters, the co-failure modes and their members, the key tests, the fully-redundant and never-failed digit groups, and a "keep versus cut" split that reports the time saved per module alongside a worst-case estimate of how many real failures the cuts would have allowed to escape.
+Before finalizing, the script identifies sets of tests that historically fail together and retains at least two members of each set, ensuring no failure signature loses all of its detectors. It labels each redundant cluster with the parameter ranges (such as frequency bands) over which the cluster has always passed, and separately identifies the "key" tests that are irreplaceable because they are the sole detector of certain failures. The output consists of approximately a dozen CSV files and a printed report:
+
+- Full per-test table
+    - Every test with its statistics, risk estimates, cluster assignment, and redundancy flags
+- Individually redundant tests
+    - Tests that clear the removal criteria on their own, outside any cluster
+- Redundant clusters
+    - Groups of tests removable as a family, with pooled failure bounds and the parameter ranges they always passed over
+- Co-failure modes and their members
+    - Sets of tests that historically fail together, and the individual tests belonging to each
+- Key tests
+    - Tests that are central to failures or the sole detector of certain failures
+- Fully-redundant and never-failed digit groups
+    - Digit groups where every test is flagged redundant and/or has never failed
+- Keep versus cut split
+    - The final removal recommendation, with time saved per module and a worst-case estimate of how many real failures the cuts would have allowed to escape
