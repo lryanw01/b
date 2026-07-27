@@ -39,6 +39,13 @@ from .registry import DATA, load_vendors, vendors_for
 RESULTS = DATA / "results.json"
 MAX_WORKERS = 12
 
+# How many stored parts to pull from partdb per search. query_candidates caps
+# the returned set AND over-fetches by last_seen, so a small cap silently drops
+# older parts in any category that has more than the cap — they'd still show in
+# the inspector (direct SQL) but never reach ranking or the GUI. Generous by
+# default; override with RFPARTS_DB_LIMIT.
+DB_CANDIDATE_LIMIT = int(os.environ.get("RFPARTS_DB_LIMIT", "5000"))
+
 # The four S-parameter-derived fields owned exclusively by the background cache.
 _MC_SNP_FIELDS = ("ports", "ports_source", "sparams_url", "sparams_filename")
 
@@ -229,13 +236,52 @@ def _partdb_candidates(query):
     try:
         fg = query.get("freq_ghz") or (None, None)
         cands = _partdb.query_candidates(
-            category=query.get("category"), f_lo=fg[0], f_hi=fg[1])
+            category=query.get("category"), f_lo=fg[0], f_hi=fg[1],
+            limit=DB_CANDIDATE_LIMIT)
     except Exception:
         return []
+    exclude = {_norm_vendor(v) for v in (query.get("exclude_vendors") or [])}
     for c in cands:
         c.setdefault("category", query.get("category"))
         c["_partdb"] = True
+    if exclude:
+        # The vendor picker can now list DB-only vendors, so excluding one must
+        # actually drop its stored parts (vendors_for only filters the registry).
+        # Match on the normalized name so "Mini-Circuits" also drops the ingest's
+        # "Mini Circuits" spelling.
+        cands = [c for c in cands if _norm_vendor(c.get("vendor")) not in exclude]
     return cands
+
+
+def db_vendors():
+    """Distinct vendor names present in partdb ([] if partdb is unavailable)."""
+    if _partdb is None:
+        return []
+    try:
+        return _partdb.distinct_vendors()
+    except Exception:
+        return []
+
+
+def vendor_choices():
+    """Union of registry and database vendor names for the GUI picker.
+
+    A DB vendor whose normalized name matches a registry vendor is folded into
+    the registry's canonical spelling, so an ingest's "Mini Circuits" doesn't
+    double up with the registry's "Mini-Circuits". Genuinely new vendors from the
+    data (e.g. manufacturers pulled in by an everythingRF ingest) are appended.
+    """
+    reg = [v["name"] for v in load_vendors()]
+    by_norm = {_norm_vendor(n): n for n in reg}
+    out = list(reg)
+    for n in db_vendors():
+        if not n:
+            continue
+        key = _norm_vendor(n)
+        if key not in by_norm:
+            by_norm[key] = n
+            out.append(n)
+    return sorted(out, key=str.lower)
 
 
 def _crawl_spec(query):
@@ -337,14 +383,23 @@ def run_search(query, progress=None, cancel=None, tick=None, on_result=None):
         prefer=query.get("prefer_vendors"),
         exclude=query.get("exclude_vendors"))
     if local_only:
-        vendors = [v for v in vendors if v.get("strategy") == "api"]
+        # Besides the stored DB, local mode allows only network-free sources:
+        # 'catalog' (on-disk vendor catalogs like Mini-Circuits) and 'api'
+        # (DigiKey, an in-memory overlay). No sitemap/search crawling, no live
+        # page/datasheet extraction.
+        vendors = [v for v in vendors if v.get("strategy") in ("api", "catalog")]
     if not vendors and not local_only:
         emit("no vendors carry that category")
         return [], []
 
     if local_only:
+        extra = []
+        if any(v.get("strategy") == "catalog" for v in vendors):
+            extra.append("offline catalogs")
+        if any(v.get("strategy") == "api" for v in vendors):
+            extra.append("DigiKey API")
         emit("local database mode — stored parts"
-             + (" + DigiKey API" if vendors else "") + " only (no crawling)")
+             + (" + " + " + ".join(extra) if extra else "") + " (no crawling)")
     else:
         emit(f"searching {len(vendors)} vendors for {query['category']} ...")
 
