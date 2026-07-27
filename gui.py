@@ -84,7 +84,7 @@ class App(ttk.Frame):
         prefs = _load_prefs()
         saved_prefer = set(prefs.get("prefer", []))
         saved_exclude = set(prefs.get("exclude", []))
-        vendor_names = [v["name"] for v in load_vendors()]
+        vendor_names = self._all_vendor_names()
         self.prefer_vars = {name: tk.BooleanVar(value=name in saved_prefer)
                             for name in vendor_names}
         self.exclude_vars = {name: tk.BooleanVar(value=name in saved_exclude)
@@ -122,6 +122,9 @@ class App(ttk.Frame):
         self._sub_combo = ttk.Combobox(f, textvariable=self.vars["subcategory"],
                                        values=["(any)"], width=22, state="readonly")
         self._sub_label_to = {"(any)": None}
+        # A filter's response type (LPF/HPF/BPF/BSF) changes the frequency input
+        # and key specs, so relayout when the subcategory changes too.
+        self.vars["subcategory"].trace_add("write", self._on_subcategory_change)
 
         self._keyparams_label = ttk.Label(f, text="", foreground="#777", wraplength=210)
 
@@ -137,6 +140,7 @@ class App(ttk.Frame):
         self.vars["impedance"] = tk.StringVar()
         self.vars["ports"] = tk.StringVar()
         self.vars["max_lead_weeks"] = tk.StringVar()
+        self.vars["flt_cutoff"] = tk.StringVar()   # filter LPF/HPF cutoff (GHz)
 
         self.impedance_combo = ttk.Combobox(
             f, textvariable=self.vars["impedance"], values=IMPEDANCES, width=22,
@@ -145,6 +149,12 @@ class App(ttk.Frame):
 
         def mkhelp(text):
             return ttk.Label(f, text=text, foreground="#777")
+
+        # Filter LPF/HPF use a single cutoff (Fc); BPF/BSF reuse the freq range
+        # row (relabelled). Created once; shown by _relayout for filters only.
+        self._flt_cutoff_lbl = ttk.Label(f, text="Cutoff Fc (GHz)")
+        self._flt_cutoff_entry = ttk.Entry(f, textvariable=self.vars["flt_cutoff"])
+        self._flt_cutoff_help = mkhelp("single-sided cutoff frequency")
 
         # key -> (label widget, main widget, help widget or None)
         self._field_rows = {
@@ -220,6 +230,82 @@ class App(ttk.Frame):
     def _current_category_key(self):
         return self._cat_label_to_key.get(self.vars["category"].get().strip())
 
+    # --- filter response-type awareness ---------------------------------
+    _FILTER_RESPONSE = {"lpf": "lowpass", "hpf": "highpass",
+                        "bpf": "bandpass", "bsf": "bandstop"}
+    _FILTER_KEYPARAMS = {
+        "lowpass":  ["cutoff Fc", "insertion loss", "stopband rejection", "return loss"],
+        "highpass": ["cutoff Fc", "insertion loss", "stopband rejection", "return loss"],
+        "bandpass": ["passband", "center / bandwidth", "insertion loss",
+                     "rejection", "return loss"],
+        "bandstop": ["stopband", "notch depth / rejection", "insertion loss",
+                     "return loss"],
+    }
+    # frequency input (label, help) per filter response.
+    _FILTER_FREQ_UI = {
+        "lowpass":  ("Cutoff Fc (GHz)", "passband DC–Fc, e.g. 6"),
+        "highpass": ("Cutoff Fc (GHz)", "passband Fc and above, e.g. 6"),
+        "bandpass": ("Passband f\u2081–f\u2082 (GHz)", "e.g. 3.7-4.2"),
+        "bandstop": ("Stopband f\u2081–f\u2082 (GHz)", "band to reject, e.g. 2.3-2.5"),
+    }
+
+    def _filter_response(self):
+        """'lowpass'|'highpass'|'bandpass'|'bandstop' for the current filter
+        subcategory, else None (not a filter, or a construction-only subtype
+        such as cavity/ceramic/tunable/diplexer/duplexer)."""
+        if self._current_category_key() != "filter":
+            return None
+        chosen = self._sub_label_to.get(self.vars["subcategory"].get().strip())
+        return self._FILTER_RESPONSE.get(chosen[0] if chosen else None)
+
+    def _apply_keyparams(self, cat_key):
+        if cat_key == "filter":
+            kp = (self._FILTER_KEYPARAMS.get(self._filter_response())
+                  or registry.category_key_params("filter"))
+        else:
+            kp = registry.category_key_params(cat_key)
+        self._keyparams_label.config(text=("Key specs: " + ", ".join(kp)) if kp else "")
+
+    def _on_subcategory_change(self, *_):
+        # For filters the response type changes the frequency input + key specs.
+        if self._current_category_key() == "filter":
+            self._apply_keyparams("filter")
+            self._relayout("filter")
+
+    def _place_freq(self, cat_key, r):
+        """Grid the frequency input for this category, returning the next row.
+
+        Filters get a type-aware control: a single cutoff (Fc) for LPF/HPF, a
+        relabelled range for BPF/BSF. Every other category (and construction-only
+        filter subtypes) keeps the generic 'Frequency (GHz)' range."""
+        lbl, entry, hlp = self._field_rows["freq"]
+        resp = self._filter_response() if cat_key == "filter" else None
+        if resp in ("lowpass", "highpass"):
+            self.vars["freq"].set("")        # clear range so it can't leak in
+            text, help_text = self._FILTER_FREQ_UI[resp]
+            self._flt_cutoff_lbl.config(text=text)
+            self._flt_cutoff_help.config(text=help_text)
+            self._flt_cutoff_lbl.grid(row=r, column=0, sticky="w", pady=2)
+            self._flt_cutoff_entry.grid(row=r, column=1, sticky="ew", pady=2)
+            r += 1
+            self._flt_cutoff_help.grid(row=r, column=1, sticky="w")
+            return r + 1
+        self.vars["flt_cutoff"].set("")       # clear cutoff when using a range
+        if resp in ("bandpass", "bandstop"):
+            text, help_text = self._FILTER_FREQ_UI[resp]
+        else:
+            text, help_text = "Frequency (GHz)", "e.g. 4-8 or DC-18"
+        lbl.config(text=text)
+        if hlp is not None:
+            hlp.config(text=help_text)
+        lbl.grid(row=r, column=0, sticky="w", pady=2)
+        entry.grid(row=r, column=1, sticky="ew", pady=2)
+        r += 1
+        if hlp is not None:
+            hlp.grid(row=r, column=1, sticky="w")
+            r += 1
+        return r
+
     def _on_category_change(self, *_):
         key = self._current_category_key()
         # repopulate subcategory choices
@@ -231,8 +317,7 @@ class App(ttk.Frame):
         self._sub_combo.config(values=values)
         if self.vars["subcategory"].get() not in values:
             self.vars["subcategory"].set("(any)")
-        kp = registry.category_key_params(key)
-        self._keyparams_label.config(text=("Key specs: " + ", ".join(kp)) if kp else "")
+        self._apply_keyparams(key)
         # Don't let a value typed under one category leak into a search for
         # another that hides that field (e.g. gain set for an amp, then Switches).
         shown = set(registry.category_fields(key))
@@ -249,6 +334,8 @@ class App(ttk.Frame):
             if hlp is not None:
                 hlp.grid_remove()
         self._space_check.grid_remove()
+        for w in (self._flt_cutoff_lbl, self._flt_cutoff_entry, self._flt_cutoff_help):
+            w.grid_remove()
 
         r = 0
         self._cat_label.grid(row=r, column=0, sticky="w", pady=2)
@@ -265,6 +352,9 @@ class App(ttk.Frame):
             if field == "space":
                 self._space_check.grid(row=r, column=0, columnspan=2, sticky="w", pady=2)
                 r += 1
+                continue
+            if field == "freq":
+                r = self._place_freq(cat_key, r)
                 continue
             row = self._field_rows.get(field)
             if not row:
@@ -429,6 +519,26 @@ class App(ttk.Frame):
                 q[meta["spec_key"]] = float(raw)
             except ValueError:
                 pass
+
+        # Filter frequency is response-specific. LPF/HPF carry a single cutoff
+        # (Fc) from the cutoff field; BPF/BSF use the passband/stopband range
+        # that spec.build already parsed. Everything downstream still consumes
+        # freq_ghz = [lo, hi]; the extra keys are recorded for display/future use.
+        if cat_key == "filter":
+            resp = self._filter_response()
+            if resp in ("lowpass", "highpass"):
+                fc = self._num("flt_cutoff")
+                if fc is not None:
+                    # lowpass passes DC..Fc; highpass passes Fc and up (modelled
+                    # as an operating point at Fc so the band check still works).
+                    q["freq_ghz"] = [0.0, fc] if resp == "lowpass" else [fc, fc]
+                    q["cutoff_ghz"] = fc
+                else:
+                    q.pop("freq_ghz", None)
+            if resp:
+                q["filter_response"] = resp
+                if resp == "bandstop" and q.get("freq_ghz"):
+                    q["stopband_ghz"] = q["freq_ghz"]
         return q
 
     # ---- search (threaded) ----------------------------------------------
@@ -446,10 +556,26 @@ class App(ttk.Frame):
         n = sum(1 for var in self.exclude_vars.values() if var.get())
         return f"{n} selected…" if n else "Choose…"
 
+    def _all_vendor_names(self):
+        """Registry vendors plus any vendor present in the local database, so
+        the picker reflects the current dataset (e.g. manufacturers pulled in by
+        an everythingRF/SATNow ingest that aren't in vendors.yaml). Aliases like
+        'Mini Circuits' are folded into the registry's canonical spelling."""
+        return cli.vendor_choices()
+
+    def _sync_vendor_vars(self):
+        """Add BooleanVars for vendors newly present in the DB since startup,
+        preserving existing selections. Keeps the picker in step with the data."""
+        for name in self._all_vendor_names():
+            self.prefer_vars.setdefault(name, tk.BooleanVar())
+            self.exclude_vars.setdefault(name, tk.BooleanVar())
+
     def open_prefer_dialog(self):
+        self._sync_vendor_vars()
         VendorSelectDialog(self.winfo_toplevel(), self, mode="prefer")
 
     def open_exclude_dialog(self):
+        self._sync_vendor_vars()
         VendorSelectDialog(self.winfo_toplevel(), self, mode="exclude")
 
     def _vendor_selection_changed(self):
@@ -1141,8 +1267,9 @@ class VendorSelectDialog(tk.Toplevel):
         sb.pack(side="right", fill="y")
 
         variables = app.exclude_vars if is_exclude else app.prefer_vars
-        for name, var in variables.items():
-            ttk.Checkbutton(inner, text=name, variable=var).pack(anchor="w", pady=1)
+        for name in sorted(variables, key=str.lower):
+            ttk.Checkbutton(inner, text=name, variable=variables[name]).pack(
+                anchor="w", pady=1)
 
         bar = ttk.Frame(self, padding=8)
         bar.pack(fill="x")
