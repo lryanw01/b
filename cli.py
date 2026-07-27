@@ -147,13 +147,42 @@ def _subcategory_filter(cands, query):
     sub = query.get("subcategory")
     if not (cat and sub):
         return cands, 0
+
+    # Dividers: 2-way / 4-way / 8-way subcategories are a way COUNT, not free
+    # text. Filter on the part's no_of_ways so a 4-way (e.g. "PDF-4E-1300") can't
+    # slip into a 2-way search; unknown-ways parts are kept (not hidden).
+    if cat == "divider":
+        m = re.match(r"(\d+)\s*way$", sub)
+        if m:
+            req = int(m.group(1))
+            kept, dropped = [], 0
+            for c in cands:
+                w = rank._ways(c)
+                if w and w != req:
+                    dropped += 1
+                else:
+                    kept.append(c)
+            return kept, dropped
+
     own = [t.lower() for t in (query.get("subcategory_terms") or [])
            or registry.subcategory_terms(cat, sub)]
     excl = registry.subcategory_exclusion_terms(cat, sub)
-    if not excl:
-        return cands, 0
+    # Valid subcategory keys for this category — used for the reliable stored-
+    # subcategory check below (a part the ingester tagged bpf/bsf/lpf/hpf).
+    valid_keys = {k for k, _lbl, _syns in registry.subcategories(cat)}
     kept, dropped = [], 0
     for c in cands:
+        # Reliable path: the part carries a stored subcategory (from the DB). If
+        # it's a *different* sibling in this category's own vocabulary, drop it —
+        # this is what keeps band-reject (bsf) filters out of a band-pass (bpf)
+        # search where free text ("Band Reject Filter") names no bpf sibling term.
+        cs = c.get("subcategory")
+        if cs and cs != sub and cs in valid_keys and sub in valid_keys:
+            dropped += 1
+            continue
+        if not excl:                # no distinctive sibling terms -> keep as-is
+            kept.append(c)
+            continue
         blob = f"{c.get('title', '')} {c.get('text', '')}".lower()
         if any(t in blob for t in own):        # explicitly the requested subcat
             kept.append(c)
@@ -363,6 +392,10 @@ def run_search(query, progress=None, cancel=None, tick=None, on_result=None):
 
     def cancelled():
         return cancel is not None and cancel.is_set()
+
+    # Make the fetch layer cancellation-aware for this run so Cancel aborts
+    # in-flight retries/sleeps and skips queued fetches instead of draining them.
+    fetch.set_cancel(cancel)
 
     timing.reset()
     _run_t0 = time.perf_counter()
