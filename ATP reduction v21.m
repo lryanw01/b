@@ -1005,16 +1005,17 @@ disp(' ');
 disp('----------------------------------------------------------------------');
 disp('  CUT PERCENTAGE PER DIGIT GROUP  (share of tests recommended for removal)');
 disp('----------------------------------------------------------------------');
-disp(sprintf('  %-8s %7s %7s %9s', 'digit', 'tests', 'cut', 'cut%'));
-dcCut = zeros(numel(uDG),1); dcCutPct = zeros(numel(uDG),1);
+disp(sprintf('  %-8s %7s %7s %9s %10s', 'digit', 'tests', 'cut', 'cut%', 'saved(hr)'));
+dcCut = zeros(numel(uDG),1); dcCutPct = zeros(numel(uDG),1); dcCutHrs = zeros(numel(uDG),1);
 for g = 1:numel(uDG)
     mem = find(dgIdx == g);
     dcCut(g) = sum(cutCandidate(mem));
     dcCutPct(g) = 100 * dcCut(g) / numel(mem);
+    dcCutHrs(g) = sum(results.AvgDurationS(mem(cutCandidate(mem))), 'omitnan') / 3600;
 end
 [~, cord2] = sortrows([dcCutPct, -dcFails], 'descend');
 for g = cord2'
-    disp(sprintf('  %-8s %7d %7d %8.1f%%', char(uDG(g)), dcN(g), dcCut(g), dcCutPct(g)));
+    disp(sprintf('  %-8s %7d %7d %8.1f%% %10.3f', char(uDG(g)), dcN(g), dcCut(g), dcCutPct(g), dcCutHrs(g)));
 end
 disp(' ');
 
