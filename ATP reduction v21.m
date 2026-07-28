@@ -44,7 +44,7 @@ totalBlockTime    = 1;
 % Legacy CITED exports have no test_report_id, so rows are clustered into
 % pseudo-reports (one report ~ one unit's test pass) to drive the same
 % report x test analysis used for the standard format.
-REPORT_MODE       = "auto";                   % "auto" | "cycle" | "time" | "single"
+REPORT_MODE       = "auto";                   % "auto"/"occurrence" | "cycle" | "time" | "single"
 REPORT_GAP_FACTOR = 6;                        % time mode: new report when time gap > factor * median gap
 REPORT_MIN_GAP_S  = 5;                         % time mode: floor for the gap threshold (seconds)
 REPORT_TIME_COL   = "Result Stop Date/Time";   % legacy column used for time-based clustering
@@ -1301,15 +1301,17 @@ end
 %  Report synthesis for report-less (legacy) inputs
 % ======================================================================
 % Clusters measurement rows into pseudo-reports so the report x test
-% analysis can run without a report file. A new report starts when:
-%   - the DUT name changes, OR
-%   - a measurement name repeats within the current report (a new pass
-%     through the test list = a new unit), OR
-%   - (time modes) the gap to the previous row exceeds an auto threshold.
-% Modes: "auto" (dut + name-cycle, plus time gaps if timestamps parse),
-%        "cycle" (dut + name-cycle only), "time" (dut + time gaps, cycle
-%        fallback if timestamps unusable), "single" (one report; original
-%        LEGACY_001 behavior).
+% analysis can run without a report file.
+% Default "auto"/"occurrence": assigns the k-th occurrence of each
+% (DUT,test) to report k. This is order-independent (works whether the CSV
+% is sorted by test, by time, or by unit) and yields one report per unit,
+% so the report count equals the number of units tested.
+% Other modes are order-based and only for special cases:
+%   "cycle" - new report when the DUT changes or a test name repeats
+%             (assumes rows are ordered as sequential per-unit passes),
+%   "time"  - new report on DUT change or a large time gap (cycle fallback
+%             if timestamps are unusable),
+%   "single"- one report (original LEGACY_001 behavior).
 function ids = synthReportIds(names, duts, tstr, mode, gapFactor, minGapS)
     n = numel(names);
     ids = strings(n,1);
@@ -1318,6 +1320,20 @@ function ids = synthReportIds(names, duts, tstr, mode, gapFactor, minGapS)
 
     if mode == "single"
         ids(:) = "LEGACY_001";
+        return;
+    end
+
+    if mode == "auto" || mode == "occurrence"
+        % k-th occurrence of each (DUT,test) -> report k. Order-independent;
+        % assumes ~one measurement per test per unit, so the report count
+        % equals the number of units (the max repeats of any single test).
+        cnt = containers.Map('KeyType','char','ValueType','double');
+        for i = 1:n
+            key = char(strtrim(duts(i)) + "|||" + strtrim(names(i)));
+            if isKey(cnt,key), c = cnt(key) + 1; else, c = 1; end
+            cnt(key) = c;
+            ids(i) = strtrim(duts(i)) + "_R" + sprintf('%06d', c);
+        end
         return;
     end
 
