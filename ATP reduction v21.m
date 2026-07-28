@@ -1,7 +1,8 @@
 clc; clear;
 
 measFile   = "C:\Users\lane.white\Downloads\ATP Exports From CITED\M-QUC_Export.csv";
-reportFile = "C:\Users\lane.white\OneDrive - BAE Systems Inc\Documents\_ATP\QTM\QTM-Report.csv";
+% No external report file: standard exports are clustered into reports using
+% the measurement file's own test_report_id column (see standard-format branch).
 
 USE_KEYWORD_FILTER = false;
 keywords = ["Gain","Frequency","Harmonic","Spur","Hz","RF","Waveform","Phase","NF","Noise"];
@@ -102,8 +103,6 @@ vn = string(data.Properties.VariableNames);
 % ---- Format detection: legacy CITED export (no report file) vs. standard ----
 isLegacy = any(ismember(vn, "Test Result Name")) || any(ismember(vn, "DUT Name"));
 
-reportData = table();   % populated only for the standard format; unused downstream otherwise
-
 if isLegacy
     disp('    Format: LEGACY CITED export (no report file required).');
     % strip stray quotes from string columns
@@ -135,20 +134,11 @@ if isLegacy
     disp(['    Simulated ' num2str(nSyn) ' report(s) from ' num2str(height(data)) ...
           ' rows (mode=' char(REPORT_MODE) ', ~' num2str(avgTn,'%.1f') ' tests/report).']);
 else
-    disp('    Format: STANDARD export; loading report file.');
-    if ~isfile(reportFile), disp(['Report file not found: ' char(reportFile)]); return; end
-    requiredReportCols = ["dut_name","dut_part_number","test_report_id","report_true_duration"];
-    try
-        optsR = detectImportOptions(reportFile, "Delimiter",",", "TextType","string", "VariableNamingRule","preserve");
-        optsR.ExtraColumnsRule = "addvars";
-        reportData = readtable(reportFile, optsR);
-    catch ME
-        disp(['Error reading report file: ' ME.message]); return;
-    end
-    vnR = string(reportData.Properties.VariableNames);
-    missing_colsR = requiredReportCols(~ismember(requiredReportCols, vnR));
-    if ~isempty(missing_colsR)
-        disp(['Missing required report columns: ' char(strjoin(missing_colsR, ', '))]); return; end
+    disp('    Format: STANDARD export; clustering reports by test_report_id column.');
+    % No external report file needed: the measurement file already carries a
+    % test_report_id per row, which is used directly to group rows into
+    % reports for the report x test analysis. (test_report_id is validated as a
+    % required measurement column below.)
 end
 
 vn = string(data.Properties.VariableNames);
@@ -159,7 +149,8 @@ if ~isempty(missing_cols)
 if isLegacy
     disp(['    Loaded ' num2str(height(data)) ' measurement rows (report-less input).']);
 else
-    disp(['    Loaded ' num2str(height(data)) ' measurement rows, ' num2str(height(reportData)) ' report rows.']);
+    nRptIds = numel(unique(strtrim(string(data.test_report_id))));
+    disp(['    Loaded ' num2str(height(data)) ' measurement rows, ' num2str(nRptIds) ' report id(s) from test_report_id.']);
 end
 
 colTest = "measurement_name"; colData = "data"; colUpper = "upper_limit";
@@ -1008,6 +999,22 @@ end
 [~, dord] = sortrows([dcRedPct, -dcFails], 'descend');
 for g = dord'
     disp(sprintf('  %-8s %7d %8d %7d %8.1f%%', char(uDG(g)), dcN(g), dcExec(g), dcFails(g), dcRedPct(g)));
+end
+disp(' ');
+
+disp('----------------------------------------------------------------------');
+disp('  CUT PERCENTAGE PER DIGIT GROUP  (share of tests recommended for removal)');
+disp('----------------------------------------------------------------------');
+disp(sprintf('  %-8s %7s %7s %9s', 'digit', 'tests', 'cut', 'cut%'));
+dcCut = zeros(numel(uDG),1); dcCutPct = zeros(numel(uDG),1);
+for g = 1:numel(uDG)
+    mem = find(dgIdx == g);
+    dcCut(g) = sum(cutCandidate(mem));
+    dcCutPct(g) = 100 * dcCut(g) / numel(mem);
+end
+[~, cord2] = sortrows([dcCutPct, -dcFails], 'descend');
+for g = cord2'
+    disp(sprintf('  %-8s %7d %7d %8.1f%%', char(uDG(g)), dcN(g), dcCut(g), dcCutPct(g)));
 end
 disp(' ');
 
