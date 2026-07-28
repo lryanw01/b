@@ -1,0 +1,1394 @@
+clc; clear;
+
+measFile   = "C:\Users\lane.white\Downloads\ATP Exports From CITED\M-QUC_Export.csv";
+reportFile = "C:\Users\lane.white\OneDrive - BAE Systems Inc\Documents\_ATP\QTM\QTM-Report.csv";
+
+USE_KEYWORD_FILTER = false;
+keywords = ["Gain","Frequency","Harmonic","Spur","Hz","RF","Waveform","Phase","NF","Noise"];
+if ~USE_KEYWORD_FILTER, keywords = strings(1,0); end
+
+COVERAGE          = 0.7;
+CONFIDENCE        = 0.95;
+BOUNDARY_PCT      = 50;
+ESCAPE_BUDGET     = 0.05;
+CLUSTER_ESCAPE_BUDGET = 0.05;
+CATASTROPHE_FLOOR = 0.30;
+CATASTROPHE_K     = 3;
+CATASTROPHE_MINP  = 10;
+SKEW_THRESH       = 1.0;
+SKEW_MIN_N        = 30;
+DRIFT_MIN_RUNS    = 20;
+DRIFT_EXTRAP_FRAC = 0.5;
+CUSUM_K           = 0.5;
+CUSUM_H           = 5.0;
+MIN_GROUP         = 3;
+MARGIN_MAJORITY   = 0.40;
+MIN_RUNS_REMOVE   = 30;
+PARSE_BAD_FRAC    = 0.20;
+KEEP_K            = 2;
+MIN_MODE_REPORTS  = 2;
+COFAIL_JACCARD    = 0.50;
+COFAIL_MAX_TESTS  = 150;
+MODE_MERGE_JACCARD = 0.70;
+TOKEN_JACCARD_CUT = 0.60;
+CORR_VERIFY_MIN   = 0.30;
+UNIQUE_R2_KEEP    = 0.750;
+EB_MIN_TESTS      = 5;
+KEY_MIN_MODES     = 2;
+KEY_MIN_FAILS     = 3;
+KEY_TOP_N         = 25;
+DIGIT_FULL_MIN    = 1;
+totalBlockTime    = 1;
+
+% --- Report synthesis (used ONLY for the legacy / no-report CSV format) ---
+% Legacy CITED exports have no test_report_id, so rows are clustered into
+% pseudo-reports (one report ~ one unit's test pass) to drive the same
+% report x test analysis used for the standard format.
+REPORT_MODE       = "auto";                   % "auto" | "cycle" | "time" | "single"
+REPORT_GAP_FACTOR = 6;                        % time mode: new report when time gap > factor * median gap
+REPORT_MIN_GAP_S  = 5;                         % time mode: floor for the gap threshold (seconds)
+REPORT_TIME_COL   = "Result Stop Date/Time";   % legacy column used for time-based clustering
+
+dutBlockTimes = containers.Map();
+dutBlockTimes('M-ADC') = containers.Map( ...
+    {'00','99','08','09','10','15','96','21','97','30','23','22','28','29','51','52','95','53','55','58','74','75','76','79','83','84','02','16'}, ...
+    { 2.11,0.30,0.63,0.08,0.34,0.97,0.30,3.74,0.30,1.25,0.20,0.03,2.20,0.20,0.63,0.18,0.20,0.30,0.18,0.21,0.45,0.25,0.37,2.22,7.55,7.55,0.50,0.20});
+dutBlockTimes('M-DCRTG') = containers.Map( ...
+    {'00','02','01','08','09','15','10','20','21','22','28','60','50','53','16','40','42','43','44'}, ...
+    { 1.42,0.19,0.10,0.75,0.12,19.0,3.30,6.84,5.84,0.04,0.66,0.06,11.25,0.25,27.93,55.44,3.86,0.53,0.52});
+dutBlockTimes('QTM') = containers.Map( ...
+    {'78','79','59','58','64','61','62'}, ...
+    { 8.17,7.90,2.05,2.68,9.00,16.0,9.00});
+dutBlockTimes('M-EWC') = containers.Map( ...
+    {'17','00','08','09','10','15','21','22','29','30','32','19'}, ...
+    { 5.24,0.75,0.41,0.27,0.53,1.93,7.89,1.82,3.26,1.14,6.20,0.10});
+
+DEBUG_SWEEP = false;
+sweepCoverage      = [0.80 0.90 0.95];
+sweepConfidence    = [0.90 0.95 0.95];
+sweepEscape        = [0.020 0.010 0.005];
+sweepClusterEscape = [0.030 0.015 0.008];
+sweepMarginMaj     = [0.50 0.60 0.70];
+sweepUniqueR2      = [0.70 0.80 0.90];
+sweepMinRuns       = [20 25 30];
+sweepMinGroup      = [2 3 3];
+sweepTokenJac      = [0.70 0.60 0.50];
+sweepCofailJac     = [0.40 0.50 0.60];
+nProfiles = 1; if DEBUG_SWEEP, nProfiles = 3; end
+
+fracBoundary = BOUNDARY_PCT / 100;
+nStages = 14;
+
+stagePrint(1, nStages, 'Detecting format and loading CSV input(s)');
+
+if ~isfile(measFile), disp(['Measurement file not found: ' char(measFile)]); return; end
+[filDir, origName, ~] = fileparts(measFile);
+
+requiredMeasCols = ["dut_name","Part Number","measurement_name","data", ...
+    "units","upper_limit","lower_limit","Duration S","test_report_id"];
+try
+    opts = detectImportOptions(measFile, "Delimiter",",", "TextType","string", "VariableNamingRule","preserve");
+    opts.ExtraColumnsRule = "addvars";
+    data = readtable(measFile, opts);
+catch ME
+    disp(['Error reading measurement file: ' ME.message]); return;
+end
+
+vn = string(data.Properties.VariableNames);
+vn = strrep(vn, '"', '');
+data.Properties.VariableNames = cellstr(vn);
+vn = string(data.Properties.VariableNames);
+
+% ---- Format detection: legacy CITED export (no report file) vs. standard ----
+isLegacy = any(ismember(vn, "Test Result Name")) || any(ismember(vn, "DUT Name"));
+
+reportData = table();   % populated only for the standard format; unused downstream otherwise
+
+if isLegacy
+    disp('    Format: LEGACY CITED export (no report file required).');
+    % strip stray quotes from string columns
+    for col = 1:width(data)
+        if isstring(data{:,col}) || iscellstr(data{:,col})
+            data.(data.Properties.VariableNames{col}) = strrep(string(data{:,col}), '"', '');
+        end
+    end
+    % remap legacy columns to the canonical schema
+    if ismember("Test Result Name", vn), data.measurement_name = data.("Test Result Name");
+    else, disp('ERROR: Legacy file missing "Test Result Name".'); return; end
+    if ismember("DUT Name", vn), data.dut_name = data.("DUT Name");
+    else, disp('ERROR: Legacy file missing "DUT Name".'); return; end
+    if ismember("Data", vn), data.data = data.("Data");
+    else, disp('ERROR: Legacy file missing "Data".'); return; end
+    if ismember("Units", vn), data.units = data.("Units"); else, data.units = repmat("", height(data), 1); end
+    if ismember("Upper Limit", vn), data.upper_limit = data.("Upper Limit"); else, data.upper_limit = repmat("", height(data), 1); end
+    if ismember("Lower Limit", vn), data.lower_limit = data.("Lower Limit"); else, data.lower_limit = repmat("", height(data), 1); end
+    if ismember("Slot number", vn), data.("Part Number") = data.("Slot number"); else, data.("Part Number") = repmat("", height(data), 1); end
+    data.("Duration S") = repmat("0", height(data), 1);
+
+    % ---- Simulate reports: cluster rows into pseudo-reports (no report_id exists) ----
+    tsCol = strings(height(data),1);
+    if ismember(REPORT_TIME_COL, vn), tsCol = string(data.(REPORT_TIME_COL)); end
+    data.test_report_id = synthReportIds(string(data.measurement_name), string(data.dut_name), ...
+                                         tsCol, REPORT_MODE, REPORT_GAP_FACTOR, REPORT_MIN_GAP_S);
+    nSyn  = numel(unique(data.test_report_id));
+    avgTn = height(data) / max(nSyn,1);
+    disp(['    Simulated ' num2str(nSyn) ' report(s) from ' num2str(height(data)) ...
+          ' rows (mode=' char(REPORT_MODE) ', ~' num2str(avgTn,'%.1f') ' tests/report).']);
+else
+    disp('    Format: STANDARD export; loading report file.');
+    if ~isfile(reportFile), disp(['Report file not found: ' char(reportFile)]); return; end
+    requiredReportCols = ["dut_name","dut_part_number","test_report_id","report_true_duration"];
+    try
+        optsR = detectImportOptions(reportFile, "Delimiter",",", "TextType","string", "VariableNamingRule","preserve");
+        optsR.ExtraColumnsRule = "addvars";
+        reportData = readtable(reportFile, optsR);
+    catch ME
+        disp(['Error reading report file: ' ME.message]); return;
+    end
+    vnR = string(reportData.Properties.VariableNames);
+    missing_colsR = requiredReportCols(~ismember(requiredReportCols, vnR));
+    if ~isempty(missing_colsR)
+        disp(['Missing required report columns: ' char(strjoin(missing_colsR, ', '))]); return; end
+end
+
+vn = string(data.Properties.VariableNames);
+missing_cols = requiredMeasCols(~ismember(requiredMeasCols, vn));
+if ~isempty(missing_cols)
+    disp(['Missing required measurement columns: ' char(strjoin(missing_cols, ', '))]); return; end
+
+if isLegacy
+    disp(['    Loaded ' num2str(height(data)) ' measurement rows (report-less input).']);
+else
+    disp(['    Loaded ' num2str(height(data)) ' measurement rows, ' num2str(height(reportData)) ' report rows.']);
+end
+
+colTest = "measurement_name"; colData = "data"; colUpper = "upper_limit";
+colLower = "lower_limit"; colUnits = "units"; colDUT = "dut_name";
+colPartNum = "Part Number"; colTestRptId = "test_report_id";
+
+testCol = strtrim(string(data.(colTest)));
+dutCol  = strtrim(string(data.(colDUT)));
+validRows = ~ismissing(testCol) & testCol ~= "" & ~ismissing(dutCol) & dutCol ~= "";
+dataValid = data(validRows, :);
+
+strDut   = strtrim(string(dataValid.(colDUT)));
+strTest  = strtrim(string(dataValid.(colTest)));
+strRpt   = strtrim(string(dataValid.(colTestRptId)));
+numData  = str2double(strtrim(string(dataValid.(colData))));
+numU     = str2double(erase(strtrim(string(dataValid.(colUpper))),'"'));
+numL     = str2double(erase(strtrim(string(dataValid.(colLower))),'"'));
+strPN    = strtrim(string(dataValid.(colPartNum)));
+strUnits = strtrim(string(dataValid.(colUnits)));
+
+selectedDUTs = unique(strDut, "stable");
+
+stagePrint(2, nStages, 'Building per-test base statistics (vectorized)');
+
+pairKeyAll_ = strDut + "|||" + strTest;
+[uKeys_, iaFirst_, gIdx_] = unique(pairKeyAll_, 'stable');
+nPairs = numel(uKeys_);
+pDUT = strDut(iaFirst_);
+pTN  = strTest(iaFirst_);
+
+vD = ~isnan(numData);
+sums  = accumarray(gIdx_(vD), numData(vD),      [nPairs 1], @sum, 0);
+sumsq = accumarray(gIdx_(vD), numData(vD).^2,   [nPairs 1], @sum, 0);
+cnts  = accumarray(gIdx_(vD), 1,                [nPairs 1], @sum, 0);
+pN = cnts;
+pMean = NaN(nPairs,1); pStd = NaN(nPairs,1);
+ok1 = cnts >= 1; pMean(ok1) = sums(ok1) ./ cnts(ok1);
+ok2 = cnts >= 2;
+varv = (sumsq(ok2) - sums(ok2).^2 ./ cnts(ok2)) ./ (cnts(ok2) - 1);
+varv(varv < 0) = 0;
+pStd(ok2) = sqrt(varv);
+
+uu = numU; uu(isnan(uu)) = -Inf;
+ll = numL; ll(isnan(ll)) =  Inf;
+pU = accumarray(gIdx_, uu, [nPairs 1], @max, -Inf);
+pL = accumarray(gIdx_, ll, [nPairs 1], @min,  Inf);
+pU(isinf(pU)) = NaN; pL(isinf(pL)) = NaN;
+
+pPart = strings(nPairs,1); pUnits = strings(nPairs,1);
+pnV = strPN ~= "" & ~ismissing(strPN);
+if any(pnV)
+    fr = accumarray(gIdx_(pnV), find(pnV), [nPairs 1], @min, 0);
+    hv = fr > 0; pPart(hv) = strPN(fr(hv));
+end
+unV = strUnits ~= "" & ~ismissing(strUnits);
+if any(unV)
+    fr = accumarray(gIdx_(unV), find(unV), [nPairs 1], @min, 0);
+    hv = fr > 0; pUnits(hv) = strUnits(fr(hv));
+end
+
+pBU = NaN(nPairs,1); pBL = NaN(nPairs,1);
+hU = ~isnan(pU); hL = ~isnan(pL);
+pBU(hU) = pMean(hU) + fracBoundary * (pU(hU) - pMean(hU));
+pBL(hL) = pMean(hL) + fracBoundary * (pL(hL) - pMean(hL));
+
+sg = pStd > 0 & ~isnan(pStd);
+cpkU = (pU - pMean) ./ (3 * pStd);
+cpkL = (pMean - pL) ./ (3 * pStd);
+pCpk = min([cpkU, cpkL], [], 2, 'omitnan');
+pCpk(~sg) = NaN;
+disp(['    ' num2str(nPairs) ' unique DUT/test pairs summarized.']);
+
+results = table(pDUT, pPart, pTN, pN, pMean, pStd, pU, pL, pBU, pBL, pUnits, pCpk, ...
+    'VariableNames', ["DUTName","PartNumber","TestName","N","Mean","StdDev", ...
+                      "UpperLimit","LowerLimit","BoundaryUpper","BoundaryLower","Units","Cpk"]);
+
+vRid = ~ismissing(strRpt) & strRpt ~= "";
+linkTriples = unique([strDut(vRid), strTest(vRid), strRpt(vRid)], "rows", "stable");
+
+allTestNames = strTest;
+if isempty(keywords)
+    kwMask0 = true(numel(allTestNames),1);
+else
+    kwMask0 = false(numel(allTestNames),1);
+    for k = 1:numel(keywords), kwMask0 = kwMask0 | contains(allTestNames, keywords(k), IgnoreCase=true); end
+end
+totalUniqueTests = max(1, numel(unique(allTestNames(kwMask0))));
+
+testsPerReport = containers.Map;
+for row = 1:size(linkTriples,1)
+    key = char(linkTriples(row,1)) + "|||" + char(linkTriples(row,3));
+    if testsPerReport.isKey(key)
+        existing = testsPerReport(key);
+        if ~any(existing == linkTriples(row,2)), testsPerReport(key) = [existing; linkTriples(row,2)]; end
+    else
+        testsPerReport(key) = linkTriples(row,2);
+    end
+end
+derivedDurAccum = containers.Map;
+reportKeys = keys(testsPerReport);
+for rk = 1:numel(reportKeys)
+    key = reportKeys{rk};
+    parts = split(string(key), "|||");
+    dName = parts(1);
+    testList = testsPerReport(key);
+    perTestDur = totalBlockTime*60 / totalUniqueTests;
+    for ti = 1:numel(testList)
+        testKey = strcat(char(dName),"|||",char(testList(ti)));
+        if derivedDurAccum.isKey(testKey)
+            prev = derivedDurAccum(testKey);
+            derivedDurAccum(testKey) = [prev(1) + perTestDur, prev(2) + 1];
+        else
+            derivedDurAccum(testKey) = [perTestDur, 1];
+        end
+    end
+end
+results.AvgDurationS = NaN(height(results),1);
+for r = 1:height(results)
+    testKey = strcat(char(results.DUTName(r)),"|||",char(results.TestName(r)));
+    if derivedDurAccum.isKey(testKey)
+        vals = derivedDurAccum(testKey);
+        results.AvgDurationS(r) = vals(1)/vals(2);
+    end
+end
+dk0 = arrayfun(@digitGroup, string(results.TestName));
+dutOf = string(results.DUTName);
+pairKeyDG = dutOf + "||" + dk0;
+[uPair, ~, pairIdx] = unique(pairKeyDG, 'stable');
+presentDUTs = unique(dutOf);
+knownDUT = false;
+for z = 1:numel(presentDUTs)
+    if isKey(dutBlockTimes, char(presentDUTs(z))), knownDUT = true; end
+end
+disp(' ');
+if knownDUT
+    disp('Recognized DUT(s); applying stored digit-group block times.');
+else
+    disp('Unrecognized DUT(s). Enter measured block time in minutes per digit group (blank to skip):');
+end
+for c = 1:numel(uPair)
+    cIdx = find(pairIdx == c);
+    parts = split(uPair(c), "||");
+    dnm = char(parts(1)); dgk = char(parts(end));
+    assigned = false;
+    if isKey(dutBlockTimes, dnm)
+        dmap = dutBlockTimes(dnm);
+        if isKey(dmap, dgk)
+            results.AvgDurationS(cIdx) = (dmap(dgk)*60) / numel(cIdx);
+            assigned = true;
+        end
+    end
+    if assigned, continue; end
+    if knownDUT
+        disp(['  (no stored time for ' dnm ' digit ' dgk ', ' num2str(numel(cIdx)) ' tests; using derived)']);
+        continue;
+    end
+    resp = strtrim(input(['  ' dnm ' digit group ' dgk ' (' num2str(numel(cIdx)) ' tests): '], 's'));
+    if isempty(resp), continue; end
+    val = str2double(resp);
+    if isnan(val) || val <= 0, disp('    invalid, skipped.'); continue; end
+    results.AvgDurationS(cIdx) = (val*60) / numel(cIdx);
+end
+
+if isempty(keywords)
+    m = true(height(results), 1);
+else
+    m = false(height(results), 1);
+    for k = 1:numel(keywords), m = m | contains(results.TestName, keywords(k), IgnoreCase=true); end
+end
+results = results(m, :);
+if height(results) == 0, disp('No tests match keyword filter. Nothing to analyze.'); return; end
+nT = height(results);
+if isempty(keywords)
+    disp(['    ' num2str(nT) ' tests (no keyword filter active).']);
+else
+    disp(['    ' num2str(nT) ' tests pass keyword filter.']);
+end
+
+stagePrint(3, nStages, 'Parsing spec structure and tokenizing test names');
+
+namesR   = string(results.TestName);
+digitKey = strings(nT,1);
+specType = strings(nT,1);
+specMaps = cell(nT,1);
+parsedV  = false(nT,1);
+tokSets  = cell(nT,1);
+for i = 1:nT
+    digitKey(i) = digitGroup(namesR(i));
+    [specType(i), specMaps{i}, parsedV(i)] = parseSpec(namesR(i));
+    tokSets{i} = tokenizeName(namesR(i));
+end
+results.DigitGroup = digitKey;
+results.SpecType   = specType;
+
+stagePrint(4, nStages, 'Assembling report x test present / fail / margin matrices');
+
+ftTestNames = namesR;
+ftDUTs      = string(results.DUTName);
+ftPairKey   = ftDUTs + "|||" + ftTestNames;
+
+rowKey   = strDut + "|||" + strTest;
+rowFail  = (~isnan(numU) & numData > numU) | (~isnan(numL) & numData < numL);
+rowValid = ~ismissing(strRpt) & strRpt ~= "" & ismember(rowKey, ftPairKey);
+
+vDut  = strDut(rowValid); vRpt = strRpt(rowValid); vKey = rowKey(rowValid);
+vFail = rowFail(rowValid); vData = numData(rowValid);
+
+[uRpts, ~, rptIdx] = unique(vRpt, 'stable');
+[~, colIdx] = ismember(vKey, ftPairKey);
+nRpts = numel(uRpts);
+
+presentMat = false(nRpts, nT);
+failMat    = false(nRpts, nT);
+sumMat     = zeros(nRpts, nT);
+cntMat     = zeros(nRpts, nT);
+rptDUT     = strings(nRpts, 1);
+for k = 1:numel(rptIdx)
+    presentMat(rptIdx(k), colIdx(k)) = true;
+    if vFail(k), failMat(rptIdx(k), colIdx(k)) = true; end
+    if ~isnan(vData(k))
+        sumMat(rptIdx(k), colIdx(k)) = sumMat(rptIdx(k), colIdx(k)) + vData(k);
+        cntMat(rptIdx(k), colIdx(k)) = cntMat(rptIdx(k), colIdx(k)) + 1;
+    end
+    if rptDUT(rptIdx(k)) == "", rptDUT(rptIdx(k)) = vDut(k); end
+end
+dataMat = NaN(nRpts, nT);
+hasData = cntMat > 0;
+dataMat(hasData) = sumMat(hasData) ./ cntMat(hasData);
+
+marginMat = NaN(nRpts, nT);
+for i = 1:nT
+    USL = results.UpperLimit(i); LSL = results.LowerLimit(i);
+    hasU = ~isnan(USL); hasL = ~isnan(LSL);
+    x = dataMat(:, i);
+    sig = results.StdDev(i); if isnan(sig) || sig <= 0, sig = 1; end
+    if hasU && hasL
+        band = USL - LSL; if band <= 0, band = eps; end
+        marginMat(:, i) = min(USL - x, x - LSL) ./ (0.5*band);
+    elseif hasU
+        marginMat(:, i) = (USL - x) ./ sig;
+    elseif hasL
+        marginMat(:, i) = (x - LSL) ./ sig;
+    end
+end
+disp(['    Matrix: ' num2str(nRpts) ' reports x ' num2str(nT) ' tests.']);
+
+stagePrint(5, nStages, 'Detecting catastrophic (dead-unit) reports');
+
+presentPerRpt = sum(presentMat, 2);
+failPerRpt    = sum(failMat, 2);
+failFracRpt   = failPerRpt ./ max(presentPerRpt, 1);
+ffEval = failFracRpt(presentPerRpt >= CATASTROPHE_MINP);
+if numel(ffEval) >= 5
+    catThresh = max(CATASTROPHE_FLOOR, median(ffEval) + CATASTROPHE_K*1.4826*mad(ffEval,1));
+else
+    catThresh = CATASTROPHE_FLOOR;
+end
+deadRptMask = (failFracRpt > catThresh) & (presentPerRpt >= CATASTROPHE_MINP);
+goodRptMask = ~deadRptMask;
+disp(['    Dead-unit threshold ' num2str(catThresh*100,'%.1f') '%. Catastrophic reports: ' ...
+      num2str(sum(deadRptMask)) ' of ' num2str(nRpts) '.']);
+
+for sw = 1:nProfiles
+if DEBUG_SWEEP
+    COVERAGE = sweepCoverage(sw); CONFIDENCE = sweepConfidence(sw);
+    ESCAPE_BUDGET = sweepEscape(sw); CLUSTER_ESCAPE_BUDGET = sweepClusterEscape(sw);
+    MARGIN_MAJORITY = sweepMarginMaj(sw); UNIQUE_R2_KEEP = sweepUniqueR2(sw);
+    MIN_RUNS_REMOVE = sweepMinRuns(sw); MIN_GROUP = sweepMinGroup(sw);
+    TOKEN_JACCARD_CUT = sweepTokenJac(sw); COFAIL_JACCARD = sweepCofailJac(sw);
+    disp(' ');
+    disp(['################ SWEEP PROFILE ' num2str(sw) ' of ' num2str(nProfiles) ' ################']);
+    disp(['  COVERAGE=' num2str(COVERAGE) ' CONF=' num2str(CONFIDENCE) ' ESC=' num2str(ESCAPE_BUDGET) ...
+          ' CLUSTESC=' num2str(CLUSTER_ESCAPE_BUDGET) ' MARGMAJ=' num2str(MARGIN_MAJORITY) ...
+          ' UNIQR2=' num2str(UNIQUE_R2_KEEP) ' MINRUNS=' num2str(MIN_RUNS_REMOVE) ...
+          ' MINGRP=' num2str(MIN_GROUP) ' TOKJAC=' num2str(TOKEN_JACCARD_CUT) ' COFJAC=' num2str(COFAIL_JACCARD)]);
+end
+tag = "";
+if DEBUG_SWEEP, tag = "_sweep" + num2str(sw); end
+runName = origName + tag;
+
+stagePrint(6, nStages, 'Tokenization-first clustering with margin-correlation verification');
+
+clusterId = zeros(nT,1);
+nextC = 0;
+[uDigit, ~, digIdxAll] = unique(digitKey, 'stable');
+pg6 = progInit('  clustering blocks', numel(uDigit));
+for d = 1:numel(uDigit)
+    pg6 = progTick(pg6);
+    blk = find(digIdxAll == d);
+    if numel(blk) == 1, nextC = nextC + 1; clusterId(blk) = nextC; continue; end
+    vocab = unique([tokSets{blk}]);
+    if isempty(vocab), nextC = nextC + 1; clusterId(blk) = nextC; continue; end
+    ind = false(numel(blk), numel(vocab));
+    for j = 1:numel(blk)
+        ind(j, :) = ismember(vocab, tokSets{blk(j)});
+    end
+    if all(sum(ind,2) == 0)
+        nextC = nextC + 1; clusterId(blk) = nextC; continue;
+    end
+    if numel(blk) == 2
+        jd = jaccardDistBinary(ind(1,:), ind(2,:));
+        if jd <= TOKEN_JACCARD_CUT
+            nextC = nextC + 1; clusterId(blk) = nextC;
+        else
+            nextC = nextC + 1; clusterId(blk(1)) = nextC;
+            nextC = nextC + 1; clusterId(blk(2)) = nextC;
+        end
+        continue;
+    end
+    try
+        dJac = pdist(double(ind), 'jaccard');
+        dJac(isnan(dJac)) = 1;
+        Z = linkage(dJac, 'average');
+        sub = cluster(Z, 'cutoff', TOKEN_JACCARD_CUT, 'criterion', 'distance');
+    catch
+        sub = ones(numel(blk),1);
+    end
+    for s = unique(sub)'
+        nextC = nextC + 1;
+        clusterId(blk(sub == s)) = nextC;
+    end
+end
+results.TokenCluster = clusterId;
+
+clusterCohesion = NaN(nT,1);
+uC = unique(clusterId);
+for c = uC'
+    mem = find(clusterId == c);
+    if numel(mem) < 2, clusterCohesion(mem) = 1; continue; end
+    sub = marginMat(goodRptMask, mem);
+    coh = meanAbsCorr(sub);
+    clusterCohesion(mem) = coh;
+end
+results.ClusterCohesion = clusterCohesion;
+disp(['    ' num2str(numel(uC)) ' token clusters formed across ' num2str(numel(uDigit)) ' digit blocks.']);
+
+stagePrint(7, nStages, 'Per-test statistics: pooled bounds, tail risk, drift, conformal margin');
+
+npTolMinN = ceil(log(1 - CONFIDENCE) / log(COVERAGE));
+failGoodV = zeros(nT,1); failDeadV = zeros(nT,1); nGoodV = zeros(nT,1);
+failUBV   = NaN(nT,1);   pTailV   = NaN(nT,1);   parseNaNV = zeros(nT,1);
+driftV    = false(nT,1); parseOK  = false(nT,1); conformalOK = false(nT,1);
+uniqueR2V = NaN(nT,1);   reasonV  = strings(nT,1);
+
+pg7 = progInit('  scoring tests', nT);
+for i = 1:nT
+    pg7 = progTick(pg7);
+    USL = results.UpperLimit(i); LSL = results.LowerLimit(i);
+    hasU = ~isnan(USL); hasL = ~isnan(LSL);
+    mu = results.Mean(i); sig = results.StdDev(i);
+    pres = presentMat(:, i);
+    nPres = sum(pres);
+    parseNaNV(i) = sum(pres & isnan(dataMat(:, i))) / max(nPres, 1);
+    parseOK(i) = parseNaNV(i) <= PARSE_BAD_FRAC;
+    fg = sum(failMat(goodRptMask, i));
+    fd = sum(failMat(deadRptMask, i));
+    pgd = sum(presentMat(goodRptMask, i));
+    failGoodV(i) = fg; failDeadV(i) = fd; nGoodV(i) = pgd;
+    if results.N(i) == 0, reasonV(i) = "no numeric data"; continue; end
+    if ~hasU && ~hasL,    reasonV(i) = "no pass/fail limits"; continue; end
+
+    colG = dataMat(goodRptMask, i); xg = colG(~isnan(colG)); ng = numel(xg);
+    mG = marginMat(goodRptMask, i); mG = mG(~isnan(mG));
+
+    pGauss = 0;
+    if ~isnan(sig) && sig > 0
+        if hasU, pGauss = pGauss + normProbBelow(-(USL - mu)/sig); end
+        if hasL, pGauss = pGauss + normProbBelow(-(mu - LSL)/sig); end
+    elseif (hasU && mu > USL) || (hasL && mu < LSL)
+        pGauss = 1;
+    end
+    pEmp = 0;
+    if ng > 0
+        exceed = false(ng,1);
+        if hasU, exceed = exceed | (xg > USL); end
+        if hasL, exceed = exceed | (xg < LSL); end
+        pEmp = mean(exceed);
+    end
+    pGpd = gpTailProb(mG);
+    pTailV(i) = max([pGauss, pEmp, pGpd, 0]);
+
+    dr = false;
+    if ng >= DRIFT_MIN_RUNS && ~isempty(mG)
+        dr = cusumTrendDrift(mG, CUSUM_K, CUSUM_H, DRIFT_EXTRAP_FRAC);
+    end
+    driftV(i) = dr;
+
+    if ng >= 1
+        if fg == 0, ub = 3/ng; else, ub = wilsonUpper(fg, ng); end
+    else
+        ub = 1;
+    end
+    failUBV(i) = ub;
+
+    cOK = false;
+    if ng >= 2 && ~isempty(mG)
+        qLow = quantile(mG, 1 - COVERAGE);
+        cOK = qLow > 0;
+        if ng >= SKEW_MIN_N && abs(skewness(xg)) > SKEW_THRESH && ng < npTolMinN
+            cOK = false;
+        end
+    end
+    conformalOK(i) = cOK;
+
+    if fg > 0,       reasonV(i) = "fails good units";
+    elseif dr,       reasonV(i) = "drift toward limit";
+    elseif ~cOK,     reasonV(i) = "margin near limit";
+    else,            reasonV(i) = "safe margin, no fails"; end
+end
+
+pg7b = progInit('  unique-variance', numel(uC));
+for c = uC'
+    pg7b = progTick(pg7b);
+    mem = find(clusterId == c);
+    if numel(mem) < 2, uniqueR2V(mem) = 0; continue; end
+    for j = 1:numel(mem)
+        i = mem(j);
+        others = mem(mem ~= i);
+        uniqueR2V(i) = predictR2(marginMat, goodRptMask, i, others);
+    end
+end
+results.UniqueR2 = uniqueR2V;
+
+ebUB = ebClusterUB(clusterId, failGoodV, nGoodV, failMat, goodRptMask, EB_MIN_TESTS, CONFIDENCE);
+results.PooledFailUB = ebUB;
+
+results.FailsGood = failGoodV; results.FailsDead = failDeadV; results.NGood = nGoodV;
+results.FailRateUB = failUBV; results.PTail = pTailV; results.DriftRisk = driftV;
+results.ConformalOK = conformalOK; results.ParseOK = parseOK; results.Reason = reasonV;
+results.ParseNaNFrac = parseNaNV;
+
+marginSafe = conformalOK & ~driftV & (pTailV < ESCAPE_BUDGET);
+scorable   = (results.N > 0) & (~isnan(results.UpperLimit) | ~isnan(results.LowerLimit));
+results.MarginSafe = marginSafe;
+results.Scorable   = scorable;
+
+stagePrint(8, nStages, 'Flagging statistically redundant tests');
+
+indivRedundant = scorable & (failGoodV == 0) & marginSafe & parseOK & ...
+                 (nGoodV >= MIN_RUNS_REMOVE) & (ebUB < ESCAPE_BUDGET);
+results.IndivRedundant = indivRedundant;
+disp(['    Individually redundant tests: ' num2str(sum(indivRedundant)) '.']);
+
+stagePrint(9, nStages, 'Evaluating token clusters for group redundancy');
+
+clRedundant = false(nT,1);
+clInfo = struct('cid',{},'mem',{},'nsafe',{},'pooledUB',{},'cohesion',{},'timeS',{},'deadFails',{});
+for c = uC'
+    mem = find(clusterId == c);
+    if numel(mem) < MIN_GROUP, continue; end
+    sc = mem(scorable(mem));
+    if isempty(sc), continue; end
+    fracSafe = sum(marginSafe(sc)) / numel(sc);
+    if fracSafe < MARGIN_MAJORITY, continue; end
+    if sum(failGoodV(mem)) > 0, continue; end
+    coh = clusterCohesion(mem(1));
+    if isnan(coh) || coh < CORR_VERIFY_MIN, continue; end
+    poolUB = ebUB(mem(1));
+    if isnan(poolUB) || poolUB >= CLUSTER_ESCAPE_BUDGET, continue; end
+    cut_i = scorable(mem) & parseOK(mem) & (failGoodV(mem) == 0) & ...
+            (marginSafe(mem) | (uniqueR2V(mem) >= UNIQUE_R2_KEEP));
+    clRedundant(mem(cut_i)) = true;
+    ce.cid = c; ce.mem = mem; ce.nsafe = sum(marginSafe(mem));
+    ce.pooledUB = poolUB; ce.cohesion = coh;
+    ce.timeS = sum(results.AvgDurationS(mem), 'omitnan');
+    ce.deadFails = sum(failDeadV(mem));
+    clInfo(end+1) = ce;
+end
+results.ClusterRedundant = clRedundant;
+disp(['    Redundant token clusters: ' num2str(numel(clInfo)) '.']);
+
+stagePrint(10, nStages, 'Discovering co-failure modes (presence-aware)');
+
+failCols = find(sum(failMat, 1) >= 1);
+failCols = failCols(:);
+modeMembers = {}; modeReports = {}; modeDead = {};
+if numel(failCols) >= 2
+    Fk = double(failMat(:, failCols));
+    Pk = double(presentMat(:, failCols));
+    interM = Fk' * Fk;
+    faCop  = Fk' * Pk;
+    uniM   = faCop + faCop' - interM;
+    jacM   = interM ./ max(uniM, 1);
+    jacM(1:size(jacM,1)+1:end) = 0;
+    qualM = (interM >= MIN_MODE_REPORTS) & (jacM >= COFAIL_JACCARD);
+    nF = numel(failCols);
+    cand = {};
+    for a = 1:nF
+        grp = unique([a, find(qualM(a, :))]);
+        if numel(grp) >= 2, cand{end+1} = grp(:); end
+    end
+    if ~isempty(cand)
+        [~, ord] = sort(cellfun(@numel, cand), 'descend');
+        cand = cand(ord);
+        kept = {};
+        for a = 1:numel(cand)
+            g = cand{a}; dup = false;
+            for b = 1:numel(kept)
+                k = kept{b};
+                if all(ismember(g, k)), dup = true; break; end
+                inter = numel(intersect(g, k)); uni = numel(union(g, k));
+                if uni > 0 && inter/uni >= MODE_MERGE_JACCARD, dup = true; break; end
+            end
+            if ~dup, kept{end+1} = g; end
+        end
+        for a = 1:numel(kept)
+            tis = failCols(kept{a}); tis = tis(:);
+            reps = find(any(failMat(:, tis), 2)); reps = reps(:);
+            if numel(reps) < MIN_MODE_REPORTS, continue; end
+            if numel(tis) > COFAIL_MAX_TESTS, continue; end
+            modeMembers{end+1} = tis;
+            modeReports{end+1} = reps;
+            modeDead{end+1} = reps(deadRptMask(reps));
+        end
+    end
+end
+if ~isempty(modeMembers)
+    [~, mo] = sort(cellfun(@numel, modeMembers), 'descend');
+    modeMembers = modeMembers(mo); modeReports = modeReports(mo); modeDead = modeDead(mo);
+end
+disp(['    ' num2str(numel(modeMembers)) ' co-failure modes (overlapping, presence-aware Jaccard >= ' num2str(COFAIL_JACCARD) ').']);
+
+stagePrint(11, nStages, 'Detecting sequential shared parameter ranges');
+
+globalKeyVals = containers.Map('KeyType','char','ValueType','any');
+for i = 1:nT
+    if ~parsedV(i), continue; end
+    sm = specMaps{i}; kl = keys(sm);
+    for a = 1:numel(kl)
+        v = str2double(string(sm(kl{a})));
+        if isnan(v), continue; end
+        if isKey(globalKeyVals, kl{a})
+            acc = globalKeyVals(kl{a}); acc(end+1) = v; globalKeyVals(kl{a}) = acc;
+        else
+            globalKeyVals(kl{a}) = v;
+        end
+    end
+end
+gk = keys(globalKeyVals);
+for a = 1:numel(gk), globalKeyVals(gk{a}) = unique(globalKeyVals(gk{a})); end
+
+clRanges = cell(numel(clInfo),1);
+for q = 1:numel(clInfo)
+    clRanges{q} = paramRangesSequential(clInfo(q).mem, specMaps, parsedV, globalKeyVals);
+end
+modeRanges = cell(numel(modeMembers),1);
+modeTokens = cell(numel(modeMembers),1);
+for q = 1:numel(modeMembers)
+    mem = modeMembers{q};
+    modeRanges{q} = paramRangesSequential(mem, specMaps, parsedV, globalKeyVals);
+    common = tokSets{mem(1)};
+    for z = 2:numel(mem), common = intersect(common, tokSets{mem(z)}); end
+    modeTokens{q} = common;
+end
+disp('    Sequential parameter-range scan complete.');
+
+stagePrint(12, nStages, 'Greedy coverage-safe removal recommendation');
+
+cutCandidate = (indivRedundant | clRedundant) & parseOK & ~driftV & ((failGoodV + failDeadV) == 0);
+
+keptForCoverage = false(nT,1);
+for q = 1:numel(modeMembers)
+    mem = modeMembers{q};
+    stillIn = mem(~cutCandidate(mem));
+    need = min(KEEP_K, numel(mem));
+    if numel(stillIn) < need
+        deficit = need - numel(stillIn);
+        cand = mem(cutCandidate(mem));
+        [~, ord] = sort(results.AvgDurationS(cand), 'ascend', 'MissingPlacement','first');
+        for z = 1:min(deficit, numel(cand))
+            cutCandidate(cand(ord(z))) = false;
+            keptForCoverage(cand(ord(z))) = true;
+        end
+    end
+end
+results.RemovedRecommended = cutCandidate;
+results.KeptForCoverage = keptForCoverage;
+
+poolKeepUB = 3 / max(sum(nGoodV(cutCandidate)), 1);
+histEsc = 0;
+fr = find(failPerRpt > 0);
+if ~isempty(fr) && any(cutCandidate)
+    histEsc = sum(~any(failMat(fr, ~cutCandidate), 2));
+end
+timeSaved = sum(results.AvgDurationS(cutCandidate), 'omitnan') / 60;
+disp(['    Recommended cut: ' num2str(sum(cutCandidate)) ' tests, ' ...
+      num2str(timeSaved,'%.2f') ' min/module, escape UB ' num2str(poolKeepUB*100,'%.4f') ...
+      '%, historical escapes ' num2str(histEsc) '.']);
+
+stagePrint(13, nStages, 'Identifying key tests and fully-redundant digit clusters');
+
+failTotalV = sum(failMat, 1)';
+numCatchersPerRpt = sum(failMat, 2);
+soleRpts = numCatchersPerRpt == 1;
+uniqueCatch = sum(failMat(soleRpts, :), 1)';
+presentInFailRpt = sum(presentMat(failPerRpt > 0, :), 1)';
+modeCount = zeros(nT, 1);
+for q = 1:numel(modeMembers), modeCount(modeMembers{q}) = modeCount(modeMembers{q}) + 1; end
+results.FailReports = failTotalV;
+results.UniqueCatches = uniqueCatch;
+results.ModesInvolved = modeCount;
+results.PresentInFailReports = presentInFailRpt;
+
+keyTest = (failTotalV > 0) & ((uniqueCatch > 0) | (modeCount >= KEY_MIN_MODES) | (failTotalV >= KEY_MIN_FAILS));
+results.KeyTest = keyTest;
+keyIdx = find(keyTest);
+if ~isempty(keyIdx)
+    [~, ko] = sortrows([uniqueCatch(keyIdx), modeCount(keyIdx), failTotalV(keyIdx)], 'descend');
+    keyIdx = keyIdx(ko);
+end
+keyT = table(ftDUTs(keyIdx), ftTestNames(keyIdx), specType(keyIdx), failTotalV(keyIdx), ...
+    presentInFailRpt(keyIdx), modeCount(keyIdx), uniqueCatch(keyIdx), uniqueCatch(keyIdx) > 0, ...
+    'VariableNames', ["DUTName","TestName","Category","FailReports","PresentInFailReports","ModesInvolved","UniqueCatches","Irreplaceable"]);
+writetable(keyT, fullfile(filDir, runName + "_v20_key_tests.csv"));
+disp(['    Key tests: ' num2str(numel(keyIdx)) ' (' num2str(sum(uniqueCatch(keyIdx) > 0)) ' irreplaceable).']);
+
+redFlag = indivRedundant | clRedundant;
+[uDG, ~, dgIdx] = unique(digitKey, 'stable');
+fullDigMask = false(nT, 1);
+frnfKey = strings(0,1); frnfN = zeros(0,1); frnfT = zeros(0,1); frnfMem = strings(0,1);
+frKey   = strings(0,1); frN   = zeros(0,1); frT   = zeros(0,1); frMem   = strings(0,1);
+nfKey   = strings(0,1); nfN   = zeros(0,1); nfT   = zeros(0,1); nfMem   = strings(0,1);
+for g = 1:numel(uDG)
+    mem = find(dgIdx == g);
+    if numel(mem) < DIGIT_FULL_MIN, continue; end
+    tsec = sum(results.AvgDurationS(mem), 'omitnan');
+    memStr = strjoin(sort(ftTestNames(mem)), " | ");
+    allRed = all(redFlag(mem));
+    allNF  = all(failTotalV(mem) == 0);
+    if allRed && allNF
+        fullDigMask(mem) = true;
+        frnfKey(end+1,1) = string(uDG(g)); frnfN(end+1,1) = numel(mem); frnfT(end+1,1) = tsec; frnfMem(end+1,1) = memStr;
+    end
+    if allRed
+        frKey(end+1,1) = string(uDG(g)); frN(end+1,1) = numel(mem); frT(end+1,1) = tsec; frMem(end+1,1) = memStr;
+    end
+    if allNF
+        nfKey(end+1,1) = string(uDG(g)); nfN(end+1,1) = numel(mem); nfT(end+1,1) = tsec; nfMem(end+1,1) = memStr;
+    end
+end
+results.FullRedundantDigit = fullDigMask;
+fullDigT   = table(frnfKey, frnfN, frnfT, frnfMem, 'VariableNames', ["DigitGroup","NumTests","TimeSavedS","Members"]);
+fullRedT   = table(frKey,   frN,   frT,   frMem,   'VariableNames', ["DigitGroup","NumTests","TimeSavedS","Members"]);
+neverFailT = table(nfKey,   nfN,   nfT,   nfMem,   'VariableNames', ["DigitGroup","NumTests","TimeSavedS","Members"]);
+if height(fullDigT)   > 0, writetable(fullDigT,   fullfile(filDir, runName + "_v20_full_redundant_never_failed_digit_groups.csv")); end
+if height(fullRedT)   > 0, writetable(fullRedT,   fullfile(filDir, runName + "_v20_full_redundant_digit_groups.csv")); end
+if height(neverFailT) > 0, writetable(neverFailT, fullfile(filDir, runName + "_v20_never_failed_digit_groups.csv")); end
+disp(['    Digit clusters: ' num2str(height(fullDigT)) ' fully-redundant+never-failed, ' ...
+      num2str(height(fullRedT)) ' fully-redundant, ' num2str(height(neverFailT)) ' never-failed.']);
+
+stagePrint(14, nStages, 'Writing outputs and rendering report');
+
+writetable(results, fullfile(filDir, runName + "_v20_all_tests.csv"));
+indivT = results(indivRedundant, ["DUTName","TestName","SpecType","NGood","Cpk","PooledFailUB","PTail","AvgDurationS","TokenCluster","Reason"]);
+writetable(indivT, fullfile(filDir, runName + "_v20_redundant_tests.csv"));
+keepT = results(~cutCandidate, ["DUTName","TestName","SpecType","FailsGood","NGood","Cpk","Reason","AvgDurationS"]);
+cutT  = results(cutCandidate,  ["DUTName","TestName","SpecType","FailsGood","FailsDead","NGood","PooledFailUB","AvgDurationS","TokenCluster"]);
+writetable(sortrows(keepT, "FailsGood", "descend"), fullfile(filDir, runName + "_v20_keep.csv"));
+writetable(sortrows(cutT,  "AvgDurationS", "descend", "MissingPlacement","last"), fullfile(filDir, runName + "_v20_cut.csv"));
+
+clRows = table('Size',[0 8],'VariableTypes',["double","double","double","double","double","double","string","string"], ...
+    'VariableNames',["ClusterID","NumTests","NumSafe","PooledFailUB","Cohesion","TimeSavedS","ParamRanges","Members"]);
+for q = 1:numel(clInfo)
+    mem = clInfo(q).mem;
+    clRows = [clRows; {clInfo(q).cid, numel(mem), clInfo(q).nsafe, clInfo(q).pooledUB, ...
+        clInfo(q).cohesion, clInfo(q).timeS, rangeStr(clRanges{q}), strjoin(sort(ftTestNames(mem)), " | ")}];
+end
+writetable(clRows, fullfile(filDir, runName + "_v20_redundant_clusters.csv"));
+
+fmWide = table('Size',[0 6],'VariableTypes',["double","double","double","double","string","string"], ...
+    'VariableNames',["ModeID","NumTests","NumReports","NumCatastrophic","TokenSignature","ParamRanges"]);
+fmLong = table('Size',[0 4],'VariableTypes',["double","string","string","string"], ...
+    'VariableNames',["ModeID","TestName","Category","AffectedUnits"]);
+for q = 1:numel(modeMembers)
+    mem = modeMembers{q}; reps = modeReports{q}; dead = modeDead{q};
+    sigTok = strjoin(sort(modeTokens{q}), " + ");
+    units = strjoin(unique(rptDUT(reps)), ", ");
+    fmWide = [fmWide; {q, numel(mem), numel(reps), numel(dead), sigTok, rangeStr(modeRanges{q})}];
+    for z = 1:numel(mem)
+        fmLong = [fmLong; {q, ftTestNames(mem(z)), specType(mem(z)), units}];
+    end
+end
+writetable(fmWide, fullfile(filDir, runName + "_v20_failure_modes.csv"));
+writetable(fmLong, fullfile(filDir, runName + "_v20_failure_mode_members.csv"));
+
+disp(' ');
+disp('######################################################################');
+disp('#                 ATP TEST-REDUCTION REPORT  (v20)                   #');
+disp('######################################################################');
+disp(' ');
+disp(sprintf('  Tests analyzed .......... %d', nT));
+disp(sprintf('  Reports ................. %d  (%d catastrophic, excluded from redundancy)', nRpts, sum(deadRptMask)));
+disp(sprintf('  Token clusters .......... %d', numel(uC)));
+disp(sprintf('  Individually redundant .. %d', sum(indivRedundant)));
+disp(sprintf('  Redundant clusters ...... %d  (%d tests)', numel(clInfo), sum(clRedundant)));
+disp(sprintf('  Co-failure modes ........ %d', numel(modeMembers)));
+disp(sprintf('  Recommended to remove ... %d tests  |  %.2f min/module  |  escape UB %.4f%%', ...
+    sum(cutCandidate), timeSaved, poolKeepUB*100));
+disp(sprintf('  Key tests ............... %d  (%d irreplaceable)', numel(keyIdx), sum(uniqueCatch(keyIdx) > 0)));
+disp(sprintf('  Full-red+never-fail grps  %d   full-red grps %d   never-fail grps %d', ...
+    height(fullDigT), height(fullRedT), height(neverFailT)));
+disp(' ');
+
+disp('----------------------------------------------------------------------');
+disp('  REDUNDANT TOKEN CLUSTERS  (safe to remove as a family)');
+disp('----------------------------------------------------------------------');
+if isempty(clInfo)
+    disp('  None.');
+else
+    [~, cord] = sort([clInfo.timeS], 'descend');
+    for q = cord
+        mem = clInfo(q).mem;
+        disp(sprintf('  Cluster %d : %d tests | %.2f min | pooled fail UB %.4f%% | cohesion %.2f', ...
+            clInfo(q).cid, numel(mem), clInfo(q).timeS/60, clInfo(q).pooledUB*100, clInfo(q).cohesion));
+        rs = rangeStr(clRanges{q});
+        if strlength(rs) > 0
+            disp(['       always-pass over: ' char(rs)]);
+        end
+        disp(['       e.g. ' char(truncStr(char(ftTestNames(mem(1))), 62))]);
+        if clInfo(q).deadFails > 0
+            deadUnits = strings(0,1);
+            for z = mem'
+                dr2 = find(failMat(:, z) & deadRptMask);
+                deadUnits = [deadUnits; rptDUT(dr2)];
+            end
+            deadUnits = unique(deadUnits);
+            disp(['       note: 0 fails in good units; ' num2str(clInfo(q).deadFails) ...
+                  ' fails only in catastrophic units [' char(truncStr(char(strjoin(deadUnits, ", ")), 60)) '] (caught anyway)']);
+        end
+    end
+end
+disp(' ');
+
+disp('----------------------------------------------------------------------');
+disp('  INDIVIDUALLY REDUNDANT TESTS  (not in a redundant cluster)');
+disp('----------------------------------------------------------------------');
+soloIdx = find(indivRedundant & ~clRedundant);
+if isempty(soloIdx)
+    disp('  None.');
+else
+    [~, so] = sort(results.AvgDurationS(soloIdx), 'descend', 'MissingPlacement','last');
+    soloIdx = soloIdx(so);
+    disp(sprintf('  %d tests, %.2f min/module total.', numel(soloIdx), ...
+        sum(results.AvgDurationS(soloIdx),'omitnan')/60));
+    for x = 1:min(20, numel(soloIdx))
+        i = soloIdx(x);
+        disp(sprintf('    %-58s UB %.4f%% | %.1fs', truncStr(char(ftTestNames(i)),58), ...
+            ebUB(i)*100, results.AvgDurationS(i)));
+    end
+    if numel(soloIdx) > 20, disp(['    ... and ' num2str(numel(soloIdx)-20) ' more in _v20_redundant_tests.csv']); end
+end
+disp(' ');
+
+disp('----------------------------------------------------------------------');
+disp('  FAILURE MODES  (tests that fail together)');
+disp('----------------------------------------------------------------------');
+if isempty(modeMembers)
+    disp('  No co-failure modes found.');
+else
+    for q = 1:min(20, numel(modeMembers))
+        mem = modeMembers{q}; reps = modeReports{q}; dead = modeDead{q};
+        cats = strjoin(unique(specType(mem)), ", ");
+        disp(sprintf('  Mode %d : %d tests x %d reports (%d catastrophic) | %s', ...
+            q, numel(mem), numel(reps), numel(dead), char(truncStr(char(cats),40))));
+        if ~isempty(modeTokens{q})
+            disp(['       shared tokens: ' char(truncStr(char(strjoin(sort(modeTokens{q})," + ")),58))]);
+        end
+        rs = rangeStr(modeRanges{q});
+        if strlength(rs) > 0
+            disp(['       spans parameter: ' char(rs)]);
+        end
+        units = unique(rptDUT(reps));
+        disp(['       units: ' char(truncStr(char(strjoin(units, ", ")), 58))]);
+        nmShow = ftTestNames(mem);
+        if numel(nmShow) > 4, nmShow = [nmShow(1:4); "+"+string(numel(mem)-4)+" more"]; end
+        disp(['       members: ' char(truncStr(char(strjoin(nmShow, " ; ")), 62))]);
+    end
+    if numel(modeMembers) > 20, disp(['  ... and ' num2str(numel(modeMembers)-20) ' more in _v20_failure_modes.csv']); end
+end
+disp(' ');
+
+disp('----------------------------------------------------------------------');
+disp('  KEY TESTS  (central to failures / irreplaceable coverage)');
+disp('----------------------------------------------------------------------');
+if isempty(keyIdx)
+    disp('  None.');
+else
+    disp(sprintf('  %-52s %6s %6s %5s %s', 'Test', 'fails', 'modes', 'uniq', 'irreplaceable'));
+    for x = 1:min(KEY_TOP_N, numel(keyIdx))
+        i = keyIdx(x);
+        irr = ''; if uniqueCatch(i) > 0, irr = 'yes'; end
+        disp(sprintf('  %-52s %6d %6d %5d %s', truncStr(char(ftTestNames(i)),52), ...
+            failTotalV(i), modeCount(i), uniqueCatch(i), irr));
+    end
+    if numel(keyIdx) > KEY_TOP_N, disp(['  ... and ' num2str(numel(keyIdx)-KEY_TOP_N) ' more in _v20_key_tests.csv']); end
+end
+disp(' ');
+
+if height(fullDigT) > 0
+    disp('----------------------------------------------------------------------');
+    disp('  FULLY-REDUNDANT & NEVER-FAILED DIGIT CLUSTERS  (whole group removable)');
+    disp('----------------------------------------------------------------------');
+    for x = 1:height(fullDigT)
+        disp(sprintf('  digit %s : %d tests | %.2f min', char(fullDigT.DigitGroup(x)), ...
+            fullDigT.NumTests(x), fullDigT.TimeSavedS(x)/60));
+        disp(['       ' char(truncStr(char(fullDigT.Members(x)), 64))]);
+    end
+    disp(' ');
+end
+if height(fullRedT) > 0
+    disp('----------------------------------------------------------------------');
+    disp('  FULLY-REDUNDANT DIGIT CLUSTERS  (every test flagged redundant)');
+    disp('----------------------------------------------------------------------');
+    for x = 1:height(fullRedT)
+        disp(sprintf('  digit %s : %d tests | %.2f min', char(fullRedT.DigitGroup(x)), ...
+            fullRedT.NumTests(x), fullRedT.TimeSavedS(x)/60));
+        disp(['       ' char(truncStr(char(fullRedT.Members(x)), 64))]);
+    end
+    disp(' ');
+end
+if height(neverFailT) > 0
+    disp('----------------------------------------------------------------------');
+    disp('  NEVER-FAILED DIGIT CLUSTERS  (every test never failed)');
+    disp('----------------------------------------------------------------------');
+    for x = 1:height(neverFailT)
+        disp(sprintf('  digit %s : %d tests | %.2f min', char(neverFailT.DigitGroup(x)), ...
+            neverFailT.NumTests(x), neverFailT.TimeSavedS(x)/60));
+        disp(['       ' char(truncStr(char(neverFailT.Members(x)), 64))]);
+    end
+    disp(' ');
+end
+
+disp('----------------------------------------------------------------------');
+disp('  DIGIT CLUSTER BREAKDOWN  (fails and redundancy per digit group)');
+disp('----------------------------------------------------------------------');
+disp(sprintf('  %-8s %7s %8s %7s %9s', 'digit', 'tests', 'execs', 'fails', 'redund%'));
+presPerTest = sum(presentMat, 1)';
+dcN = zeros(numel(uDG),1); dcExec = zeros(numel(uDG),1); dcFails = zeros(numel(uDG),1); dcRedPct = zeros(numel(uDG),1);
+for g = 1:numel(uDG)
+    mem = find(dgIdx == g);
+    dcN(g) = numel(mem);
+    dcExec(g) = sum(presPerTest(mem));
+    dcFails(g) = sum(failTotalV(mem));
+    dcRedPct(g) = 100 * sum(redFlag(mem)) / numel(mem);
+end
+[~, dord] = sortrows([dcRedPct, -dcFails], 'descend');
+for g = dord'
+    disp(sprintf('  %-8s %7d %8d %7d %8.1f%%', char(uDG(g)), dcN(g), dcExec(g), dcFails(g), dcRedPct(g)));
+end
+disp(' ');
+
+disp('----------------------------------------------------------------------');
+disp('  REMOVAL RECOMMENDATION');
+disp('----------------------------------------------------------------------');
+disp(sprintf('  Remove %d tests  ->  %.2f min/module saved', sum(cutCandidate), timeSaved));
+disp(sprintf('  Residual escape upper bound (95%%, rule-of-three) : %.4f%%', poolKeepUB*100));
+disp(sprintf('  Historical failures that would slip through      : %d', histEsc));
+disp(sprintf('  Tests pinned for co-failure coverage             : %d', sum(keptForCoverage)));
+disp(sprintf('  Observed fails across removed tests              : %d', sum(failTotalV(cutCandidate))));
+disp(sprintf('  Never-failed among removed                       : %d / %d', ...
+    sum(cutCandidate & (failTotalV == 0)), sum(cutCandidate)));
+disp(' ');
+disp('  Outputs written:');
+disp(['    ' char(runName) '_v20_all_tests.csv']);
+disp(['    ' char(runName) '_v20_redundant_tests.csv']);
+disp(['    ' char(runName) '_v20_redundant_clusters.csv']);
+disp(['    ' char(runName) '_v20_failure_modes.csv']);
+disp(['    ' char(runName) '_v20_failure_mode_members.csv']);
+disp(['    ' char(runName) '_v20_key_tests.csv']);
+if height(fullDigT)   > 0, disp(['    ' char(runName) '_v20_full_redundant_never_failed_digit_groups.csv']); end
+if height(fullRedT)   > 0, disp(['    ' char(runName) '_v20_full_redundant_digit_groups.csv']); end
+if height(neverFailT) > 0, disp(['    ' char(runName) '_v20_never_failed_digit_groups.csv']); end
+disp(['    ' char(runName) '_v20_keep.csv   /   ' char(runName) '_v20_cut.csv']);
+disp(' ');
+disp('Done.');
+end
+
+
+function stagePrint(k, n, name)
+    fprintf('==> [%d/%d] %s ...\n', k, n, name);
+end
+
+function st = progInit(name, n)
+    st.name = name; st.n = max(1, n); st.i = 0; st.t0 = tic;
+    st.every = max(1, round(st.n / 20));
+end
+
+function st = progTick(st)
+    st.i = st.i + 1;
+    if mod(st.i, st.every) == 0 || st.i == st.n
+        el = toc(st.t0); eta = el / st.i * (st.n - st.i);
+        fprintf('    %s %d/%d (%.0f%%) ETA %s\n', st.name, st.i, st.n, 100*st.i/st.n, fmtDur(eta));
+    end
+end
+
+function s = fmtDur(x)
+    if ~isfinite(x) || x < 0, s = '--';
+    elseif x < 60, s = sprintf('%.0fs', x);
+    else, s = sprintf('%dm%02.0fs', floor(x/60), mod(x,60)); end
+end
+
+function g = digitGroup(nm)
+    nm = char(nm);
+    tok = regexp(nm, '\S+', 'match', 'once');
+    dg = regexp(tok, '\d', 'match');
+    if numel(dg) >= 2, g = string([dg{1} dg{2}]);
+    elseif numel(dg) == 1, g = string(dg{1});
+    else, g = "99"; end
+end
+
+function [typeStr, sm, parsed] = parseSpec(nm)
+    nm = char(nm);
+    sm = containers.Map('KeyType','char','ValueType','char');
+    parsed = false;
+    tok = regexp(nm, '^\s*(\S+)\s*-\s*(.+?)\s*\((.*)\)\s*$', 'tokens', 'once');
+    if ~isempty(tok)
+        typeStr = strtrim(string(tok{2}));
+        specToks = regexp(tok{3}, '\S+', 'match');
+        for s = 1:numel(specToks)
+            st = specToks{s};
+            h = strfind(st, '-');
+            if isempty(h), continue; end
+            k = st(1:h(end)-1); v = st(h(end)+1:end);
+            if ~isempty(k) && ~isempty(v), sm(k) = v; end
+        end
+        if sm.Count > 0, parsed = true; end
+    else
+        di = strfind(nm, ' - ');
+        if ~isempty(di), typeStr = strtrim(string(nm(di(1)+3:end)));
+        else, typeStr = strtrim(string(nm)); end
+    end
+    if typeStr == "", typeStr = "(untyped)"; end
+end
+
+function toks = tokenizeName(nm)
+    nm = char(nm);
+    raw = regexp(nm, '[A-Za-z]+\-[A-Za-z0-9.]+|[A-Za-z][A-Za-z0-9]*', 'match');
+    toks = unique(string(raw));
+end
+
+function jd = jaccardDistBinary(a, b)
+    inter = sum(a & b); uni = sum(a | b);
+    if uni == 0, jd = 1; else, jd = 1 - inter/uni; end
+end
+
+function coh = meanAbsCorr(X)
+    keepCols = std(X, 0, 1, 'omitnan') > 0;
+    X = X(:, keepCols);
+    if size(X,2) < 2, coh = 1; return; end
+    good = all(~isnan(X), 2);
+    X = X(good, :);
+    if size(X,1) < 3, coh = 1; return; end
+    C = abs(corr(X));
+    mask = triu(true(size(C)), 1);
+    v = C(mask); v = v(~isnan(v));
+    if isempty(v), coh = 1; else, coh = mean(v); end
+end
+
+function r2 = predictR2(marginMat, goodMask, i, others)
+    y = marginMat(goodMask, i);
+    X = marginMat(goodMask, others);
+    good = ~isnan(y) & all(~isnan(X), 2);
+    y = y(good); X = X(good, :);
+    if numel(y) < 10 || isempty(X), r2 = 0; return; end
+    keepCols = std(X, 0, 1) > 0;
+    X = X(:, keepCols);
+    if isempty(X) || std(y) == 0, r2 = 0; return; end
+    A = [ones(numel(y),1), X];
+    ws1 = warning('off','MATLAB:rankDeficientMatrix');
+    ws2 = warning('off','MATLAB:singularMatrix');
+    b = A \ y;
+    warning(ws2); warning(ws1);
+    yhat = A * b;
+    ssr = sum((y - yhat).^2); sst = sum((y - mean(y)).^2);
+    if sst == 0, r2 = 0; else, r2 = max(0, 1 - ssr/sst); end
+end
+
+function p = gpTailProb(m)
+    p = NaN;
+    m = m(~isnan(m));
+    if numel(m) < 40, return; end
+    u = quantile(m, 0.10);
+    exc = u - m(m < u);
+    if numel(exc) < 15, return; end
+    ws = warning('off','all');
+    try
+        params = gpfit(exc);
+        thr = u - 0;
+        if thr <= 0
+            p = numel(exc) / numel(m);
+        else
+            tail = 1 - gpcdf(thr, params(1), params(2), 0);
+            p = (numel(exc)/numel(m)) * tail;
+            if ~isfinite(p), p = NaN; end
+        end
+    catch
+        p = NaN;
+    end
+    warning(ws);
+end
+
+function dr = cusumTrendDrift(m, kSlack, hThresh, extrapFrac)
+    dr = false;
+    m = m(~isnan(m));
+    n = numel(m);
+    if n < 5, return; end
+    mu0 = mean(m); s = std(m); if s <= 0, return; end
+    z = (m - mu0) / s;
+    sLow = 0;
+    for t = 1:n
+        sLow = min(0, sLow + z(t) + kSlack);
+        if -sLow > hThresh, dr = true; return; end
+    end
+    xIdx = (1:n)';
+    pf = polyfit(xIdx, m, 1);
+    proj = polyval(pf, n + extrapFrac*(n-1));
+    if pf(1) < 0 && proj < quantile(m, 0.01), dr = true; end
+end
+
+function ub = ebClusterUB(clusterId, failGood, nGood, failMat, goodMask, minTests, conf)
+    nT = numel(clusterId);
+    ub = NaN(nT,1);
+    for c = unique(clusterId)'
+        mem = find(clusterId == c);
+        valid = mem(nGood(mem) > 0);
+        if isempty(valid), continue; end
+        totFail = sum(failGood(valid));
+        totN = sum(nGood(valid));
+        if numel(valid) >= minTests && totFail > 0
+            p = failGood(valid) ./ nGood(valid);
+            mbar = totFail / totN;
+            vv = var(p);
+            binVar = mbar*(1-mbar)/mean(nGood(valid));
+            if vv > binVar && mbar > 0 && mbar < 1
+                denom = vv;
+                a = mbar*(mbar*(1-mbar)/denom - 1);
+                b = (1-mbar)*(mbar*(1-mbar)/denom - 1);
+                if a > 0 && b > 0
+                    for j = 1:numel(mem)
+                        i = mem(j);
+                        ub(i) = betainv(conf, a + failGood(i), b + max(nGood(i)-failGood(i),0));
+                    end
+                    continue;
+                end
+            end
+        end
+        rho = 0;
+        if numel(valid) >= 2
+            sub = double(failMat(goodMask, valid));
+            keepc = std(sub,0,1) > 0;
+            sub = sub(:, keepc);
+            if size(sub,2) >= 2
+                C = corr(sub);
+                mm = triu(true(size(C)),1);
+                rv = C(mm); rv = rv(~isnan(rv));
+                if ~isempty(rv), rho = max(0, min(1, mean(rv))); end
+            end
+        end
+        effN = totN / (1 + rho*(numel(valid)-1));
+        for j = 1:numel(mem)
+            i = mem(j);
+            if failGood(i) == 0
+                ub(i) = betainv(conf, 0.5, effN + 0.5);
+            else
+                ub(i) = betainv(conf, failGood(i)+0.5, max(nGood(i)-failGood(i),0)+0.5);
+            end
+        end
+    end
+    fill = isnan(ub) & nGood > 0;
+    ub(fill) = 3 ./ nGood(fill);
+end
+
+function R = paramRangesSequential(mem, specMaps, parsedV, globalKeyVals)
+    R = struct('key',{},'lo',{},'hi',{},'nvals',{});
+    covered = containers.Map('KeyType','char','ValueType','any');
+    for j = 1:numel(mem)
+        i = mem(j);
+        if ~parsedV(i), continue; end
+        sm = specMaps{i}; kl = keys(sm);
+        for a = 1:numel(kl)
+            v = str2double(string(sm(kl{a})));
+            if isnan(v), continue; end
+            if isKey(covered, kl{a})
+                acc = covered(kl{a}); acc(end+1) = v; covered(kl{a}) = acc;
+            else
+                covered(kl{a}) = v;
+            end
+        end
+    end
+    ck = keys(covered);
+    for a = 1:numel(ck)
+        key = ck{a};
+        if ~isKey(globalKeyVals, key), continue; end
+        allv = globalKeyVals(key);
+        cv = unique(covered(key));
+        ismem = ismember(allv, cv);
+        n = numel(allv);
+        r = 1;
+        while r <= n
+            if ~ismem(r), r = r + 1; continue; end
+            s0 = r;
+            while r+1 <= n && ismem(r+1), r = r + 1; end
+            if r > s0
+                ent = struct('key', string(key), 'lo', allv(s0), 'hi', allv(r), 'nvals', r-s0+1);
+                R(end+1) = ent;
+            end
+            r = r + 1;
+        end
+    end
+end
+
+function s = rangeStr(R)
+    s = "";
+    for a = 1:numel(R)
+        seg = R(a).key + " " + num2str(R(a).lo) + ".." + num2str(R(a).hi) + " (" + num2str(R(a).nvals) + " vals)";
+        if a > 1, s = s + "; "; end
+        s = s + seg;
+    end
+end
+
+function ub = wilsonUpper(k, n)
+    if n <= 0, ub = 1; return; end
+    z = 1.645; p = k / n;
+    denom = 1 + z^2/n;
+    center = p + z^2/(2*n);
+    margin = z * sqrt(p*(1-p)/n + z^2/(4*n^2));
+    ub = (center + margin) / denom;
+end
+
+function pr = normProbBelow(z)
+    pr = 0.5 * erfc(-z / sqrt(2));
+end
+
+function s = truncStr(c, n)
+    if numel(c) > n, s = [c(1:max(1,n-1)) '~']; else, s = c; end
+end
+
+% ======================================================================
+%  Report synthesis for report-less (legacy) inputs
+% ======================================================================
+% Clusters measurement rows into pseudo-reports so the report x test
+% analysis can run without a report file. A new report starts when:
+%   - the DUT name changes, OR
+%   - a measurement name repeats within the current report (a new pass
+%     through the test list = a new unit), OR
+%   - (time modes) the gap to the previous row exceeds an auto threshold.
+% Modes: "auto" (dut + name-cycle, plus time gaps if timestamps parse),
+%        "cycle" (dut + name-cycle only), "time" (dut + time gaps, cycle
+%        fallback if timestamps unusable), "single" (one report; original
+%        LEGACY_001 behavior).
+function ids = synthReportIds(names, duts, tstr, mode, gapFactor, minGapS)
+    n = numel(names);
+    ids = strings(n,1);
+    if n == 0, return; end
+    mode = lower(string(mode));
+
+    if mode == "single"
+        ids(:) = "LEGACY_001";
+        return;
+    end
+
+    % parse timestamps if available / requested
+    useTime = false;
+    t = NaT(n,1);
+    if (mode == "auto" || mode == "time") && numel(tstr) == n
+        try
+            t = parseTimes(tstr);
+        catch
+            t = NaT(n,1);
+        end
+        if sum(~isnat(t)) >= 0.5*n, useTime = true; end
+    end
+    if mode == "time" && ~useTime
+        mode = "cycle";   % timestamps unusable -> fall back
+    end
+
+    gapThresh = Inf;
+    if useTime
+        dt = seconds(diff(t));
+        dt = dt(~isnan(dt) & dt >= 0);
+        if ~isempty(dt)
+            medGap = median(dt);
+            gapThresh = max(minGapS, gapFactor * max(medGap, 1));
+        end
+    end
+
+    rep  = 1;
+    seen = containers.Map('KeyType','char','ValueType','logical');
+    for i = 1:n
+        newRep = false;
+        if i > 1
+            if strtrim(duts(i)) ~= "" && strtrim(duts(i-1)) ~= "" && duts(i) ~= duts(i-1)
+                newRep = true;
+            end
+            if mode ~= "time" && isKey(seen, char(names(i)))
+                newRep = true;
+            end
+            if useTime && ~isnat(t(i)) && ~isnat(t(i-1))
+                if seconds(t(i) - t(i-1)) > gapThresh, newRep = true; end
+            end
+        end
+        if newRep
+            rep = rep + 1;
+            seen = containers.Map('KeyType','char','ValueType','logical');
+        end
+        ids(i) = "R" + sprintf('%06d', rep);
+        seen(char(names(i))) = true;
+    end
+end
+
+function t = parseTimes(tstr)
+    tstr = strtrim(string(tstr));
+    t = NaT(numel(tstr),1);
+    fmts = ["yyyy-MM-dd HH:mm:ss","yyyy-MM-dd'T'HH:mm:ss", ...
+            "M/d/yyyy h:mm:ss a","M/d/yyyy H:mm:ss","M/d/yyyy h:mm a", ...
+            "MM/dd/yyyy HH:mm:ss","dd-MMM-yyyy HH:mm:ss"];
+    for f = fmts
+        idx = isnat(t) & tstr ~= "" & ~ismissing(tstr);
+        if ~any(idx), break; end
+        try
+            t(idx) = datetime(tstr(idx), 'InputFormat', f);
+        catch
+        end
+    end
+    idx = isnat(t) & tstr ~= "" & ~ismissing(tstr);
+    if any(idx)
+        try
+            t(idx) = datetime(tstr(idx));
+        catch
+        end
+    end
+end
