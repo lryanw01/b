@@ -207,7 +207,8 @@ class ManagedBrowser:
                 say("  Chrome did not open the debug port in 20 s; giving up")
                 self.close()
                 return False
-            say("  Chrome is up")
+            say("  Chrome is up -- you will see pages load in that window as it")
+            say("  works; PDFs are fetched by navigating to them.")
 
         from playwright.sync_api import sync_playwright
         self._pw = sync_playwright().start()
@@ -260,11 +261,68 @@ class ManagedBrowser:
         return self.page.content()
 
     def get_bytes(self, url, timeout=45):
-        """Raw bytes through the browser's own request stack (shares cookies)."""
-        resp = self.ctx.request.get(url, timeout=int(timeout * 1000))
-        if not resp.ok:
-            raise RuntimeError(f"HTTP {resp.status}")
-        return resp.body()
+        """PDF bytes, preferring a REAL page navigation.
+
+        Three layers, in order, because each fails in a different way:
+
+        1. page.goto() -- goes through CHROME'S network stack, so it uses the
+           Windows certificate store. This is what makes it work behind a
+           TLS-inspecting corporate proxy: Playwright's own request stack runs on
+           Node's TLS and rejects the inspection CA with "self-signed certificate
+           in certificate chain", even though Chrome trusts it perfectly well.
+           It is also the only layer you can SEE happening in the window.
+        2. ctx.request.get() -- shares the browser's cookies; fine on a normal
+           network, and the fallback when a PDF triggers a download instead of a
+           navigation (Chrome aborts the goto in that case).
+        3. a request context created with ignore_https_errors -- last resort for
+           the inspected-TLS case if (1) could not navigate. Scoped to this one
+           fetch, not applied globally.
+
+        Returns (bytes, how).
+        """
+        errs = []
+        # 1. visible navigation
+        try:
+            resp = self.page.goto(url, wait_until="commit",
+                                  timeout=int(timeout * 1000))
+            if resp is not None:
+                body = resp.body()
+                if body[:5] == b"%PDF-":
+                    return body, "page.goto"
+                errs.append(f"goto returned {resp.status}, not a PDF")
+            else:
+                errs.append("goto returned no response")
+        except Exception as e:
+            errs.append(f"goto: {str(e).splitlines()[0][:70]}")
+        # 2. the browser's request stack
+        try:
+            r = self.ctx.request.get(url, timeout=int(timeout * 1000))
+            if r.ok:
+                body = r.body()
+                if body[:5] == b"%PDF-":
+                    return body, "ctx.request"
+                errs.append(f"ctx.request gave {r.status}, not a PDF")
+            else:
+                errs.append(f"ctx.request HTTP {r.status}")
+        except Exception as e:
+            errs.append(f"ctx.request: {str(e).splitlines()[0][:70]}")
+        # 3. tolerate the corporate inspection CA, for this fetch only
+        try:
+            rc = self._pw.request.new_context(ignore_https_errors=True)
+            try:
+                r = rc.get(url, timeout=int(timeout * 1000))
+                if r.ok:
+                    body = r.body()
+                    if body[:5] == b"%PDF-":
+                        return body, "ignore-https request context"
+                    errs.append(f"lenient gave {r.status}, not a PDF")
+                else:
+                    errs.append(f"lenient HTTP {r.status}")
+            finally:
+                rc.dispose()
+        except Exception as e:
+            errs.append(f"lenient: {str(e).splitlines()[0][:70]}")
+        raise RuntimeError(" | ".join(errs))
 
 
 # ============================================================ HTML -> text
@@ -353,16 +411,27 @@ def marki_parts(html, base):
     return out
 
 
-def fetch_html(url, browser, rate, min_chars=400):
-    """Direct HTTP first; fall back to the browser if that fails or returns
-    suspiciously little. Direct is faster and lighter, so it is tried first --
-    but the browser rescues a blocked or JS-built page."""
+_SPEC_MARKER = re.compile(r"electrical specification|recommended operating|"
+                          r"guaranteed from", re.I)
+
+
+def fetch_html(url, browser, rate, min_chars=400, want_specs=False):
+    """Direct HTTP first, browser second.
+
+    `want_specs` matters: the first run pulled 1397 chars from a Marki datasheet
+    page and I called it a win, but it had no Electrical Specifications table --
+    those are built by JS, so plain HTTP silently returns the prose only. When
+    specs are expected and missing, that is a reason to re-fetch through the
+    browser even though the text looked long enough."""
     try:
         blob, ctype, code = http_get(url)
         text = html_to_text(blob.decode("utf-8", "replace"))
-        if len(text) >= min_chars:
+        enough = len(text) >= min_chars
+        specs_ok = (not want_specs) or bool(_SPEC_MARKER.search(text))
+        if enough and specs_ok:
             return text, "direct"
-        note = f"only {len(text)} chars"
+        note = (f"{len(text)} chars, no spec table" if enough
+                else f"only {len(text)} chars")
     except urllib.error.HTTPError as e:
         note = f"HTTP {e.code}"
     except Exception as e:
@@ -371,7 +440,8 @@ def fetch_html(url, browser, rate, min_chars=400):
         return "", f"direct failed ({note}); no browser available"
     try:
         html = browser.get_html(url)
-        return html_to_text(html), f"browser (direct: {note})"
+        text = html_to_text(html)
+        return text, f"browser (direct: {note})"
     except Exception as e:
         return "", f"direct failed ({note}); browser also failed ({type(e).__name__})"
 
@@ -409,7 +479,8 @@ def stage_marki(n_parts, rate, browser=None):
         ds = url.rstrip("/") + "/datasheet/"
         time.sleep(rate)
         st, val, secs = guarded(
-            "marki-ds", lambda u=ds: fetch_html(u, browser, rate), 90)
+            "marki-ds",
+            lambda u=ds: fetch_html(u, browser, rate, want_specs=True), 90)
         if st != "ok" or not val or not val[0]:
             say(f"    [fail   ] {pn:<18} "
                 f"{val[1] if isinstance(val, tuple) else val}")
@@ -522,9 +593,10 @@ def stage_adi_browser(xlsx, limit, browser, rate):
             got = False
             for u in urls:
                 try:
-                    body = browser.get_bytes(u)
+                    body, how = browser.get_bytes(u)
                 except Exception as e:
-                    say(f"    {pn:<14} {u.rsplit('/', 1)[-1]:<20} {e}")
+                    say(f"    {pn:<14} {u.rsplit('/', 1)[-1]:<20} "
+                        f"{str(e)[:150]}")
                     continue
                 if body[:5] != b"%PDF-":
                     continue
@@ -540,7 +612,7 @@ def stage_adi_browser(xlsx, limit, browser, rate):
                     text = f"__EXTRACT_FAILED__ {type(e).__name__}"
                 cues = found_cues(text) if not text.startswith("__") else []
                 say(f"    {pn:<14} {len(body) // 1024:>4} kB  %PDF  "
-                    f"{len(text.split()):>5} words  "
+                    f"{len(text.split()):>5} words  via {how}  "
                     f"cues: {', '.join(cues) or 'NONE'}")
                 ok += 1
                 got = True
