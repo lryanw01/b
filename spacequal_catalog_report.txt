@@ -1,0 +1,160 @@
+spacequal catalog + datasheet parsing debug
+generated 2026-07-29 13:18:00
+python 3.12.8 on win32
+pdfplumber 0.11.10
+
+============================================================================
+CATALOG PAGES: fetch -> render check -> parse
+============================================================================
+
+  Qorvo  [qorvo]
+    researched: server-rendered tables, PN + datasheet id per row
+    [ok     ]   3.6s  HTTP 200  897 kB  514 links, 5707 words
+               https://www.qorvo.com/products/product-list?categoryID=ca0118
+               parsed 106 part(s), 66 with a datasheet link
+                 QM42500                  (none)
+                 QM42639                  (none)
+                 QM42655                  (none)
+                 QPF4200                  https://www.qorvo.com/products/d/da006470
+                 QPF4202                  (none)
+                 QPF4206                  (none)
+                 QPF4206B                 (none)
+                 QPF4207                  https://www.qorvo.com/products/d/da009265
+    [ok     ]   0.6s  HTTP 200  125 kB  309 links, 1158 words
+               https://www.qorvo.com/products/active-antenna-systems/beamformers
+               parsed 0 part(s), 0 with a datasheet link
+    [ok     ]   1.1s  HTTP 200  117 kB  305 links, 1082 words
+               https://www.qorvo.com/products/active-antenna-systems/front-end-modules
+               parsed 0 part(s), 0 with a datasheet link
+    [ok     ]   0.4s  HTTP 200  109 kB  305 links, 1088 words
+               https://www.qorvo.com/products/active-antenna-systems/if-transceivers
+               parsed 0 part(s), 0 with a datasheet link
+    [ok     ]   1.0s  HTTP 200  134 kB  313 links, 1154 words
+               https://www.qorvo.com/products/amplifiers/distributed-amplifiers
+               parsed 0 part(s), 0 with a datasheet link
+
+  Marki Microwave  [marki]
+    researched: category pages list products; per-product datasheet page
+    [ok     ]   1.2s  HTTP 200  308 kB  239 links, 2258 words
+               https://markimicrowave.com/products/connectorized/mixers/
+               parsed 104 part(s), 104 with a datasheet link
+                 MM                       https://markimicrowave.com/assets/62075379-cfbe-40fa-afb9-c1584fe91edc
+                 DOUBLE-BALANCED-MIXERS   https://markimicrowave.com/products/connectorized/mixers/double-balanc
+                 T3-HIGH-LINEARITY        https://markimicrowave.com/products/connectorized/mixers/t3-high-linea
+                 TRIPLE-BALANCED          https://markimicrowave.com/products/connectorized/mixers/triple-balanc
+                 INTEGRATED-DRIVE-MIXERS  https://markimicrowave.com/products/connectorized/mixers/integrated-dr
+                 HARMONIC                 https://markimicrowave.com/products/connectorized/mixers/harmonic/data
+                 LEGACY-MIXERS            https://markimicrowave.com/products/connectorized/mixers/legacy-mixers
+                 MM1-0320LBH              https://markimicrowave.com/products/connectorized/mixers/mm1-0320lbh/d
+    [ok     ]   0.8s  HTTP 200  300 kB  439 links, 1836 words
+               https://markimicrowave.com/products/surface-mount/mixers/
+               parsed 82 part(s), 82 with a datasheet link
+                 MM                       https://markimicrowave.com/assets/62075379-cfbe-40fa-afb9-c1584fe91edc
+                 DOUBLE-BALANCED-MIXERS   https://markimicrowave.com/products/surface-mount/mixers/double-balanc
+                 INTEGRATED-DRIVE-MIXERS  https://markimicrowave.com/products/surface-mount/mixers/integrated-dr
+                 DIFFERENTIAL-IF-MIXERS   https://markimicrowave.com/products/surface-mount/mixers/differential-
+                 T3-HIGH-LINEARITY        https://markimicrowave.com/products/surface-mount/mixers/t3-high-linea
+                 TRIPLE-BALANCED          https://markimicrowave.com/products/surface-mount/mixers/triple-balanc
+                 MM1-1850HPSM-2           https://markimicrowave.com/products/surface-mount/mixers/mm1-1850hpsm-
+                 ADM-8007PSM              https://markimicrowave.com/products/surface-mount/amplifiers/adm-8007p
+    [ok     ]   0.8s  HTTP 200  178 kB  160 links, 1250 words
+               https://markimicrowave.com/products/connectorized/amplifiers/
+               parsed 39 part(s), 39 with a datasheet link
+                 MM                       https://markimicrowave.com/assets/62075379-cfbe-40fa-afb9-c1584fe91edc
+                 DISTRIBUTED              https://markimicrowave.com/products/connectorized/amplifiers/distribut
+                 GAIN-BLOCK               https://markimicrowave.com/products/connectorized/amplifiers/gain-bloc
+                 DRIVER                   https://markimicrowave.com/products/connectorized/amplifiers/driver/da
+                 LOW-NOISE                https://markimicrowave.com/products/connectorized/amplifiers/low-noise
+                 LOW-PHASE-NOISE          https://markimicrowave.com/products/connectorized/amplifiers/low-phase
+                 MILLIMETERWAVE           https://markimicrowave.com/products/connectorized/amplifiers/millimete
+                 AMM2-0020UH              https://markimicrowave.com/products/connectorized/amplifiers/amm2-0020
+
+  Analog Devices  [adi]
+    datasheet pattern known; LISTING page unproven -- probing candidates
+    [error  ]   0.5s  https://www.analog.com/en/product-category/rf-microwave.html
+               -> HTTPError: HTTP Error 403: Forbidden
+    [ok     ]   0.8s  HTTP 200  23 kB  45 links, 76 words
+               https://www.analog.com/en/products.html
+               parsed 0 part(s), 0 with a datasheet link
+
+  MACOM  [macom]
+    datasheet pattern known; LISTING page unproven -- probing candidates
+    [ok     ]   0.7s  HTTP 200  58 kB  222 links, 706 words
+               https://www.macom.com/products
+               parsed 5 part(s), 1 with a datasheet link
+                 Protections              https://www.macom.com/files/live/sites/macom/files/Quality%20Supply/Su
+                 RF-MICROWAVE-MMWAVE      (none)
+                 OPTICAL                  (none)
+                 NETWORKING               (none)
+                 NEW-PRODUCTS             (none)
+    [error  ]   0.2s  https://www.macom.com/products/rf-microwave
+               -> HTTPError: HTTP Error 404: Not Found
+
+  Skyworks  [skyworks]
+    datasheet pattern known; LISTING page unproven -- probing candidates
+    [ok     ]   0.8s  HTTP 200  199 kB  1198 links, 2699 words
+               https://www.skyworksinc.com/en/Products
+               parsed 54 part(s), 0 with a datasheet link
+                 TIMING-IEEE-1588-AND-SYNCHRONOUS-ETHERNET (none)
+                 FRONT-END-MODULES-CELLULAR-5G (none)
+                 TIMING-JITTER-ATTENUATORS (none)
+                 ISOLATION-ISOLATED-GATE-DRIVERS (none)
+                 ISOLATION-DIGITAL-ISOLATORS (none)
+                 TIMING-SERDES            (none)
+                 AMPLIFIERS               (none)
+                 AMPLIFIERS-WIFI          (none)
+    [ok     ]   0.7s  HTTP 200  218 kB  1216 links, 2949 words
+               https://www.skyworksinc.com/en/Products/Amplifiers
+               parsed 54 part(s), 0 with a datasheet link
+                 TIMING-IEEE-1588-AND-SYNCHRONOUS-ETHERNET (none)
+                 FRONT-END-MODULES-CELLULAR-5G (none)
+                 TIMING-JITTER-ATTENUATORS (none)
+                 ISOLATION-ISOLATED-GATE-DRIVERS (none)
+                 ISOLATION-DIGITAL-ISOLATORS (none)
+                 TIMING-SERDES            (none)
+                 AMPLIFIERS               (none)
+                 AMPLIFIERS-WIFI          (none)
+
+============================================================================
+DATASHEET PDFs: fetch -> %PDF magic -> text extraction
+============================================================================
+
+  qorvo: trying 2 of 66 datasheet URL(s)
+    [ok     ]   0.3s  QPF4200              HTTP 200  100 kB  type=text/html  magic=b'\r\n\r\n\r\n\r\n'
+               NOT a PDF -- the link is probably an HTML landing page; a real parser must follow it
+    [ok     ]   0.5s  QPF4207              HTTP 200  174 kB  type=application/octet-stream  magic=%PDF
+               extracted 5367 chars / 848 words
+               "Classification | PRIVATE QPF4207 Wi-Fi 7 Front End Module Data Sheet Brief Rev A, May 2024 1 of 2 www.qorvo.com Subject to change without notice | All"
+               construction cues present: NONE
+
+  marki: trying 2 of 225 datasheet URL(s)
+    [ok     ]   0.8s  MM                   HTTP 200  2929 kB  type=application/pdf  magic=%PDF
+               text extraction FAILED: __EXTRACT_FAILED__ PdfminerException
+    [error  ]   0.3s  DOUBLE-BALANCED-MIXERS  -> HTTPError: HTTP Error 404: Not Found
+
+  macom: trying 1 of 1 datasheet URL(s)
+    [ok     ]   0.5s  Protections          HTTP 200  146 kB  type=application/pdf  magic=%PDF
+               extracted 6214 chars / 900 words
+               "MACOM Technology Solutions Holdings, Inc. 100 Chelmsford Street Lowell, MA, 01851 United States of America December 2025 Strengthening Protections Aga"
+               construction cues present: NONE
+
+  skyworks: no datasheet URLs parsed, nothing to fetch
+
+============================================================================
+CONTROL: Mini-Circuits (local JSON catalog -> PDF)
+============================================================================
+  loaded 15939 parts from minicircuits_products_full.json
+    [ok     ]   0.6s  10F-10F+           261 kB  %PDF  278 words extracted
+    [ok     ]   0.3s  10F-10M+           295 kB  %PDF  287 words extracted
+
+============================================================================
+WHAT TO CONCLUDE
+============================================================================
+  For each vendor, three things had to work:
+    fetch     the listing page came back at all
+    parse     part numbers AND datasheet links came out of it
+    pdf       one of those links returned a real %PDF with readable text
+  A vendor is only worth wiring in when all three pass. If a page came
+  back but parsed 0 parts and says 'looks JS-rendered', its catalog is
+  built in the browser and the answer is to save pages from your own
+  Chrome and re-run with --local.
