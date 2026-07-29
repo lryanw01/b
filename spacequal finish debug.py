@@ -253,35 +253,119 @@ class ManagedBrowser:
         return False       # never swallow the exception (incl. KeyboardInterrupt)
 
     # -- fetching ----------------------------------------------------------
-    def get_html(self, url, timeout=45):
-        """Rendered DOM. Uses a real navigation, so JS-built content is included."""
+    # -- fetching ----------------------------------------------------------
+    def _ensure_origin(self, url, timeout=45):
+        """Park the page on the target's own origin so in-page fetch() is
+        same-origin (no CORS) and carries that site's cookies."""
+        pr = urllib.parse.urlparse(url)
+        origin = f"{pr.scheme}://{pr.netloc}/"
+        try:
+            here = urllib.parse.urlparse(self.page.url)
+            if f"{here.scheme}://{here.netloc}" == f"{pr.scheme}://{pr.netloc}":
+                return
+        except Exception:
+            pass
+        self.page.goto(origin, wait_until="domcontentloaded",
+                       timeout=int(timeout * 1000))
+
+    def looks_challenged(self):
+        try:
+            txt = (self.page.title() or "") + " " + (self.page.url or "")
+            body = self.page.content()[:4000].lower()
+        except Exception:
+            return False
+        markers = ("just a moment", "checking your browser", "attention required",
+                   "cf-browser-verification", "enable javascript and cookies",
+                   "verify you are human")
+        low = txt.lower()
+        return any(m in low or m in body for m in markers)
+
+    def wait_for_human(self, what):
+        """A challenge appeared. We do NOT try to solve it -- exactly the rule
+        erf_save_pages.py follows. Hand control back and wait."""
+        say(f"\n  *** A human check appeared for {what}.")
+        say(f"  *** Clear it in the Chrome window we opened, then press Enter here.")
+        try:
+            input("  *** > ")
+        except EOFError:
+            say("  *** (no console available; continuing)")
+
+    def get_html(self, url, timeout=60, wait_text=None, allow_pause=True):
+        """Rendered DOM, waiting for content that arrives after DOMContentLoaded.
+
+        Waiting only for domcontentloaded returned Marki's prose without its
+        Electrical Specifications table, because that table is built later. So we
+        settle the network and, when asked, wait for the table itself."""
         self.page.goto(url, wait_until="domcontentloaded",
                        timeout=int(timeout * 1000))
-        time.sleep(min(1.5, self.rate))
+        if allow_pause and self.looks_challenged():
+            self.wait_for_human(urllib.parse.urlparse(url).netloc)
+            self.page.goto(url, wait_until="domcontentloaded",
+                           timeout=int(timeout * 1000))
+        try:
+            self.page.wait_for_load_state("networkidle", timeout=15000)
+        except Exception:
+            pass
+        if wait_text:
+            try:
+                self.page.wait_for_function(
+                    "t => document.body && document.body.innerText"
+                    ".toLowerCase().includes(t)",
+                    arg=wait_text.lower(), timeout=15000)
+            except Exception:
+                pass                       # report what we have; caller decides
         return self.page.content()
 
-    def get_bytes(self, url, timeout=45):
-        """PDF bytes, preferring a REAL page navigation.
+    # Download inside the page: Chrome's own stack, so Chrome's certificate
+    # store (the corporate inspection CA), Chrome's cookies, Chrome's UA.
+    _FETCH_JS = """
+    async (url) => {
+      const r = await fetch(url, {credentials: 'include'});
+      if (!r.ok) return {err: 'HTTP ' + r.status};
+      const buf = await r.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let bin = '';
+      const CH = 0x8000;
+      for (let i = 0; i < bytes.length; i += CH) {
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+      }
+      return {b64: btoa(bin), len: bytes.length};
+    }
+    """
 
-        Three layers, in order, because each fails in a different way:
+    def get_bytes(self, url, timeout=60):
+        """PDF bytes. Returns (bytes, how). Layers, in order:
 
-        1. page.goto() -- goes through CHROME'S network stack, so it uses the
-           Windows certificate store. This is what makes it work behind a
-           TLS-inspecting corporate proxy: Playwright's own request stack runs on
-           Node's TLS and rejects the inspection CA with "self-signed certificate
-           in certificate chain", even though Chrome trusts it perfectly well.
-           It is also the only layer you can SEE happening in the window.
-        2. ctx.request.get() -- shares the browser's cookies; fine on a normal
-           network, and the fallback when a PDF triggers a download instead of a
-           navigation (Chrome aborts the goto in that case).
-        3. a request context created with ignore_https_errors -- last resort for
-           the inspected-TLS case if (1) could not navigate. Scoped to this one
-           fetch, not applied globally.
-
-        Returns (bytes, how).
+        1. IN-PAGE fetch() after parking on the site's origin. This is the one
+           that actually works here: Chrome navigating to a PDF hands it to the
+           built-in viewer and does NOT retain the body, so response.body() fails
+           with "No resource with given identifier found" even though the document
+           is plainly visible on screen. Asking the page's own JavaScript to
+           download it sidesteps that, and rides Chrome's TLS + cookies.
+        2. page.goto() + response.body() -- works when the URL is not handled by
+           the viewer.
+        3. ctx.request.get() -- browser cookies, but Node's TLS stack, which
+           rejects a corporate inspection CA.
+        4. a lenient request context, scoped to this one fetch.
         """
+        import base64
         errs = []
-        # 1. visible navigation
+        # 1
+        try:
+            self._ensure_origin(url, timeout)
+            if self.looks_challenged():
+                self.wait_for_human(urllib.parse.urlparse(url).netloc)
+            out = self.page.evaluate(self._FETCH_JS, url)
+            if isinstance(out, dict) and out.get("b64"):
+                body = base64.b64decode(out["b64"])
+                if body[:5] == b"%PDF-":
+                    return body, "in-page fetch"
+                errs.append(f"in-page got {len(body)} B, not a PDF")
+            else:
+                errs.append(f"in-page: {(out or {}).get('err', 'no data')}")
+        except Exception as e:
+            errs.append(f"in-page: {str(e).splitlines()[0][:80]}")
+        # 2
         try:
             resp = self.page.goto(url, wait_until="commit",
                                   timeout=int(timeout * 1000))
@@ -289,39 +373,29 @@ class ManagedBrowser:
                 body = resp.body()
                 if body[:5] == b"%PDF-":
                     return body, "page.goto"
-                errs.append(f"goto returned {resp.status}, not a PDF")
-            else:
-                errs.append("goto returned no response")
+                errs.append(f"goto {resp.status}, not a PDF")
         except Exception as e:
-            errs.append(f"goto: {str(e).splitlines()[0][:70]}")
-        # 2. the browser's request stack
+            errs.append(f"goto: {str(e).splitlines()[0][:80]}")
+        # 3
         try:
             r = self.ctx.request.get(url, timeout=int(timeout * 1000))
-            if r.ok:
-                body = r.body()
-                if body[:5] == b"%PDF-":
-                    return body, "ctx.request"
-                errs.append(f"ctx.request gave {r.status}, not a PDF")
-            else:
-                errs.append(f"ctx.request HTTP {r.status}")
+            if r.ok and r.body()[:5] == b"%PDF-":
+                return r.body(), "ctx.request"
+            errs.append(f"ctx.request HTTP {r.status}")
         except Exception as e:
-            errs.append(f"ctx.request: {str(e).splitlines()[0][:70]}")
-        # 3. tolerate the corporate inspection CA, for this fetch only
+            errs.append(f"ctx.request: {str(e).splitlines()[0][:80]}")
+        # 4
         try:
             rc = self._pw.request.new_context(ignore_https_errors=True)
             try:
                 r = rc.get(url, timeout=int(timeout * 1000))
-                if r.ok:
-                    body = r.body()
-                    if body[:5] == b"%PDF-":
-                        return body, "ignore-https request context"
-                    errs.append(f"lenient gave {r.status}, not a PDF")
-                else:
-                    errs.append(f"lenient HTTP {r.status}")
+                if r.ok and r.body()[:5] == b"%PDF-":
+                    return r.body(), "lenient request context"
+                errs.append(f"lenient HTTP {r.status}")
             finally:
                 rc.dispose()
         except Exception as e:
-            errs.append(f"lenient: {str(e).splitlines()[0][:70]}")
+            errs.append(f"lenient: {str(e).splitlines()[0][:80]}")
         raise RuntimeError(" | ".join(errs))
 
 
@@ -439,9 +513,13 @@ def fetch_html(url, browser, rate, min_chars=400, want_specs=False):
     if not (browser and getattr(browser, "ok", False)):
         return "", f"direct failed ({note}); no browser available"
     try:
-        html = browser.get_html(url)
+        html = browser.get_html(
+            url, wait_text="electrical specification" if want_specs else None)
         text = html_to_text(html)
-        return text, f"browser (direct: {note})"
+        got = bool(_SPEC_MARKER.search(text))
+        tag = "browser" + ("" if not want_specs else
+                           (" +specs" if got else " but STILL no spec table"))
+        return text, f"{tag} (direct: {note})"
     except Exception as e:
         return "", f"direct failed ({note}); browser also failed ({type(e).__name__})"
 
