@@ -1,0 +1,129 @@
+spacequal FINISH debug -- only the two unproven vendors
+generated 2026-07-29 14:04:37
+already proven, not retested: Mini-Circuits, Qorvo, MACOM, Skyworks
+
+============================================================================
+BROWSER
+============================================================================
+  launching chrome.exe on port 9222
+    profile: C:\Users\lane.white\sq-chrome   (separate from your normal one,
+    so it cannot hand off to an already-running Chrome)
+  Chrome is up
+
+============================================================================
+MARKI: datasheet text straight from the product page HTML (no PDF)
+============================================================================
+  [ok]  1.1s  mixers           97 product page(s)   via direct
+  [ok]  1.2s  mixers           76 product page(s)   via direct
+  [ok]  1.1s  amplifiers       32 product page(s)   via direct
+
+  204 distinct part(s) across those categories
+
+  pulling the datasheet HTML for 4 part(s):
+    [ok     ]  1.4s  MM1-0320LBH          1397 chars /   222 words   specs=n temp=n   via direct
+               cues: GaAs, space
+               "Device Overview Download PDF General Description The MM1-0320L is a passive double balanced MMIC mixer. It delivers excellent 7 dB conversion loss, su"
+    [ok     ]  1.2s  MM1-1886HM            999 chars /   159 words   specs=n temp=n   via direct
+               cues: GaAs
+               "Device Overview Download PDF General Description The MM1-1886HM is a passive double balanced MMIC mixer. It features excellent 8.5 dB conversion loss,"
+    [ok     ]  1.3s  MM2-0530LBH           990 chars /   151 words   specs=n temp=n   via direct
+               cues: GaAs, space
+               "Device Overview Download PDF General Description The MM2-0530LBH is a passive MMIC triple balanced mixer. It features a broadband IF port that spans f"
+    [ok     ]  1.0s  MM1-1886LM            891 chars /   145 words   specs=n temp=n   via direct
+               cues: GaAs
+               "Device Overview Download PDF General Description The MM1-1886LM is a passive double balanced MMIC mixer. It features excellent 8.5 dB conversion loss,"
+
+  4/4 datasheet page(s) yielded text
+
+  https://markimicrowave.com/space/ -> 2627 chars via direct; cues: hermetic, ceramic, bare die, MIL-, screened, plastic, space, hi-rel
+
+============================================================================
+ADI: confirming the block is a block (not a wrong URL)
+============================================================================
+  186 part number(s) in the sheet; trying 2
+    AD1671S        ad1671s.pdf            -> HTTP 403
+    AD1671S        ad1671.pdf             -> HTTP 403
+    AD1672S        ad1672s.pdf            -> HTTP 403
+    AD1672S        ad1672.pdf             -> HTTP 403
+
+  outcomes: {'HTTP 403': 4}
+  403 confirms a deliberate block on scripted access.
+  The browser stage below fetches the same URLs properly.
+
+============================================================================
+ADI: fetching the known URLs through YOUR Chrome session
+============================================================================
+  Your session, your cookies, your user agent. Nothing is disguised and
+  no challenge is solved -- we just stop pretending a script is welcome
+  where the site has said it is not.
+
+  186 part number(s) in the sheet; trying 4
+    AD1671S        ad1671s.pdf          APIRequestContext.get: self-signed certificate in certificate chain
+Call log:
+  - → GET https://www.analog.com/media/en/technical-documentation/data-sheets/ad1671s.pdf
+    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36
+    - accept: */*
+    - accept-encoding: gzip,deflate,br
+
+    AD1671S        ad1671.pdf           APIRequestContext.get: self-signed certificate in certificate chain
+Call log:
+  - → GET https://www.analog.com/media/en/technical-documentation/data-sheets/ad1671.pdf
+    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36
+    - accept: */*
+    - accept-encoding: gzip,deflate,br
+
+    AD1671S        no PDF from any candidate
+    AD1672S        ad1672s.pdf          APIRequestContext.get: self-signed certificate in certificate chain
+Call log:
+  - → GET https://www.analog.com/media/en/technical-documentation/data-sheets/ad1672s.pdf
+    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36
+    - accept: */*
+    - accept-encoding: gzip,deflate,br
+
+    AD1672S        ad1672.pdf           APIRequestContext.get: self-signed certificate in certificate chain
+Call log:
+  - → GET https://www.analog.com/media/en/technical-documentation/data-sheets/ad1672.pdf
+    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36
+    - accept: */*
+    - accept-encoding: gzip,deflate,br
+
+    AD1672S        no PDF from any candidate
+    AD524S         ad524s.pdf           APIRequestContext.get: self-signed certificate in certificate chain
+Call log:
+  - → GET https://www.analog.com/media/en/technical-documentation/data-sheets/ad524s.pdf
+    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36
+    - accept: */*
+    - accept-encoding: gzip,deflate,br
+
+    AD524S         ad524.pdf            APIRequestContext.get: self-signed certificate in certificate chain
+Call log:
+  - → GET https://www.analog.com/media/en/technical-documentation/data-sheets/ad524.pdf
+    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36
+    - accept: */*
+    - accept-encoding: gzip,deflate,br
+
+    AD524S         no PDF from any candidate
+    AD534S         ad534s.pdf           APIRequestContext.get: self-signed certificate in certificate chain
+Call log:
+  - → GET https://www.analog.com/media/en/technical-documentation/data-sheets/ad534s.pdf
+    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36
+    - accept: */*
+    - accept-encoding: gzip,deflate,br
+
+    AD534S         ad534.pdf            APIRequestContext.get: self-signed certificate in certificate chain
+Call log:
+  - → GET https://www.analog.com/media/en/technical-documentation/data-sheets/ad534.pdf
+    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36
+    - accept: */*
+    - accept-encoding: gzip,deflate,br
+
+    AD534S         no PDF from any candidate
+
+  0/4 ADI datasheet(s) retrieved through Chrome
+  closing the Chrome window we opened
+
+============================================================================
+SCORECARD (this run only)
+============================================================================
+  Marki   PROVEN via HTML   (4 datasheet page(s) yielded text)
+  ADI     not proven   (0 PDF(s) retrieved through Chrome)
