@@ -1,0 +1,60 @@
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 1968, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 1438, in _wheel
+    canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 2014, in yview_scroll
+    self.tk.call(self._w, 'yview', 'scroll', number, what)
+_tkinter.TclError: invalid command name ".!rebuilddialog.!frame.!canvas"
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 1968, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 1438, in _wheel
+    canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 2014, in yview_scroll
+    self.tk.call(self._w, 'yview', 'scroll', number, what)
+_tkinter.TclError: invalid command name ".!rebuilddialog.!frame.!canvas"
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 1968, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 1438, in _wheel
+    canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 2014, in yview_scroll
+    self.tk.call(self._w, 'yview', 'scroll', number, what)
+_tkinter.TclError: invalid command name ".!rebuilddialog.!frame.!canvas"
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 1968, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 1438, in _wheel
+    canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 2014, in yview_scroll
+    self.tk.call(self._w, 'yview', 'scroll', number, what)
+_tkinter.TclError: invalid command name ".!rebuilddialog.!frame.!canvas"
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 1968, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 1438, in _wheel
+    canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 2014, in yview_scroll
+    self.tk.call(self._w, 'yview', 'scroll', number, what)
+_tkinter.TclError: invalid command name ".!rebuilddialog.!frame.!canvas"
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 1968, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 1438, in _wheel
+    canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 2014, in yview_scroll
+    self.tk.call(self._w, 'yview', 'scroll', number, what)
+_tkinter.TclError: invalid command name ".!rebuilddialog.!frame.!canvas"
