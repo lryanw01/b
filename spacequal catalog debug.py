@@ -187,6 +187,31 @@ _DOC_SUFFIX = re.compile(
     r"public|en|pdf)|_\d{6}[A-Z]?)$", re.I)
 
 
+_WORDY = re.compile(r"^[A-Za-z]{4,}$")
+
+
+def looks_like_pn(s):
+    """Is this string a part number, or a subfamily slug?
+
+    The v1 run pulled in DOUBLE-BALANCED-MIXERS, T3-HIGH-LINEARITY, LEGACY-MIXERS,
+    TIMING-SERDES, Protections ... because any last path segment was accepted.
+    Two rules separate them cleanly on every case that run produced:
+      * every real part number contains a digit
+      * no segment AFTER the first is an English word (4+ letters)
+    The first segment is exempt because real prefixes look like words:
+    MAAP-011325, MADT-011000, ADRF5545A.
+    """
+    s = (s or "").strip().strip("-_")
+    if not (3 < len(s) <= 40):
+        return False
+    if not any(c.isdigit() for c in s):
+        return False
+    for seg in re.split(r"[-_]", s)[1:]:
+        if _WORDY.match(seg):
+            return False
+    return True
+
+
 def pn_from_filename(stem):
     """Part number out of a datasheet filename, keeping hyphenated segments.
 
@@ -252,12 +277,14 @@ def parse_marki(html, base):
         h = href.strip()
         m = re.match(r"^(?:https?://[^/]+)?/products/([a-z-]+)/([a-z0-9-]+)/"
                      r"([A-Za-z0-9][A-Za-z0-9._-]*)/?$", h, re.I)
-        if m and m.group(3).lower() not in ("datasheet", "index"):
+        if m and looks_like_pn(m.group(3)):
             pn = m.group(3).upper()
             out.setdefault(pn, {"pn": pn, "product_url": _abs(base, h),
                                 "datasheet_url": None})
         if re.search(r"\.pdf($|[?#])", h, re.I):
             pn = pn_from_filename(h.rsplit("/", 1)[-1]).upper()
+            if not looks_like_pn(pn):
+                continue          # product catalogue PDFs, app notes, etc.
             rec = out.setdefault(pn, {"pn": pn, "product_url": None,
                                       "datasheet_url": None})
             rec["datasheet_url"] = rec["datasheet_url"] or _abs(base, h)
@@ -281,13 +308,15 @@ def parse_generic(html, base):
         h = href.strip()
         if re.search(r"\.pdf($|[?#])", h, re.I):
             pn = pn_from_filename(h.rsplit("/", 1)[-1])
-            out.setdefault(pn.upper(), {"pn": pn, "product_url": None,
-                                        "datasheet_url": _abs(base, h)})
+            if looks_like_pn(pn):
+                out.setdefault(pn.upper(), {"pn": pn, "product_url": None,
+                                            "datasheet_url": _abs(base, h)})
     for m in re.finditer(r'href\s*=\s*["\']([^"\']*/(?:product|products|p)/'
                          r'([A-Z][A-Z0-9][A-Z0-9._-]{2,})["\'/])', html, re.I):
         pn = m.group(2).upper().rstrip("/")
-        out.setdefault(pn, {"pn": pn, "product_url": _abs(base, m.group(1)),
-                            "datasheet_url": None})
+        if looks_like_pn(pn):
+            out.setdefault(pn, {"pn": pn, "product_url": _abs(base, m.group(1)),
+                                "datasheet_url": None})
     return list(out.values())
 
 
@@ -326,6 +355,123 @@ def pdf_text(blob, pages=2):
             return "\n".join((p.extract_text() or "") for p in r.pages[:pages])
         except Exception:
             return f"__EXTRACT_FAILED__ {type(e).__name__}"
+
+
+# ==================================================== discovery + following
+# The v1 run showed MACOM /products and Skyworks /en/Products return only
+# CATEGORY links, and Qorvo's parametric tables live solely behind
+# product-list?categoryID=<id> -- the /products/<family>/<sub> pages are landing
+# pages with no table. So the missing capability is: find the listing URLs from a
+# seed page, then follow them.
+
+_QORVO_CATID = re.compile(r"categoryID=([A-Za-z0-9]+)", re.I)
+
+
+def discover_listing_urls(vendor_key, html, base, limit=6):
+    """Candidate listing/table URLs discovered from a seed page."""
+    host = urllib.parse.urlparse(base).netloc
+    found = []
+
+    def add(u):
+        if u not in found and urllib.parse.urlparse(u).netloc == host:
+            found.append(u)
+
+    if vendor_key == "qorvo":
+        # the only shape that carries a parametric table
+        for cid in dict.fromkeys(_QORVO_CATID.findall(html)):
+            add(f"https://www.qorvo.com/products/product-list?categoryID={cid}")
+        return found[:limit]
+
+    # generic: same-host links that look like a product category, preferring
+    # deeper paths (a subcategory is likelier to hold the actual table)
+    cands = []
+    for href in _HREF.findall(html):
+        u = _abs(base, href.strip())
+        pr = urllib.parse.urlparse(u)
+        if pr.netloc != host or not re.search(r"/products?/", pr.path, re.I):
+            continue
+        if re.search(r"\.(pdf|jpg|png|zip|xlsx?)($|\?)", pr.path, re.I):
+            continue
+        last = pr.path.rstrip("/").rsplit("/", 1)[-1]
+        if looks_like_pn(last):
+            continue                      # that is a part page, not a category
+        cands.append((pr.path.count("/"), u))
+    for _depth, u in sorted(cands, key=lambda t: -t[0]):
+        add(u)
+    return found[:limit]
+
+
+def resolve_pdf(url, depth=0):
+    """Fetch a datasheet URL, following an HTML landing page to the real PDF.
+
+    Qorvo's /products/d/<id> served text/html for da006470 but a real %PDF for
+    da009265 -- the same URL shape does both, so the HTML case has to be followed
+    rather than written off as a failure."""
+    blob, ctype, code = http_get(url)
+    if blob[:5] == b"%PDF-":
+        return blob, url, f"HTTP {code} direct"
+    if depth >= 1:
+        return None, url, f"HTTP {code} {ctype.split(';')[0]} (not a PDF)"
+    html = blob.decode("utf-8", "replace")
+    pdfs = [_abs(url, h) for h in _HREF.findall(html)
+            if re.search(r"\.pdf($|[?#])", h, re.I)]
+    # some sites embed the file rather than link it
+    pdfs += [_abs(url, m.group(1)) for m in
+             re.finditer(r'(?:src|data)\s*=\s*["\']([^"\']+\.pdf[^"\']*)["\']',
+                         html, re.I)]
+    for cand in dict.fromkeys(pdfs):
+        try:
+            blob2, ctype2, code2 = http_get(cand)
+        except Exception:
+            continue
+        if blob2[:5] == b"%PDF-":
+            return blob2, cand, f"followed HTML -> {cand.rsplit('/', 1)[-1]}"
+    snippet = " ".join(re.sub(r"<[^>]+>", " ", html).split())[:120]
+    return None, url, (f"HTML with no reachable PDF link "
+                       f"({len(pdfs)} candidate(s)); page says: \"{snippet}\"")
+
+
+def stage_discover(vendors, follow):
+    say("\n" + "=" * 76)
+    say(f"DISCOVERY: find listing URLs from a seed page, then follow up to "
+        f"{follow}")
+    say("=" * 76)
+    say("  This is the capability the first run showed was missing: MACOM and")
+    say("  Skyworks seed pages list only categories, and Qorvo's tables live")
+    say("  only behind product-list?categoryID=<id>.\n")
+    extra = {}
+    for key, cfg in vendors.items():
+        seed = cfg["urls"][0]
+        status, value, secs = guarded(f"seed-{key}", lambda u=seed: http_get(u), 35)
+        if status != "ok":
+            say(f"  {cfg['name']:<18} seed fetch failed: {value}")
+            continue
+        html = value[0].decode("utf-8", "replace")
+        urls = discover_listing_urls(key, html, seed, limit=follow)
+        say(f"  {cfg['name']:<18} discovered {len(urls)} candidate listing URL(s)")
+        for u in urls:
+            say(f"      {u}")
+        for u in urls:
+            st, val, sec = guarded(f"follow-{key}", lambda x=u: http_get(x), 35)
+            if st != "ok":
+                say(f"    [{st:<7}] {sec:5.1f}s  {u}")
+                say(f"               -> {val}")
+                continue
+            h2 = val[0].decode("utf-8", "replace")
+            recs = PARSERS[cfg["parser"]](h2, u)
+            recs = [r for r in recs if looks_like_pn(r["pn"])]
+            with_ds = sum(1 for r in recs if r.get("datasheet_url"))
+            js, links, words = looks_js_shell(h2)
+            say(f"    [ok     ] {sec:5.1f}s  {len(val[0]) // 1024} kB  "
+                f"{links} links  {words} words  -> {len(recs)} part(s), "
+                f"{with_ds} with datasheet"
+                + ("   <-- looks JS-rendered" if js else ""))
+            for r in recs[:6]:
+                say(f"                 {r['pn']:<24} "
+                    f"{(r.get('datasheet_url') or '(none)')[:66]}")
+            if recs:
+                extra.setdefault(key, []).extend(recs)
+    return extra
 
 
 # =================================================================== stages
@@ -398,19 +544,16 @@ def stage_pdf(found, n_per_vendor):
         for r in with_ds[:n_per_vendor]:
             url = r["datasheet_url"]
             status, value, secs = guarded(f"pdf-{r['pn']}",
-                                          lambda u=url: http_get(u), 40)
+                                          lambda u=url: resolve_pdf(u), 60)
             if status != "ok":
                 say(f"    [{status:<7}] {secs:5.1f}s  {r['pn']}  -> {value}")
                 continue
-            blob, ctype, code = value
-            is_pdf = blob[:5] == b"%PDF-"
-            say(f"    [ok     ] {secs:5.1f}s  {r['pn']:<20} HTTP {code}  "
-                f"{len(blob) // 1024} kB  type={ctype.split(';')[0]}  "
-                f"magic={'%PDF' if is_pdf else repr(blob[:8])}")
-            if not is_pdf:
-                say(f"               NOT a PDF -- the link is probably an HTML "
-                    f"landing page; a real parser must follow it")
+            blob, final_url, how = value
+            if not blob:
+                say(f"    [no-pdf ] {secs:5.1f}s  {r['pn']:<20} {how}")
                 continue
+            say(f"    [ok     ] {secs:5.1f}s  {r['pn']:<20} "
+                f"{len(blob) // 1024} kB  %PDF  ({how})")
             txt = pdf_text(blob)
             if txt.startswith("__EXTRACT_FAILED__"):
                 say(f"               text extraction FAILED: {txt}")
@@ -466,6 +609,8 @@ def main():
     ap.add_argument("--pdfs", type=int, default=2,
                     help="datasheet PDFs to try per vendor (0 = none)")
     ap.add_argument("--no-pdf", action="store_true")
+    ap.add_argument("--follow", type=int, default=4,
+                    help="listing URLs to discover and follow per vendor (0 = off)")
     ap.add_argument("--catalog", help="Mini-Circuits products JSON (control case)",
                     default=str(Path.home() / "Downloads" / "rfparts" / "rfparts"
                                / "sources" / "minicircuits_products_full.json"))
@@ -489,12 +634,32 @@ def main():
         vendors = OrderedDict([(args.vendor, vendors[args.vendor])])
 
     found = stage_catalog(vendors, args.local)
+    if args.follow and not args.local:
+        extra = stage_discover(vendors, args.follow)
+        for k, v in extra.items():
+            found.setdefault(k, []).extend(v)
     if not args.no_pdf and args.pdfs:
         stage_pdf(found, args.pdfs)
         if not args.local:
             stage_minicircuits(args.catalog, 2)
 
     say("\n" + "=" * 76)
+    say("SCORECARD")
+    say("=" * 76)
+    say(f"  {'vendor':<18} {'parts':>7} {'with ds':>8}   verdict")
+    for key in vendors:
+        recs = found.get(key, [])
+        real = [r for r in recs if looks_like_pn(r["pn"])]
+        with_ds = sum(1 for r in real if r.get("datasheet_url"))
+        if with_ds:
+            verdict = "READY to wire in"
+        elif real:
+            verdict = "parts found, no datasheet links -- needs another hop"
+        else:
+            verdict = "no parts parsed -- save pages and use --local"
+        say(f"  {VENDOR_CATALOGS[key]['name']:<18} {len(real):>7} {with_ds:>8}   "
+            f"{verdict}")
+    say("")
     say("WHAT TO CONCLUDE")
     say("=" * 76)
     say("  For each vendor, three things had to work:")
