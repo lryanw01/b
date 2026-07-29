@@ -2361,28 +2361,34 @@ def menu():
             if choice in ("0", "q", "quit", "exit"):
                 return 0
             elif choice == "1":
-                cmd_runall(_ns(catalog=s["catalog"], force=False, resume=False))
+                cmd_datasheets(_ns(
+                    catalog=s["catalog"], db=s["db"],
+                    harvest=(s.get("harvest_dir") or None),
+                    limit=s.get("ds_limit", 400), rate=s["rate"],
+                    space_only=False, refetch=False, ignore_robots=False))
             elif choice == "2":
-                cmd_match(_ns(catalog=s["catalog"], db=s["db"], positives=None))
+                cmd_runall(_ns(catalog=s["catalog"], force=False, resume=False))
             elif choice == "3":
-                cmd_fetch(_fetch_ns(s))
+                cmd_match(_ns(catalog=s["catalog"], db=s["db"], positives=None))
             elif choice == "4":
-                cmd_train(_train_ns(s))
+                cmd_fetch(_fetch_ns(s))
             elif choice == "5":
-                cmd_eval(_ns(min_confidence=0.0, reviewed=None))
+                cmd_train(_train_ns(s))
             elif choice == "6":
-                cmd_review(_ns(out=s["review_out"], limit=0))
+                cmd_eval(_ns(min_confidence=0.0, reviewed=None))
             elif choice == "7":
-                interactive_score()
+                cmd_review(_ns(out=s["review_out"], limit=0))
             elif choice == "8":
-                settings_menu(s)
-            elif choice.lower() == "c":
-                clear_menu()
+                interactive_score()
             elif choice == "9":
+                settings_menu(s)
+            elif choice.lower() == "s":
                 cmd_selftest(_ns(backend=s["backend"], hf_model=s["hf_model"],
                                  positives=60, unlabeled=1500, hidden=45,
                                  bags=10, folds=5,
                                  target_recall=s["target_recall"], seed=0))
+            elif choice.lower() == "c":
+                clear_menu()
             else:
                 print("  ? unknown choice")
         except SystemExit as e:                 # keep the menu alive on errors
