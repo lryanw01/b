@@ -100,6 +100,83 @@ MODEL_FILE = WORKDIR / "model.joblib"
 DEFAULT_RATE = 1.0          # seconds between network requests
 OVERVIEW_CHARS = 4000       # datasheet text kept per part
 DEFAULT_HF_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+SETTINGS_FILE = WORKDIR / "settings.json"
+
+# Default location of the Mini-Circuits catalog. EDIT THIS to your own path (or
+# change it in the menu under Settings) so the pipeline runs with no arguments.
+DEFAULT_CATALOG = r"C:\rfparts\rfparts\sources\minicircuits_products_full.json"
+
+# ------------------------------------------------------------- domain priors
+# Hand-written engineering knowledge, applied on top of the learned model as an
+# additive nudge in LOG-ODDS space. Kept deliberately separate from the trained
+# weights so it stays auditable, tunable (--prior-weight) and switchable
+# (--no-prior) -- and so it still works before you have many labels.
+#
+# Scale: +-1.0 log-odds is a strong opinion, +-0.4 is a nudge. A term fires at
+# most once regardless of how often it appears.
+#
+# NOTE on CMOS: rad-hard CMOS is everywhere in space electronics generally (most
+# QMLV digital and mixed-signal parts are CMOS). The penalty below is specific to
+# THIS catalog, where "CMOS" on a Mini-Circuits RF datasheet almost always means a
+# commercial silicon control/logic interface rather than a flight RF part. If you
+# point this tool at a different vendor, revisit that line first.
+DOMAIN_PRIOR = [
+    # --- penalties -----------------------------------------------------------
+    (r"\bCMOS\b", -0.80, "CMOS: commercial silicon logic/control in this catalog"),
+    (r"\bepox(?:y|ies|ied)\b", -0.90, "epoxy encapsulation is not a space package"),
+    (r"\bover-?mould?ed\b|\bovermolded\b", -0.70, "overmolded plastic body"),
+    (r"\bplastic\b", -0.50, "plastic package"),
+    (r"\belectrolytic\b", -0.90, "electrolytic capacitors are not flight parts"),
+    (r"\b(?:eval(?:uation)?\s*board|test\s*board|demo\s*board|kit)\b", -1.00,
+     "evaluation/test hardware, not a component"),
+    (r"\b0\s*(?:to|-|\u2013)\s*70\s*\u00b0?\s*C\b", -0.60,
+     "commercial temperature range only"),
+    # --- rewards -------------------------------------------------------------
+    (r"\bGaAs\b", +0.50, "GaAs process, standard for space RF MMICs"),
+    (r"\bGaN\b", +0.50, "GaN process, standard for space RF power"),
+    (r"\bLTCC\b", +0.50, "LTCC ceramic construction"),
+    (r"\balumina\b", +0.50, "alumina substrate"),
+    (r"\bhermetic(?:ally)?\b", +0.80, "hermetic package"),
+    (r"\bceramic\b", +0.40, "ceramic package/substrate"),
+    (r"\bbare\s*die\b|\bchip\s*(?:and|&)\s*wire\b|\bMMIC\s*die\b", +0.60,
+     "available as bare die"),
+    (r"\bglass[-\s]*to[-\s]*metal\b", +0.70, "glass-to-metal seal"),
+    (r"\bthin[-\s]*film\b", +0.40, "thin-film construction"),
+    (r"-\s*55\s*\u00b0?\s*C?\s*(?:to|-|\u2013)\s*\+?\s*1(?:25|50)\s*\u00b0?\s*C\b",
+     +0.60, "military temperature range"),
+]
+_DOMAIN_PRIOR_RX = [(re.compile(rx, re.I), w, why) for rx, w, why in DOMAIN_PRIOR]
+
+
+def prior_hits(text):
+    """(term description, weight) for every prior that fires in `text`."""
+    return [(why, w) for rx, w, why in _DOMAIN_PRIOR_RX if rx.search(text or "")]
+
+
+def prior_logit(text) -> float:
+    return sum(w for _why, w in prior_hits(text))
+
+
+def _logit(p, eps=1e-6):
+    import math
+    p = min(1.0 - eps, max(eps, float(p)))
+    return math.log(p / (1.0 - p))
+
+
+def _sigmoid(z):
+    import math
+    if z >= 0:
+        return 1.0 / (1.0 + math.exp(-z))
+    e = math.exp(z)
+    return e / (1.0 + e)
+
+
+def blend_prior(prob, text, weight=1.0) -> float:
+    """Model probability adjusted by the domain priors, in log-odds space."""
+    if not weight:
+        return float(prob)
+    return _sigmoid(_logit(prob) + weight * prior_logit(text))
+
 
 # Catalog items that are not flight components. Used ONLY as a calibration check
 # ("sanity negatives"), never as training labels.
@@ -643,23 +720,36 @@ def cmd_fetch(args):
     items = _work_items(match, include_unlabeled=not args.positives_only)
     if args.limit:
         items = items[: args.limit]
+    quiet = getattr(args, "quiet", False)
     fetcher = Fetcher(rate=args.rate, ignore_robots=args.ignore_robots)
     got = cached = failed = empty = 0
     missing = []
+    total = len(items)
+    started = time.time()
+    print(f"fetching up to {total} datasheet(s) at {args.rate}s/request "
+          f"-> {CACHE_PDF}")
+    print(f"{'':>4}{'#':>7}  {'part':<26} {'status':<10} detail")
     for i, it in enumerate(items, 1):
         pn = norm_pn(it["pn"])
         safe = re.sub(r"[^A-Za-z0-9._+-]", "_", pn)
         txt_path, pdf_path = CACHE_TXT / f"{safe}.txt", CACHE_PDF / f"{safe}.pdf"
+        status = detail = ""
         if txt_path.exists() and not args.refetch:
             # An empty overview only means something when we hold the PDF (a
             # scanned datasheet). Empty with no PDF = an earlier failed fetch,
             # so retry rather than skip forever.
             if txt_path.stat().st_size > 0 or pdf_path.exists():
                 cached += 1
+                # Don't print a line per cached part: on a resumed run that is
+                # thousands of lines of noise. Show a periodic heartbeat instead.
+                if not quiet and cached % 250 == 0:
+                    print(f"  {'':>4}{i:>6}/{total}  ...{cached} already cached, "
+                          f"skipping", flush=True)
                 continue
         url = it.get("datasheet_url") or MC_PDF_TEMPLATE.format(pn=pn)
         blob = (pdf_path.read_bytes()
                 if (pdf_path.exists() and not args.refetch) else None)
+        from_disk = blob is not None
         if blob is None:
             try:
                 blob = fetcher.get(url)
@@ -671,15 +761,22 @@ def cmd_fetch(args):
             # not cached: may be transient (timeout/429/offline), so retry next run
             failed += 1
             missing.append((it["pn"], it["label"], url))
+            _fetch_line(i, total, it, "FAILED", url, started, quiet)
             continue
         overview = extract_overview(blob)
         txt_path.write_text(overview, encoding="utf-8")
         got += 1
-        empty += 0 if overview else 1
-        if args.verbose or i % 50 == 0:
-            print(f"  [{i}/{len(items)}] {it['pn']:<26} "
-                  f"{'ok' if overview else 'no text'}")
-    print(f"\nfetched {got}   cached {cached}   no-text {empty}   failed {failed}")
+        if overview:
+            status, detail = ("ok" if not from_disk else "reparsed",
+                              f"{len(blob) // 1024} kB pdf, "
+                              f"{len(overview)} chars text")
+        else:
+            empty += 1
+            status, detail = "no text", f"{len(blob) // 1024} kB pdf (scanned?)"
+        _fetch_line(i, total, it, status, detail, started, quiet)
+    elapsed = time.time() - started
+    print(f"\nfetched {got}   cached {cached}   no-text {empty}   failed {failed}"
+          f"   in {elapsed / 60:.1f} min")
     if missing:
         print("\nNo datasheet retrieved (not in catalog and no /pdfs/<PN>.pdf):")
         for pn, label, url in missing[: args.show_missing]:
@@ -690,6 +787,21 @@ def cmd_fetch(args):
               [{"pn": p, "label": l, "url": u} for p, l, u in missing])
         print(f"  full list: {WORKDIR / 'missing_datasheets.json'}")
     return 0
+
+
+def _fetch_line(i, total, item, status, detail, started, quiet=False):
+    """One progress line per part. Printed by default -- a 1 req/sec crawl that
+    prints nothing for a minute looks broken."""
+    if quiet:
+        return
+    eta = ""
+    if i >= 3 and total > i:
+        rate = (time.time() - started) / i
+        left = rate * (total - i)
+        eta = f"  eta {left / 60:.0f}m" if left > 90 else f"  eta {left:.0f}s"
+    tag = f"[{item['label']}]"
+    print(f"  {tag:>4}{i:>6}/{total}  {item['pn'][:26]:<26} {status:<10} "
+          f"{detail}{eta}", flush=True)
 
 
 def _build_featurizer(args):
@@ -732,6 +844,17 @@ def cmd_train(args):
     print(f"  PU bagging: {args.bags} bags x {args.folds} folds")
     p_scores, u_scores, models = train_pu(Xp, Xu, n_bags=args.bags,
                                           folds=args.folds, seed=args.seed)
+    # Domain priors are applied BEFORE the threshold is chosen, so the reported
+    # recall and flag rate describe the blended system you will actually run.
+    pw = 0.0 if args.no_prior else args.prior_weight
+    if pw:
+        p_scores = [blend_prior(s, d["text"], pw) for s, d in zip(p_scores, P)]
+        u_scores = [blend_prior(s, d["text"], pw) for s, d in zip(u_scores, U)]
+        print(f"  domain priors blended in at weight {pw} "
+              f"({len(DOMAIN_PRIOR)} terms)")
+    else:
+        p_scores, u_scores = list(p_scores), list(u_scores)
+        print("  domain priors disabled")
     thr = (args.threshold if args.threshold is not None
            else threshold_for_recall(p_scores, args.target_recall))
     print(f"\n  decision threshold {thr:.4f}"
@@ -764,7 +887,10 @@ def cmd_train(args):
     try:
         import joblib
         joblib.dump({"featurizer": featurizer, "models": models,
-                     "threshold": thr, "backend": tag, "mask": args.mask},
+                     "threshold": thr, "backend": tag, "mask": args.mask,
+                     "prior_weight": pw,
+                     "trained": time.strftime("%Y-%m-%d %H:%M"),
+                     "n_positives": len(P), "n_unlabeled": len(U)},
                     MODEL_FILE)
         print(f"\n  saved model -> {MODEL_FILE}")
     except Exception as e:
@@ -784,33 +910,95 @@ def _pred_row(d, score, thr, tag, mask):
             "threshold": round(thr, 5), "model": tag, "mask": mask}
 
 
+def score_text(bundle, text):
+    """Blended probability that a part described by `text` is space-qualifiable,
+    plus the pieces that produced it."""
+    import numpy as np
+    masked = mask_text(text, bundle.get("mask", "none"))
+    X = bundle["featurizer"].transform([masked])
+    raw = float(np.mean([m.predict_proba(X)[:, 1][0] for m in bundle["models"]]))
+    pw = bundle.get("prior_weight", 0.0)
+    hits = prior_hits(masked) if pw else []
+    final = blend_prior(raw, masked, pw)
+    return {"probability": final, "model_only": raw, "prior_weight": pw,
+            "prior_logit": prior_logit(masked) if pw else 0.0,
+            "prior_hits": hits, "threshold": bundle["threshold"]}
+
+
+def _print_score(name, r):
+    pct = 100.0 * r["probability"]
+    verdict = ("LIKELY QUALIFIABLE" if r["probability"] >= r["threshold"]
+               else "not flagged")
+    print(f"\n  {name}")
+    print(f"    chance space-qualifiable   {pct:5.1f}%     -> {verdict}")
+    print(f"    (threshold {100 * r['threshold']:.1f}% chosen at training time)")
+    if r["prior_weight"]:
+        print(f"    learned model alone        {100 * r['model_only']:5.1f}%")
+        if r["prior_hits"]:
+            print(f"    domain priors ({r['prior_logit']:+.2f} log-odds):")
+            for why, w in sorted(r["prior_hits"], key=lambda h: -abs(h[1])):
+                print(f"      {w:+.2f}  {why}")
+        else:
+            print("    domain priors: no terms matched")
+
+
 def cmd_predict(args):
-    """Score arbitrary datasheet text with the saved model."""
+    """Score a paragraph of text, or a part already fetched, with the saved model."""
     import joblib
     if not MODEL_FILE.exists():
-        raise SystemExit("no saved model -- run `train` first")
+        raise SystemExit("no saved model -- run `train` (or menu option 1) first")
     bundle = joblib.load(MODEL_FILE)
-    texts, names = [], []
+    print(f"model: {bundle.get('backend')}  trained {bundle.get('trained', '?')}  "
+          f"on {bundle.get('n_positives', '?')} positives  "
+          f"(mask={bundle.get('mask')}, prior_weight={bundle.get('prior_weight')})")
+    did = False
     if args.text:
-        texts.append(mask_text(args.text, bundle["mask"]))
-        names.append("(stdin)")
+        _print_score("(text)", score_text(bundle, args.text))
+        did = True
+    if args.file:
+        _print_score(Path(args.file).name,
+                     score_text(bundle, Path(args.file).read_text(encoding="utf-8")))
+        did = True
     for pn in args.pn or []:
         p = _overview_path(pn)
         if not p.exists():
-            print(f"  no cached datasheet text for {pn}")
+            print(f"\n  {pn}: no cached datasheet text (fetch it first)")
             continue
-        texts.append(mask_text(p.read_text(encoding="utf-8"), bundle["mask"]))
-        names.append(pn)
-    if not texts:
-        raise SystemExit("pass --text or --pn")
-    import numpy as np
-    X = bundle["featurizer"].transform(texts)
-    scores = np.mean([m.predict_proba(X)[:, 1] for m in bundle["models"]], axis=0)
-    for name, s in zip(names, scores):
-        verdict = "QUALIFIABLE" if s >= bundle["threshold"] else "not flagged"
-        print(f"  {name:<24} score {s:.3f}  (threshold "
-              f"{bundle['threshold']:.3f})  -> {verdict}")
+        _print_score(pn, score_text(bundle, p.read_text(encoding="utf-8")))
+        did = True
+    if not did:
+        raise SystemExit("pass --text, --file or --pn")
     return 0
+
+
+def interactive_score():
+    """Paste-a-paragraph loop, for the menu."""
+    import joblib
+    if not MODEL_FILE.exists():
+        print("  no trained model yet -- run option 1 (or 4) first.")
+        return
+    bundle = joblib.load(MODEL_FILE)
+    print(f"\n  model: {bundle.get('backend')}  trained "
+          f"{bundle.get('trained', '?')}  on {bundle.get('n_positives', '?')} "
+          f"positives")
+    print("  Paste a datasheet paragraph. Blank line scores it; 'q' returns.")
+    while True:
+        print("\n  > ", end="", flush=True)
+        lines = []
+        while True:
+            try:
+                ln = input()
+            except EOFError:
+                return
+            if ln.strip().lower() in ("q", "quit", "exit"):
+                return
+            if not ln.strip():
+                break
+            lines.append(ln)
+        text = "\n".join(lines).strip()
+        if not text:
+            continue
+        _print_score("(pasted text)", score_text(bundle, text))
 
 
 def cmd_eval(args):
@@ -972,7 +1160,8 @@ def cmd_selftest(args):
         backend=args.backend, hf_model=args.hf_model, mask="none",
         bags=args.bags, folds=args.folds, seed=args.seed,
         target_recall=args.target_recall, threshold=None,
-        show_features=12, no_features=False))
+        show_features=12, no_features=False,
+        prior_weight=1.0, no_prior=False))
     preds = {p["pn"]: p for p in _load(PRED_JSON, [])}
     flagged_hidden = sum(1 for i in range(hidden)
                          if preds.get(f"SYNU-{i:05d}", {}).get("qualifiable"))
@@ -987,11 +1176,242 @@ def cmd_selftest(args):
     return rc
 
 
+# --------------------------------------------------------- settings + menu
+DEFAULT_SETTINGS = {
+    "catalog": DEFAULT_CATALOG,
+    "db": str(Path.home() / ".rfparts" / "parts.db"),
+    "backend": "tfidf",
+    "hf_model": DEFAULT_HF_MODEL,
+    "mask": "none",
+    "fetch_limit": 0,
+    "rate": DEFAULT_RATE,
+    "bags": 15,
+    "folds": 5,
+    "target_recall": 0.90,
+    "prior_weight": 1.0,
+    "review_out": "review_queue.csv",
+}
+
+
+def load_settings():
+    s = dict(DEFAULT_SETTINGS)
+    s.update(_load(SETTINGS_FILE, {}) or {})
+    return s
+
+
+def save_settings(s):
+    _save(SETTINGS_FILE, s)
+
+
+def _ns(**kw):
+    return argparse.Namespace(**kw)
+
+
+def _fetch_ns(s, quiet=False):
+    return _ns(limit=s["fetch_limit"], rate=s["rate"], positives_only=False,
+               refetch=False, ignore_robots=False, show_missing=40,
+               verbose=True, quiet=quiet)
+
+
+def _train_ns(s):
+    return _ns(backend=s["backend"], hf_model=s["hf_model"], mask=s["mask"],
+               bags=s["bags"], folds=s["folds"], seed=0,
+               target_recall=s["target_recall"], threshold=None,
+               show_features=25, no_features=False,
+               prior_weight=s["prior_weight"], no_prior=False)
+
+
+def cmd_runall(args):
+    """match -> fetch (with progress) -> train -> review, using saved settings."""
+    s = load_settings()
+    if getattr(args, "catalog", None):
+        s["catalog"] = args.catalog
+    if not Path(s["catalog"]).is_file():
+        raise SystemExit(
+            f"catalog not found: {s['catalog']}\n"
+            f"Set the path with `settings` in the menu, pass --catalog, or edit "
+            f"DEFAULT_CATALOG at the top of this file.")
+    steps = [
+        ("MATCH", lambda: cmd_match(_ns(catalog=s["catalog"], db=s["db"],
+                                        positives=None))),
+        ("FETCH", lambda: cmd_fetch(_fetch_ns(s))),
+        ("TRAIN", lambda: cmd_train(_train_ns(s))),
+        ("REVIEW", lambda: cmd_review(_ns(out=s["review_out"], limit=0))),
+    ]
+    for i, (name, fn) in enumerate(steps, 1):
+        print(f"\n{'=' * 62}\n  STEP {i}/{len(steps)}: {name}\n{'=' * 62}")
+        rc = fn()
+        if rc:
+            print(f"  {name} returned {rc}; stopping.")
+            return rc
+    print(f"\n{'=' * 62}")
+    print(f"  Done. Model: {MODEL_FILE}")
+    print(f"  Score a paragraph:  python {Path(sys.argv[0]).name} "
+          f"predict --text \"...\"")
+    print(f"  Or menu option 7.")
+    return 0
+
+
+def _status_line():
+    match = _load(MATCH_JSON, None)
+    if match:
+        c = match["counts"]
+        ds = f"{c['matched_in_catalog'] + c['url_guess']} P / {c['unlabeled']} U"
+    else:
+        ds = "not matched yet"
+    n_txt = len(list(CACHE_TXT.glob("*.txt"))) if CACHE_TXT.exists() else 0
+    model = "none"
+    if MODEL_FILE.exists():
+        try:
+            import joblib
+            b = joblib.load(MODEL_FILE)
+            model = (f"{b.get('backend')}, thr "
+                     f"{100 * b.get('threshold', 0):.0f}%, "
+                     f"{b.get('trained', '?')}")
+        except Exception:
+            model = "unreadable"
+    return ds, n_txt, model
+
+
+MENU = """
+==============================================================
+  spacequal - is this RF part space-qualifiable?
+==============================================================
+  dataset : {ds}
+  cache   : {n_txt} datasheet text file(s)
+  model   : {model}
+  catalog : {catalog}
+--------------------------------------------------------------
+  1) Run everything   (match -> fetch -> train -> review)
+  2) Match catalog to everythingRF space parts
+  3) Fetch datasheets            (verbose progress)
+  4) Train classifier
+  5) Evaluate (PU metrics)
+  6) Export review queue
+  7) Score a paragraph of text   <- the everyday tool
+  8) Settings
+  9) Offline selftest (no network or catalog needed)
+  0) Quit
+--------------------------------------------------------------"""
+
+SETTINGS_MENU = """
+  Settings
+  --------
+  1) catalog path      {catalog}
+  2) rfparts DB        {db}
+  3) backend           {backend}
+  4) mask              {mask}
+  5) fetch limit       {fetch_limit}   (0 = all)
+  6) request rate      {rate} s
+  7) target recall     {target_recall}
+  8) prior weight      {prior_weight}   (0 disables domain priors)
+  9) PU bags / folds   {bags} / {folds}
+  0) back"""
+
+
+def _ask(prompt, current):
+    print(f"  {prompt} [{current}]: ", end="", flush=True)
+    try:
+        v = input().strip()
+    except EOFError:
+        return current
+    return v or current
+
+
+def settings_menu(s):
+    while True:
+        print(SETTINGS_MENU.format(**s))
+        try:
+            choice = input("  choice> ").strip()
+        except EOFError:
+            return
+        if choice in ("0", "", "q"):
+            save_settings(s)
+            print("  saved.")
+            return
+        try:
+            if choice == "1":
+                s["catalog"] = _ask("catalog path", s["catalog"])
+            elif choice == "2":
+                s["db"] = _ask("rfparts DB path", s["db"])
+            elif choice == "3":
+                v = _ask("backend (tfidf/embed)", s["backend"])
+                s["backend"] = v if v in ("tfidf", "embed") else s["backend"]
+            elif choice == "4":
+                v = _ask("mask (none/space/strict)", s["mask"])
+                s["mask"] = v if v in ("none", "space", "strict") else s["mask"]
+            elif choice == "5":
+                s["fetch_limit"] = int(_ask("fetch limit", s["fetch_limit"]))
+            elif choice == "6":
+                s["rate"] = float(_ask("seconds per request", s["rate"]))
+            elif choice == "7":
+                s["target_recall"] = float(_ask("target recall 0-1",
+                                                s["target_recall"]))
+            elif choice == "8":
+                s["prior_weight"] = float(_ask("prior weight", s["prior_weight"]))
+            elif choice == "9":
+                s["bags"] = int(_ask("bags", s["bags"]))
+                s["folds"] = int(_ask("folds", s["folds"]))
+        except ValueError:
+            print("  ! not a number, unchanged")
+
+
+def menu():
+    s = load_settings()
+    while True:
+        ds, n_txt, model = _status_line()
+        print(MENU.format(ds=ds, n_txt=n_txt, model=model,
+                          catalog=s["catalog"]))
+        try:
+            choice = input("  choice> ").strip()
+        except EOFError:
+            return 0
+        try:
+            if choice in ("0", "q", "quit", "exit"):
+                return 0
+            elif choice == "1":
+                cmd_runall(_ns(catalog=s["catalog"]))
+            elif choice == "2":
+                cmd_match(_ns(catalog=s["catalog"], db=s["db"], positives=None))
+            elif choice == "3":
+                cmd_fetch(_fetch_ns(s))
+            elif choice == "4":
+                cmd_train(_train_ns(s))
+            elif choice == "5":
+                cmd_eval(_ns(min_confidence=0.0, reviewed=None))
+            elif choice == "6":
+                cmd_review(_ns(out=s["review_out"], limit=0))
+            elif choice == "7":
+                interactive_score()
+            elif choice == "8":
+                settings_menu(s)
+            elif choice == "9":
+                cmd_selftest(_ns(backend=s["backend"], hf_model=s["hf_model"],
+                                 positives=60, unlabeled=1500, hidden=45,
+                                 bags=10, folds=5,
+                                 target_recall=s["target_recall"], seed=0))
+            else:
+                print("  ? unknown choice")
+        except SystemExit as e:                 # keep the menu alive on errors
+            print(f"\n  ! {e}")
+        except KeyboardInterrupt:
+            print("\n  (interrupted; cached progress is kept)")
+        input("\n  press Enter to continue ")
+
+
 def build_parser():
     p = argparse.ArgumentParser(
         prog="spacequal", description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = p.add_subparsers(dest="cmd", required=True)
+    sub = p.add_subparsers(dest="cmd")
+
+    ra = sub.add_parser("runall",
+                        help="match -> fetch -> train -> review in one go")
+    ra.add_argument("--catalog", help=f"default: {DEFAULT_CATALOG}")
+    ra.set_defaults(func=cmd_runall)
+
+    mn = sub.add_parser("menu", help="interactive menu (also the default)")
+    mn.set_defaults(func=lambda a: menu())
 
     m = sub.add_parser("match", help="join everythingRF space parts to the catalog")
     m.add_argument("--catalog", required=True, help="minicircuits_products_full.json")
@@ -1009,7 +1429,10 @@ def build_parser():
     f.add_argument("--ignore-robots", action="store_true",
                    help="default is to obey robots.txt")
     f.add_argument("--show-missing", type=int, default=40)
-    f.add_argument("--verbose", action="store_true")
+    f.add_argument("--verbose", action="store_true",
+                   help="kept for compatibility; progress is on by default")
+    f.add_argument("--quiet", action="store_true",
+                   help="suppress the per-part progress lines")
     f.set_defaults(func=cmd_fetch)
 
     t = sub.add_parser("train", help="fit the PU classifier and score every part")
@@ -1027,11 +1450,16 @@ def build_parser():
                    help="fixed score cut instead of --target-recall")
     t.add_argument("--show-features", type=int, default=25)
     t.add_argument("--no-features", action="store_true")
+    t.add_argument("--prior-weight", type=float, default=1.0,
+                   help="strength of the hand-written domain priors (0 = off)")
+    t.add_argument("--no-prior", action="store_true",
+                   help="train and score on the learned model alone")
     t.add_argument("--seed", type=int, default=0)
     t.set_defaults(func=cmd_train)
 
     pr = sub.add_parser("predict", help="score new text or a cached part")
-    pr.add_argument("--text", help="datasheet blurb to score")
+    pr.add_argument("--text", help="datasheet paragraph to score")
+    pr.add_argument("--file", help="text file to score")
     pr.add_argument("--pn", nargs="*", help="part numbers already fetched")
     pr.set_defaults(func=cmd_predict)
 
@@ -1064,6 +1492,8 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     WORKDIR.mkdir(parents=True, exist_ok=True)
+    if not getattr(args, "func", None):        # bare `python spacequal.py`
+        return menu()
     try:
         return args.func(args)
     except BrokenPipeError:            # piped into head/less
