@@ -399,6 +399,74 @@ class ManagedBrowser:
         raise RuntimeError(" | ".join(errs))
 
 
+# ================================================================ saved output
+# Everything retrieved is written to a folder in Downloads so it is not thrown
+# away when the run ends. Layout is deliberately the same shape the main rfparts
+# pipeline will want later: one directory per vendor, plus a JSONL manifest.
+#
+#   ~/Downloads/spacequal_datasheets/
+#       Analog-Devices/AD1671S.pdf
+#       Marki-Microwave/MM1-0320LBH.html    <- rendered DOM, so it can be
+#       Marki-Microwave/MM1-0320LBH.txt        re-parsed without re-fetching
+#       manifest.jsonl
+
+_DEFAULT_OUTDIR = Path.home() / "Downloads" / "spacequal_datasheets"
+OUTDIR = _DEFAULT_OUTDIR
+SAVED = {"pdf": 0, "html": 0, "bytes": 0}
+
+
+def _safe_name(name):
+    return re.sub(r"[^A-Za-z0-9._+-]", "_", str(name))[:80] or "part"
+
+
+def save_artifact(vendor_slug, mpn, kind, data, source_url, extra=None):
+    """Write one file and append a manifest line. Returns the path."""
+    import hashlib
+    import json
+    folder = OUTDIR / _safe_name(vendor_slug)
+    folder.mkdir(parents=True, exist_ok=True)
+    ext = {"pdf": ".pdf", "html": ".html", "txt": ".txt"}[kind]
+    path = folder / (_safe_name(mpn) + ext)
+    blob = data if isinstance(data, bytes) else data.encode("utf-8", "replace")
+    path.write_bytes(blob)
+    SAVED[kind if kind in SAVED else "html"] = \
+        SAVED.get(kind if kind in SAVED else "html", 0) + 1
+    SAVED["bytes"] += len(blob)
+    rec = {"mpn": mpn, "vendor": vendor_slug, "kind": kind,
+           "local_path": str(path.relative_to(OUTDIR)),
+           "bytes": len(blob), "sha256": hashlib.sha256(blob).hexdigest(),
+           "source_url": source_url,
+           "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    if extra:
+        rec.update(extra)
+    OUTDIR.mkdir(parents=True, exist_ok=True)
+    with (OUTDIR / "manifest.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec) + "\n")
+    return path
+
+
+def report_saved():
+    say("\n" + "=" * 76)
+    say("SAVED FILES")
+    say("=" * 76)
+    if not (SAVED["pdf"] or SAVED["html"]):
+        say("  nothing was saved this run")
+        return
+    mb = SAVED["bytes"] / (1024 * 1024)
+    say(f"  {SAVED['pdf']} PDF(s), {SAVED['html']} HTML/text file(s), "
+        f"{mb:.1f} MB total")
+    say(f"  folder:   {OUTDIR}")
+    say(f"  manifest: {OUTDIR / 'manifest.jsonl'}")
+    for sub in sorted(x for x in OUTDIR.iterdir() if x.is_dir()) \
+            if OUTDIR.exists() else []:
+        files = sorted(sub.iterdir())
+        say(f"    {sub.name}/  {len(files)} file(s)")
+        for f in files[:4]:
+            say(f"      {f.name}  ({f.stat().st_size // 1024} kB)")
+        if len(files) > 4:
+            say(f"      ... and {len(files) - 4} more")
+
+
 # ============================================================ HTML -> text
 _DROP_TAGS = re.compile(r"<(script|style|noscript|svg|head)\b.*?</\1>",
                         re.S | re.I)
@@ -489,7 +557,8 @@ _SPEC_MARKER = re.compile(r"electrical specification|recommended operating|"
                           r"guaranteed from", re.I)
 
 
-def fetch_html(url, browser, rate, min_chars=400, want_specs=False):
+def fetch_html(url, browser, rate, min_chars=400, want_specs=False,
+               return_raw=False):
     """Direct HTTP first, browser second.
 
     `want_specs` matters: the first run pulled 1397 chars from a Marki datasheet
@@ -497,13 +566,15 @@ def fetch_html(url, browser, rate, min_chars=400, want_specs=False):
     those are built by JS, so plain HTTP silently returns the prose only. When
     specs are expected and missing, that is a reason to re-fetch through the
     browser even though the text looked long enough."""
+    raw = ""
     try:
         blob, ctype, code = http_get(url)
-        text = html_to_text(blob.decode("utf-8", "replace"))
+        raw = blob.decode("utf-8", "replace")
+        text = html_to_text(raw)
         enough = len(text) >= min_chars
         specs_ok = (not want_specs) or bool(_SPEC_MARKER.search(text))
         if enough and specs_ok:
-            return text, "direct"
+            return (text, "direct", raw) if return_raw else (text, "direct")
         note = (f"{len(text)} chars, no spec table" if enough
                 else f"only {len(text)} chars")
     except urllib.error.HTTPError as e:
@@ -511,7 +582,8 @@ def fetch_html(url, browser, rate, min_chars=400, want_specs=False):
     except Exception as e:
         note = type(e).__name__
     if not (browser and getattr(browser, "ok", False)):
-        return "", f"direct failed ({note}); no browser available"
+        msg = f"direct failed ({note}); no browser available"
+        return ("", msg, raw) if return_raw else ("", msg)
     try:
         html = browser.get_html(
             url, wait_text="electrical specification" if want_specs else None)
@@ -519,9 +591,11 @@ def fetch_html(url, browser, rate, min_chars=400, want_specs=False):
         got = bool(_SPEC_MARKER.search(text))
         tag = "browser" + ("" if not want_specs else
                            (" +specs" if got else " but STILL no spec table"))
-        return text, f"{tag} (direct: {note})"
+        how = f"{tag} (direct: {note})"
+        return (text, how, html) if return_raw else (text, how)
     except Exception as e:
-        return "", f"direct failed ({note}); browser also failed ({type(e).__name__})"
+        msg = f"direct failed ({note}); browser also failed ({type(e).__name__})"
+        return ("", msg, raw) if return_raw else ("", msg)
 
 
 def stage_marki(n_parts, rate, browser=None):
@@ -552,18 +626,20 @@ def stage_marki(n_parts, rate, browser=None):
         return 0
 
     say(f"\n  pulling the datasheet HTML for {min(n_parts, len(parts))} part(s):")
+    say(f"  saving into {OUTDIR / 'Marki-Microwave'}")
     ok = 0
     for pn, url in list(parts.items())[:n_parts]:
         ds = url.rstrip("/") + "/datasheet/"
         time.sleep(rate)
         st, val, secs = guarded(
             "marki-ds",
-            lambda u=ds: fetch_html(u, browser, rate, want_specs=True), 90)
+            lambda u=ds: fetch_html(u, browser, rate, want_specs=True,
+                                    return_raw=True), 90)
         if st != "ok" or not val or not val[0]:
             say(f"    [fail   ] {pn:<18} "
                 f"{val[1] if isinstance(val, tuple) else val}")
             continue
-        text, how = val
+        text, how, raw = val
         cues = found_cues(text)
         has_specs = bool(re.search(r"electrical specification", text, re.I))
         has_temp = bool(re.search(r"-\s*55|guaranteed from", text, re.I))
@@ -574,15 +650,26 @@ def stage_marki(n_parts, rate, browser=None):
         say(f"               cues: {', '.join(cues) if cues else 'NONE'}")
         first = " ".join(text.split())[:150]
         say(f"               \"{first}\"")
+        meta = {"words": len(text.split()), "cues": cues,
+                "has_spec_table": has_specs, "fetch_path": how}
+        if raw:
+            save_artifact("Marki-Microwave", pn, "html", raw, ds, meta)
+        saved = save_artifact("Marki-Microwave", pn, "txt", text, ds, meta)
+        say(f"               saved -> {saved.name}"
+            + (f" + {pn}.html" if raw else ""))
         ok += 1
     say(f"\n  {ok}/{min(n_parts, len(parts))} datasheet page(s) yielded text")
 
     # Marki publish a dedicated Space & Hi-Rel page -- directly relevant to the
     # space-qualified side of the dataset.
     st, val, secs = guarded(
-        "marki-space", lambda: fetch_html(MARKI_SPACE, browser, rate), 90)
+        "marki-space",
+        lambda: fetch_html(MARKI_SPACE, browser, rate, return_raw=True), 90)
     if st == "ok" and val and val[0]:
-        t, how = val
+        t, how, raw = val
+        save_artifact("Marki-Microwave", "_space_and_hirel", "txt", t,
+                      MARKI_SPACE, {"words": len(t.split()),
+                                    "cues": found_cues(t)})
         say(f"\n  {MARKI_SPACE} -> {len(t)} chars via {how}; cues: "
             f"{', '.join(found_cues(t)) or 'NONE'}")
     else:
@@ -665,6 +752,7 @@ def stage_adi_browser(xlsx, limit, browser, rate):
     targets = adi_urls_from_xlsx(xlsx, limit)
     if not targets:
         return 0
+    say(f"  saving into {OUTDIR / 'Analog-Devices'}")
     ok = 0
     try:
         for pn, urls in targets:
@@ -689,9 +777,14 @@ def stage_adi_browser(xlsx, limit, browser, rate):
                 except Exception as e:
                     text = f"__EXTRACT_FAILED__ {type(e).__name__}"
                 cues = found_cues(text) if not text.startswith("__") else []
+                path = save_artifact(
+                    "Analog-Devices", pn, "pdf", body, u,
+                    {"words": len(text.split()), "cues": cues,
+                     "fetch_path": how})
                 say(f"    {pn:<14} {len(body) // 1024:>4} kB  %PDF  "
                     f"{len(text.split()):>5} words  via {how}  "
                     f"cues: {', '.join(cues) or 'NONE'}")
+                say(f"                   saved -> {path.name}")
                 ok += 1
                 got = True
                 break
@@ -720,8 +813,12 @@ def main():
     ap.add_argument("--port", type=int, default=CHROME_PORT)
     ap.add_argument("--rate", type=float, default=1.0)
     ap.add_argument("--skip-marki", action="store_true")
+    ap.add_argument("--outdir", default=str(_DEFAULT_OUTDIR),
+                    help=f"where to save PDFs / HTML "
+                         f"(default {_DEFAULT_OUTDIR})")
     args = ap.parse_args()
 
+    globals()["OUTDIR"] = Path(args.outdir)
     say("spacequal FINISH debug -- only the two unproven vendors")
     say(f"generated {time.strftime('%Y-%m-%d %H:%M:%S')}")
     say("already proven, not retested: Mini-Circuits, Qorvo, MACOM, Skyworks")
@@ -763,6 +860,7 @@ def main():
         f"   ({adi_ok} PDF(s) retrieved through Chrome)")
     if interrupted:
         say("\n  (run was interrupted, so these counts are partial)")
+    report_saved()
     out = Path(args.report)
     try:
         out.write_text(OUT.getvalue(), encoding="utf-8")
