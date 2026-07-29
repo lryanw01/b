@@ -410,6 +410,41 @@ def looks_js_shell(html):
 
 
 # ================================================================ pdf stage
+def pdf_triage(blob):
+    """Why did extraction fail? Look at the PDF itself.
+
+    Vendor datasheets are often encrypted with an empty owner password (which
+    blocks text extraction but not viewing), or are pure scans with no text
+    layer. Reporting that is far more useful than 'PdfminerException'."""
+    head = blob[:1024]
+    ver = ""
+    m = re.match(rb"%PDF-(\d\.\d)", head)
+    if m:
+        ver = m.group(1).decode()
+    enc = b"/Encrypt" in blob[:400_000] or b"/Encrypt" in blob[-400_000:]
+    pages = len(re.findall(rb"/Type\s*/Page[^s]", blob))
+    fonts = len(re.findall(rb"/Font", blob))
+    images = len(re.findall(rb"/Image", blob))
+    prod = ""
+    pm = re.search(rb"/Producer\s*\(([^)]{0,60})\)", blob)
+    if pm:
+        prod = pm.group(1).decode("latin-1", "replace")
+    bits = [f"PDF {ver or '?'}", f"~{pages} page(s)",
+            f"{fonts} font ref(s)", f"{images} image ref(s)"]
+    if enc:
+        bits.append("ENCRYPTED (/Encrypt present)")
+    if prod:
+        bits.append(f"producer={prod[:40]}")
+    if fonts == 0 and images:
+        bits.append("no fonts + images => SCANNED, needs OCR")
+    return "; ".join(bits)
+
+
+def pdf_sha(blob):
+    import hashlib
+    return hashlib.sha256(blob).hexdigest()[:16]
+
+
 def pdf_text(blob, pages=2):
     try:
         import warnings
@@ -871,6 +906,9 @@ def stage_pdf(found, n_per_vendor):
                 for u in urls:
                     try:
                         blob, final, how = resolve_pdf(u, n)
+                    except urllib.error.HTTPError as e:
+                        last = f"HTTP {e.code} on {u.rsplit('/', 1)[-1]}"
+                        continue
                     except Exception as e:
                         last = f"{type(e).__name__} on {u.rsplit('/', 1)[-1]}"
                         continue
@@ -892,7 +930,12 @@ def stage_pdf(found, n_per_vendor):
             txt = pdf_text(blob)
             if txt.startswith("__EXTRACT_FAILED__"):
                 say(f"               text extraction FAILED: {txt}")
+                say(f"               triage: {pdf_triage(blob)}")
+                say(f"               sha256[:16]={pdf_sha(blob)}  "
+                    f"(compare across parts: identical = same file served "
+                    f"under different names)")
                 continue
+            say(f"               sha256[:16]={pdf_sha(blob)}")
             words = len(txt.split())
             VERIFIED[key] = VERIFIED.get(key, 0) + 1
             say(f"               extracted {len(txt)} chars / {words} words")
@@ -952,7 +995,7 @@ def main():
     ap.add_argument("--qorvo-sweep", metavar="LO-HI",
                     help="sweep Qorvo categoryIDs, e.g. 1-140 (one-time "
                          "discovery; rate-limited)")
-    ap.add_argument("--skyworks-walk", type=int, default=0,
+    ap.add_argument("--skyworks-walk", type=int, default=6,
                     help="walk N Skyworks category pages and hop for PDFs")
     ap.add_argument("--rate", type=float, default=1.0,
                     help="seconds between requests in sweeps/walks")
@@ -1004,6 +1047,15 @@ def main():
         if not args.local:
             stage_minicircuits(args.catalog, 2)
 
+    if not args.qorvo_sweep:
+        say("\n" + "!" * 76)
+        say("  QORVO SWEEP WAS NOT RUN, so Qorvo is limited to the one known")
+        say("  categoryID (ca0118 = 106 parts). Its tables live only behind")
+        say("  product-list?categoryID=<opaque id>, and the family pages do not")
+        say("  contain those ids -- so they have to be enumerated once:")
+        say("      python %s --qorvo-sweep 1-140" % Path(sys.argv[0]).name)
+        say("  ~140 requests at 1/s, about 2.5 minutes, then the map is fixed.")
+        say("!" * 76)
     say("\n" + "=" * 76)
     say("SCORECARD")
     say("=" * 76)
