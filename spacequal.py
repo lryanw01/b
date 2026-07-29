@@ -370,6 +370,34 @@ class Fetcher:
             self._last = time.time()
 
 
+def pdf_url_candidates(pn, catalog_url=None):
+    """Ordered (url, why) candidates for a part's datasheet.
+
+    Mini-Circuits groups some variants onto ONE datasheet -- typically an 'X'
+    suffix marking a heatsink or case option ('DBTC-10-13X+' is documented in
+    'DBTC-10-13+.pdf'). 385 catalog parts end in 'X+' and 245 of those have an
+    X-less counterpart, so when the direct URL 404s it is worth dropping the X
+    before giving up. Add further rules here; each is tried only after the
+    previous one fails, so a rule costs nothing on parts that resolve normally."""
+    out = []
+
+    def add(url, why):
+        if url and url not in [u for u, _w in out]:
+            out.append((url, why))
+
+    norm = norm_pn(pn)
+    add(catalog_url, "catalog url")
+    add(MC_PDF_TEMPLATE.format(pn=urllib.parse.quote(norm, safe="+-_.")),
+        "generic /pdfs/<PN>.pdf")
+    # trailing 'X+' (or a bare trailing 'X') -> the grouped counterpart datasheet
+    m = re.match(r"^(.*[^-\s])X(\+?)$", norm, re.I)
+    if m:
+        alt = m.group(1) + m.group(2)
+        add(MC_PDF_TEMPLATE.format(pn=urllib.parse.quote(alt, safe="+-_.")),
+            f"X dropped -> {alt}")
+    return out
+
+
 # ------------------------------------------------------ datasheet text mining
 _SECTION_HEADS = ("product overview", "general description", "description",
                   "features", "applications", "product features",
@@ -722,7 +750,7 @@ def cmd_fetch(args):
         items = items[: args.limit]
     quiet = getattr(args, "quiet", False)
     fetcher = Fetcher(rate=args.rate, ignore_robots=args.ignore_robots)
-    got = cached = failed = empty = 0
+    got = cached = failed = empty = recovered = 0
     missing = []
     total = len(items)
     started = time.time()
@@ -746,37 +774,51 @@ def cmd_fetch(args):
                     print(f"  {'':>4}{i:>6}/{total}  ...{cached} already cached, "
                           f"skipping", flush=True)
                 continue
-        url = it.get("datasheet_url") or MC_PDF_TEMPLATE.format(pn=pn)
+        candidates = pdf_url_candidates(pn, it.get("datasheet_url"))
         blob = (pdf_path.read_bytes()
                 if (pdf_path.exists() and not args.refetch) else None)
         from_disk = blob is not None
+        used_why = "cached pdf"
         if blob is None:
-            try:
-                blob = fetcher.get(url)
-            except PermissionError as e:
-                raise SystemExit(f"stopping: {e}")
+            for url, why in candidates:
+                try:
+                    blob = fetcher.get(url)
+                except PermissionError as e:
+                    raise SystemExit(f"stopping: {e}")
+                if blob:
+                    used_why = why
+                    if why != "catalog url":
+                        recovered += 1
+                    break
             if blob:
                 pdf_path.write_bytes(blob)
         if not blob:
             # not cached: may be transient (timeout/429/offline), so retry next run
             failed += 1
-            missing.append((it["pn"], it["label"], url))
-            _fetch_line(i, total, it, "FAILED", url, started, quiet)
+            tried = " | ".join(u for u, _w in candidates)
+            missing.append((it["pn"], it["label"], tried))
+            _fetch_line(i, total, it, "FAILED",
+                        f"tried {len(candidates)} url(s): {candidates[0][0]}",
+                        started, quiet)
             continue
         overview = extract_overview(blob)
         txt_path.write_text(overview, encoding="utf-8")
         got += 1
+        note = "" if used_why in ("catalog url", "cached pdf") else f"  [{used_why}]"
         if overview:
-            status, detail = ("ok" if not from_disk else "reparsed",
-                              f"{len(blob) // 1024} kB pdf, "
-                              f"{len(overview)} chars text")
+            status = "ok" if not from_disk else "reparsed"
+            detail = (f"{len(blob) // 1024} kB pdf, {len(overview)} chars"
+                      f"{note}")
         else:
             empty += 1
-            status, detail = "no text", f"{len(blob) // 1024} kB pdf (scanned?)"
+            status, detail = "no text", f"{len(blob) // 1024} kB pdf (scanned?){note}"
         _fetch_line(i, total, it, status, detail, started, quiet)
     elapsed = time.time() - started
     print(f"\nfetched {got}   cached {cached}   no-text {empty}   failed {failed}"
           f"   in {elapsed / 60:.1f} min")
+    if recovered:
+        print(f"  {recovered} datasheet(s) recovered by a fallback URL rule "
+              f"(e.g. dropping a trailing X)")
     if missing:
         print("\nNo datasheet retrieved (not in catalog and no /pdfs/<PN>.pdf):")
         for pn, label, url in missing[: args.show_missing]:
@@ -1176,6 +1218,151 @@ def cmd_selftest(args):
     return rc
 
 
+# ------------------------------------------------------------- cache control
+def _dir_stats(path):
+    """(file count, bytes) for a cache directory."""
+    if not path.exists():
+        return 0, 0
+    files = [f for f in path.glob("*") if f.is_file()]
+    return len(files), sum(f.stat().st_size for f in files)
+
+
+def _human(n):
+    for unit in ("B", "kB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024.0
+
+
+CACHE_PARTS = {
+    "pdfs": (CACHE_PDF, "downloaded datasheet PDFs"),
+    "text": (CACHE_TXT, "extracted overview text"),
+}
+CACHE_FILES = {
+    "model": (MODEL_FILE, "trained model"),
+    "predictions": (PRED_JSON, "per-part predictions"),
+    "match": (MATCH_JSON, "catalog<->everythingRF match"),
+    "missing": (WORKDIR / "missing_datasheets.json", "missing-datasheet report"),
+}
+
+
+def cache_report():
+    lines, total = [], 0
+    for key, (path, desc) in CACHE_PARTS.items():
+        n, size = _dir_stats(path)
+        total += size
+        lines.append(f"    {key:<12} {n:>6} file(s)  {_human(size):>10}   {desc}")
+    for key, (path, desc) in CACHE_FILES.items():
+        exists = path.exists()
+        size = path.stat().st_size if exists else 0
+        total += size
+        lines.append(f"    {key:<12} {'yes' if exists else '--':>6}          "
+                     f"{_human(size) if exists else '-':>10}   {desc}")
+    return lines, total
+
+
+def _delete_dir_contents(path):
+    n = 0
+    if not path.exists():
+        return 0
+    # Safety: only ever remove files inside the tool's own work directory.
+    if WORKDIR.resolve() not in path.resolve().parents and path.resolve() != WORKDIR.resolve():
+        raise SystemExit(f"refusing to delete outside {WORKDIR}: {path}")
+    for f in path.glob("*"):
+        if f.is_file():
+            f.unlink()
+            n += 1
+    return n
+
+
+def cmd_clear(args):
+    """Delete cached downloads and/or derived artefacts."""
+    targets = set()
+    if args.all:
+        targets = set(CACHE_PARTS) | set(CACHE_FILES)
+    else:
+        for key in ("pdfs", "text", "model", "predictions", "match", "missing"):
+            if getattr(args, key, False):
+                targets.add(key)
+    lines, total = cache_report()
+    print("Cache contents:")
+    for ln in lines:
+        print(ln)
+    print(f"    {'total':<12} {'':>6}          {_human(total):>10}")
+    if not targets:
+        print("\nNothing selected. Use --pdfs --text --model --predictions "
+              "--match --missing, or --all.")
+        return 0
+    print(f"\nAbout to delete: {', '.join(sorted(targets))}")
+    if not args.yes:
+        try:
+            if input("Type 'yes' to confirm: ").strip().lower() not in ("y", "yes"):
+                print("cancelled.")
+                return 0
+        except EOFError:
+            print("cancelled (no input).")
+            return 0
+    removed = 0
+    for key in sorted(targets):
+        if key in CACHE_PARTS:
+            n = _delete_dir_contents(CACHE_PARTS[key][0])
+            removed += n
+            print(f"  {key}: removed {n} file(s)")
+        else:
+            path = CACHE_FILES[key][0]
+            if path.exists():
+                path.unlink()
+                removed += 1
+                print(f"  {key}: removed")
+            else:
+                print(f"  {key}: nothing to remove")
+    print(f"\ndeleted {removed} file(s) from {WORKDIR}")
+    return 0
+
+
+def clear_menu():
+    """Interactive cache clearing."""
+    while True:
+        lines, total = cache_report()
+        print("\n  Cache / reset")
+        print("  -------------")
+        for ln in lines:
+            print(ln)
+        print(f"    {'total':<12} {'':>6}          {_human(total):>10}")
+        print("""
+  1) Clear extracted TEXT only        (keeps PDFs; re-parse without re-downloading)
+  2) Clear PDFs only                  (frees the most space)
+  3) Clear PDFs + text                (full re-download next fetch)
+  4) Clear model + predictions        (keeps downloads; retrain from scratch)
+  5) Clear match file
+  6) Clear EVERYTHING
+  0) back""")
+        try:
+            c = input("  choice> ").strip()
+        except EOFError:
+            return
+        sets = {"1": ["text"], "2": ["pdfs"], "3": ["pdfs", "text"],
+                "4": ["model", "predictions"], "5": ["match"],
+                "6": list(CACHE_PARTS) + list(CACHE_FILES)}
+        if c in ("0", "", "q"):
+            return
+        if c not in sets:
+            print("  ? unknown choice")
+            continue
+        chosen = sets[c]
+        print(f"  will delete: {', '.join(chosen)}")
+        try:
+            if input("  type 'yes' to confirm: ").strip().lower() not in ("y", "yes"):
+                print("  cancelled.")
+                continue
+        except EOFError:
+            return
+        ns = _ns(all=False, yes=True,
+                 **{k: (k in chosen) for k in
+                    ("pdfs", "text", "model", "predictions", "match", "missing")})
+        cmd_clear(ns)
+
+
 # --------------------------------------------------------- settings + menu
 DEFAULT_SETTINGS = {
     "catalog": DEFAULT_CATALOG,
@@ -1291,6 +1478,7 @@ MENU = """
   7) Score a paragraph of text   <- the everyday tool
   8) Settings
   9) Offline selftest (no network or catalog needed)
+  c) Clear cache / reset
   0) Quit
 --------------------------------------------------------------"""
 
@@ -1385,6 +1573,8 @@ def menu():
                 interactive_score()
             elif choice == "8":
                 settings_menu(s)
+            elif choice.lower() == "c":
+                clear_menu()
             elif choice == "9":
                 cmd_selftest(_ns(backend=s["backend"], hf_model=s["hf_model"],
                                  positives=60, unlabeled=1500, hidden=45,
@@ -1473,6 +1663,18 @@ def build_parser():
     r.add_argument("--out", default="review_queue.csv")
     r.add_argument("--limit", type=int, default=0)
     r.set_defaults(func=cmd_review)
+
+    cl = sub.add_parser("clear", help="delete cached downloads / derived files")
+    cl.add_argument("--pdfs", action="store_true", help="downloaded PDFs")
+    cl.add_argument("--text", action="store_true", help="extracted overview text")
+    cl.add_argument("--model", action="store_true", help="trained model file")
+    cl.add_argument("--predictions", action="store_true", help="predictions.json")
+    cl.add_argument("--match", action="store_true", help="matched.json")
+    cl.add_argument("--missing", action="store_true",
+                    help="missing_datasheets.json report")
+    cl.add_argument("--all", action="store_true", help="everything above")
+    cl.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
+    cl.set_defaults(func=cmd_clear)
 
     s = sub.add_parser("selftest", help="offline end-to-end check on synthetic data")
     s.add_argument("--backend", choices=("tfidf", "embed"), default="tfidf")
