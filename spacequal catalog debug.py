@@ -63,6 +63,7 @@ from pathlib import Path
 socket.setdefaulttimeout(20)
 UA = "rfparts-spacequal-debug/1.1 (catalog parser diagnostic)"
 OUT = io.StringIO()
+VERIFIED = {}   # vendor -> count of PDFs actually fetched AND text-extracted
 
 
 def say(line=""):
@@ -309,6 +310,15 @@ def parse_marki(html, base):
     return list(out.values())
 
 
+_VENDOR_PART_PATH = {
+    # MACOM's facet links (/products/.../switches-sp3t, 200_V) look exactly like
+    # part pages to a generic rule, so require the real product path.
+    "www.macom.com": re.compile(r"/products/product-detail/([^/?#]+)", re.I),
+    # Skyworks parts sit at /en/Products/<Category>/<PN>.
+    "www.skyworksinc.com": re.compile(r"/Products/[^/]+/([^/?#]+)$", re.I),
+}
+
+
 def parse_generic(html, base):
     """No vendor knowledge: every .pdf link, plus anything that looks like a
     product page carrying a part-number-ish last path segment. Enough to tell us
@@ -327,6 +337,7 @@ def parse_generic(html, base):
     #   Skyworks  /en/Products/Amplifiers/SKY66318-11
     # Take the LAST path segment of any same-host product URL and test that.
     host = urllib.parse.urlparse(base).netloc
+    strict = _VENDOR_PART_PATH.get(host)
     for href in _HREF.findall(html):
         u = _abs(base, href.strip())
         pr = urllib.parse.urlparse(u)
@@ -334,7 +345,13 @@ def parse_generic(html, base):
             continue
         if re.search(r"\.(pdf|jpg|png|zip|xlsx?)($|\?)", pr.path, re.I):
             continue
-        last = urllib.parse.unquote(pr.path.rstrip("/").rsplit("/", 1)[-1])
+        if strict:
+            m = strict.search(pr.path)
+            if not m:
+                continue
+            last = urllib.parse.unquote(m.group(1))
+        else:
+            last = urllib.parse.unquote(pr.path.rstrip("/").rsplit("/", 1)[-1])
         if looks_like_pn(last):
             pn = last.upper()
             out.setdefault(pn, {"pn": pn, "product_url": u,
@@ -577,6 +594,120 @@ def stage_discover(vendors, follow):
     return extra
 
 
+# ------------------------------------------- Qorvo categoryID map discovery
+# Qorvo's parametric tables live ONLY at /products/product-list?categoryID=<id>,
+# the ids are opaque Sitecore ids ('ca' + 4 digits), and -- proven by the last
+# run -- the family landing pages do not contain them. Two are known:
+#     ca0021  Control Products (attenuators, limiters, phase shifters)   76 parts
+#     ca0118  Wi-Fi / CATV / PMIC / UWB grab-bag                        106 parts
+# There are ~11 product families, so the live id space is small. Sweep it ONCE,
+# rate-limited, record the map, and hard-code it afterwards.
+
+QORVO_KNOWN_CATIDS = ["ca0021", "ca0118"]
+
+
+def qorvo_sweep(lo, hi, rate=1.0, budget_each=30):
+    """Probe categoryID=ca%04d over [lo, hi] and report which ones hold a table.
+
+    Read-only GETs of public pages at the given rate -- the same requests a
+    person clicking the catalogue would make, just enumerated once."""
+    say("\n" + "=" * 76)
+    say(f"QORVO categoryID SWEEP  ca{lo:04d}..ca{hi:04d}  "
+        f"({hi - lo + 1} request(s) at {rate}s)")
+    say("=" * 76)
+    say("  Finding which ids hold a parametric table. Run this once; the map is")
+    say("  then hard-coded and never swept again.\n")
+    found = {}
+    for i in range(lo, hi + 1):
+        cid = f"ca{i:04d}"
+        url = f"https://www.qorvo.com/products/product-list?categoryID={cid}"
+        time.sleep(rate)
+        st, val, secs = guarded(f"sweep-{cid}", lambda u=url: http_get(u),
+                                budget_each)
+        if st != "ok":
+            continue
+        html = val[0].decode("utf-8", "replace")
+        recs = [r for r in parse_qorvo(html, url) if looks_like_pn(r["pn"])]
+        if not recs:
+            continue
+        with_ds = sum(1 for r in recs if r.get("datasheet_url"))
+        # the section headings tell us what the category actually is
+        heads = re.findall(r"<h[23][^>]*>\s*([^<]{3,60}?)\s*\(\d+\)\s*</h[23]>",
+                           html, re.I)[:3]
+        found[cid] = {"parts": len(recs), "with_ds": with_ds,
+                      "sections": heads}
+        say(f"  {cid}  {len(recs):>4} part(s)  {with_ds:>4} with ds   "
+            f"{'; '.join(heads) if heads else '(headings not parsed)'}",)
+    say(f"\n  {len(found)} live categoryID(s) in this range")
+    if found:
+        total = sum(v["parts"] for v in found.values())
+        say(f"  {total} parts total across them")
+        say("\n  hard-code this map:")
+        say("  QORVO_CATEGORY_IDS = [")
+        for cid, v in found.items():
+            say(f'      "{cid}",   # {v["parts"]} parts  '
+                f'{v["sections"][0] if v["sections"] else ""}')
+        say("  ]")
+    return found
+
+
+def skyworks_walk(follow, rate=1.0):
+    """Skyworks: collect category URLs from /en/Products, parse each for parts,
+    then hop ONE product page to find its opaque-doc-number PDF."""
+    say("\n" + "=" * 76)
+    say("SKYWORKS: walk categories, then hop a product page for the PDF")
+    say("=" * 76)
+    seed = "https://www.skyworksinc.com/en/Products"
+    st, val, _ = guarded("sky-seed", lambda: http_get(seed), 35)
+    if st != "ok":
+        say(f"  seed fetch failed: {val}")
+        return []
+    html = val[0].decode("utf-8", "replace")
+    host = "www.skyworksinc.com"
+    cats = []
+    for href in _HREF.findall(html):
+        u = _abs(seed, href.strip())
+        pr = urllib.parse.urlparse(u)
+        if pr.netloc != host or not re.match(r"^/en/Products/[^/]+/?$", pr.path):
+            continue
+        if u not in cats:
+            cats.append(u)
+    say(f"  {len(cats)} category page(s) found; following {min(follow, len(cats))}")
+    recs = []
+    for u in cats[:follow]:
+        time.sleep(rate)
+        st, val, secs = guarded("sky-cat", lambda x=u: http_get(x), 35)
+        if st != "ok":
+            say(f"    [{st}] {u} -> {val}")
+            continue
+        got = [r for r in parse_generic(val[0].decode("utf-8", "replace"), u)
+               if looks_like_pn(r["pn"])]
+        say(f"    {u.rsplit('/', 1)[-1]:<34} {len(got):>4} part(s)")
+        recs.extend(got)
+    recs = dedupe(recs)
+    say(f"  {len(recs)} distinct part(s) across those categories")
+    # one product-page hop to prove the PDF is reachable
+    for r in recs[:2]:
+        if not r.get("product_url"):
+            continue
+        time.sleep(rate)
+        st, val, secs = guarded("sky-hop", lambda x=r["product_url"]: http_get(x), 40)
+        if st != "ok":
+            say(f"    hop {r['pn']}: {val}")
+            continue
+        h = val[0].decode("utf-8", "replace")
+        pdfs = [_abs(r["product_url"], x) for x in _HREF.findall(h)
+                if re.search(r"\.pdf($|[?#])", x, re.I)]
+        ranked = sorted(dict.fromkeys(pdfs),
+                        key=lambda x: -pdf_candidate_score(x, r["pn"]))
+        say(f"    hop {r['pn']}: {len(ranked)} PDF link(s) on the product page"
+            + (f"; best = {ranked[0].rsplit('/', 1)[-1][:56]}" if ranked else ""))
+        if ranked:
+            r["datasheet_url"] = ranked[0]
+            r["candidates"] = ranked[:3]
+    return recs
+
+
 # =================================================================== stages
 def stage_catalog(vendors, local_dir):
     say("=" * 76)
@@ -718,12 +849,14 @@ def stage_pdf(found, n_per_vendor):
         recs = dedupe(recs)
         # fall back to the confirmed URL pattern when the page gave no link
         for r in recs:
-            if not r.get("datasheet_url"):
-                cand = derive_datasheet_urls(key, r["pn"])
-                if cand:
-                    r["datasheet_url"] = cand[0]
-                    r["candidates"] = cand
-                    r["from_pattern"] = True
+            # Always attach the FULL candidate list. Previously this ran only when
+            # datasheet_url was empty, so stage_adi_xlsx (which sets it) meant the
+            # ad1671.pdf base-part fallback was never tried -- one URL, not four.
+            pattern = derive_datasheet_urls(key, r["pn"])
+            existing = [r["datasheet_url"]] if r.get("datasheet_url") else []
+            r["candidates"] = list(dict.fromkeys(existing + pattern))
+            if r["candidates"]:
+                r["datasheet_url"] = r["candidates"][0]
         with_ds = [r for r in recs if r.get("datasheet_url")]
         if not with_ds:
             say(f"\n  {key}: no datasheet URLs parsed, nothing to fetch")
@@ -761,6 +894,7 @@ def stage_pdf(found, n_per_vendor):
                 say(f"               text extraction FAILED: {txt}")
                 continue
             words = len(txt.split())
+            VERIFIED[key] = VERIFIED.get(key, 0) + 1
             say(f"               extracted {len(txt)} chars / {words} words")
             snippet = " ".join(txt.split())[:150]
             say(f"               \"{snippet}\"")
@@ -815,6 +949,13 @@ def main():
                     default=str(Path.home() / "Downloads" / "newSources"
                                / "adi_space_portfolio_2026-07-28.xlsx"),
                     help="ADI space portfolio spreadsheet (part-number source)")
+    ap.add_argument("--qorvo-sweep", metavar="LO-HI",
+                    help="sweep Qorvo categoryIDs, e.g. 1-140 (one-time "
+                         "discovery; rate-limited)")
+    ap.add_argument("--skyworks-walk", type=int, default=0,
+                    help="walk N Skyworks category pages and hop for PDFs")
+    ap.add_argument("--rate", type=float, default=1.0,
+                    help="seconds between requests in sweeps/walks")
     ap.add_argument("--follow", type=int, default=4,
                     help="listing URLs to discover and follow per vendor (0 = off)")
     ap.add_argument("--catalog", help="Mini-Circuits products JSON (control case)",
@@ -844,6 +985,16 @@ def main():
         extra = stage_discover(vendors, args.follow)
         for k, v in extra.items():
             found.setdefault(k, []).extend(v)
+    if args.qorvo_sweep:
+        try:
+            lo, hi = (int(x) for x in args.qorvo_sweep.split("-", 1))
+        except ValueError:
+            raise SystemExit("--qorvo-sweep wants LO-HI, e.g. 1-140")
+        qorvo_sweep(lo, hi, rate=args.rate)
+    if args.skyworks_walk and not args.local:
+        sw = skyworks_walk(args.skyworks_walk, rate=args.rate)
+        if sw:
+            found["skyworks"] = sw
     if not args.local and "adi" in vendors:
         adi = stage_adi_xlsx(args.adi_xlsx, args.pdfs)
         if adi:
@@ -856,15 +1007,18 @@ def main():
     say("\n" + "=" * 76)
     say("SCORECARD")
     say("=" * 76)
-    say(f"  {'vendor':<18} {'parts':>7} {'with ds':>8}   verdict")
+    say(f"  {'vendor':<18} {'parts':>7} {'cand ds':>8}   verdict")
     for key in vendors:
         recs = found.get(key, [])
         real = dedupe([r for r in recs if looks_like_pn(r["pn"])])
         with_ds = sum(1 for r in real if r.get("datasheet_url"))
-        if with_ds:
-            verdict = "READY to wire in"
+        verified = VERIFIED.get(key, 0)
+        if verified:
+            verdict = f"PROVEN ({verified} PDF(s) fetched + text extracted)"
+        elif with_ds:
+            verdict = "parts + candidate URLs, but NO verified PDF yet"
         elif real:
-            verdict = "parts found, no datasheet links -- needs another hop"
+            verdict = "parts found, no datasheet link -- needs another hop"
         else:
             verdict = "no parts parsed -- save pages and use --local"
         say(f"  {VENDOR_CATALOGS[key]['name']:<18} {len(real):>7} {with_ds:>8}   "
