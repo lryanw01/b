@@ -746,18 +746,29 @@ def cmd_fetch(args):
     CACHE_PDF.mkdir(parents=True, exist_ok=True)
     CACHE_TXT.mkdir(parents=True, exist_ok=True)
     items = _work_items(match, include_unlabeled=not args.positives_only)
-    if args.limit:
-        items = items[: args.limit]
     quiet = getattr(args, "quiet", False)
     fetcher = Fetcher(rate=args.rate, ignore_robots=args.ignore_robots)
-    got = cached = failed = empty = recovered = 0
+    got = cached = failed = empty = recovered = attempts = 0
     missing = []
     total = len(items)
+    # --limit caps NEW fetches, not queue position. Already-cached parts are
+    # skipped for free and do not spend the budget, so each run continues where
+    # the last one stopped. (Slicing the queue instead capped coverage at N
+    # forever: re-running just re-walked the same first N parts.)
+    budget = args.limit or 0
     started = time.time()
-    print(f"fetching up to {total} datasheet(s) at {args.rate}s/request "
-          f"-> {CACHE_PDF}")
+    print(f"queue {total} part(s); "
+          + (f"fetching at most {budget} new one(s)" if budget
+             else "fetching everything not already cached")
+          + f" at {args.rate}s/request -> {CACHE_PDF}")
     print(f"{'':>4}{'#':>7}  {'part':<26} {'status':<10} detail")
+    stopped_at = None
     for i, it in enumerate(items, 1):
+        if budget and attempts >= budget:
+            stopped_at = i - 1
+            print(f"\n  hit the limit of {budget} new fetch(es) at queue position "
+                  f"{stopped_at}/{total}; re-run to carry on from here.")
+            break
         pn = norm_pn(it["pn"])
         safe = re.sub(r"[^A-Za-z0-9._+-]", "_", pn)
         txt_path, pdf_path = CACHE_TXT / f"{safe}.txt", CACHE_PDF / f"{safe}.pdf"
@@ -780,6 +791,7 @@ def cmd_fetch(args):
         from_disk = blob is not None
         used_why = "cached pdf"
         if blob is None:
+            attempts += 1
             for url, why in candidates:
                 try:
                     blob = fetcher.get(url)
@@ -819,6 +831,21 @@ def cmd_fetch(args):
     if recovered:
         print(f"  {recovered} datasheet(s) recovered by a fallback URL rule "
               f"(e.g. dropping a trailing X)")
+    # Coverage, split by label: training needs BOTH known-space parts and
+    # unlabeled ones, and the queue puts positives first, so a short run can end
+    # up with positives only.
+    have_p, have_u = _cache_coverage(items)
+    n_p = sum(1 for it in items if it["label"] == "P")
+    n_u = total - n_p
+    print(f"\ncached datasheet text: {have_p}/{n_p} known-space (P), "
+          f"{have_u}/{n_u} unlabeled (U)")
+    if have_p and not have_u:
+        print("  ! Training needs unlabeled parts too, and the queue fetches all")
+        print("    positives first. Run fetch again (cached parts are skipped for")
+        print("    free) until the U count is at least a few hundred.")
+    elif have_u and have_u < 200:
+        print(f"  note: {have_u} unlabeled part(s) is thin; a few hundred makes "
+              f"the PU bagging estimates steadier.")
     if missing:
         print("\nNo datasheet retrieved (not in catalog and no /pdfs/<PN>.pdf):")
         for pn, label, url in missing[: args.show_missing]:
@@ -829,6 +856,19 @@ def cmd_fetch(args):
               [{"pn": p, "label": l, "url": u} for p, l, u in missing])
         print(f"  full list: {WORKDIR / 'missing_datasheets.json'}")
     return 0
+
+
+def _cache_coverage(items):
+    """(positives, unlabeled) that currently have usable cached overview text."""
+    p = u = 0
+    for it in items:
+        path = _overview_path(it["pn"])
+        if path.exists() and path.stat().st_size >= 40:
+            if it["label"] == "P":
+                p += 1
+            else:
+                u += 1
+    return p, u
 
 
 def _fetch_line(i, total, item, status, detail, started, quiet=False):
@@ -870,8 +910,15 @@ def cmd_train(args):
         print(f"  ! only {len(P)} positives: expect noisy estimates. Treat the "
               f"numbers as indicative and widen your review sample.")
     if not U:
-        raise SystemExit("no unlabeled parts with text -- run `fetch` without "
-                         "--positives-only")
+        n_u_total = sum(1 for i in items if i["label"] == "U")
+        raise SystemExit(
+            f"no unlabeled parts have datasheet text yet "
+            f"({len(P)} positives do, out of {n_u_total} unlabeled in the queue).\n"
+            f"The fetch queue puts all positives first, so a short or interrupted\n"
+            f"fetch ends up positives-only and cannot train (PU learning needs an\n"
+            f"unlabeled pool to sample negatives from).\n"
+            f"Run `fetch` again -- already-cached parts are skipped for free, so it\n"
+            f"carries on from where it stopped -- until a few hundred U have text.")
 
     featurizer, tag = _build_featurizer(args)
     texts = [d["text"] for d in P] + [d["text"] for d in U]
@@ -1370,7 +1417,7 @@ DEFAULT_SETTINGS = {
     "backend": "tfidf",
     "hf_model": DEFAULT_HF_MODEL,
     "mask": "none",
-    "fetch_limit": 0,
+    "fetch_limit": 800,   # new fetches per run; re-run to extend coverage
     "rate": DEFAULT_RATE,
     "bags": 15,
     "folds": 5,
@@ -1433,6 +1480,11 @@ def cmd_runall(args):
             return rc
     print(f"\n{'=' * 62}")
     print(f"  Done. Model: {MODEL_FILE}")
+    lim = s.get("fetch_limit") or 0
+    if lim:
+        print(f"  Coverage grows each time: re-run option 1 to fetch the next "
+              f"{lim} part(s).")
+        print(f"  Cached datasheets are reused, so nothing is downloaded twice.")
     print(f"  Score a paragraph:  python {Path(sys.argv[0]).name} "
           f"predict --text \"...\"")
     print(f"  Or menu option 7.")
