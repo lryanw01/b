@@ -1,5 +1,6 @@
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\spacequal debug.py"
 spacequal catalog + datasheet parsing debug
-generated 2026-07-29 13:33:01
+generated 2026-07-29 13:41:10
 python 3.12.8 on win32
 pdfplumber 0.11.10
 
@@ -9,7 +10,7 @@ CATALOG PAGES: fetch -> render check -> parse
 
   Qorvo  [qorvo]
     proven: server-rendered tables, PN + datasheet id per row
-    [ok     ]   3.8s  HTTP 200  897 kB  514 links, 5707 words
+    [ok     ]   3.7s  HTTP 200  897 kB  514 links, 5707 words
                https://www.qorvo.com/products/product-list?categoryID=ca0118
                parsed 106 part(s), 66 with a datasheet link
                  QM42500                  (none)
@@ -29,7 +30,7 @@ CATALOG PAGES: fetch -> render check -> parse
     [ok     ]   0.4s  HTTP 200  109 kB  305 links, 1088 words
                https://www.qorvo.com/products/active-antenna-systems/if-transceivers
                parsed 0 part(s), 0 with a datasheet link
-    [ok     ]   0.7s  HTTP 200  134 kB  313 links, 1154 words
+    [ok     ]   0.9s  HTTP 200  134 kB  313 links, 1154 words
                https://www.qorvo.com/products/amplifiers/distributed-amplifiers
                parsed 0 part(s), 0 with a datasheet link
 
@@ -57,7 +58,7 @@ CATALOG PAGES: fetch -> render check -> parse
                  MM2-0432HPSM-2           https://markimicrowave.com/products/surface-mount/mixers/mm2-0432hpsm-
                  MM2-0432HPSM-1           https://markimicrowave.com/products/surface-mount/mixers/mm2-0432hpsm-
                  MM1A-0330HPSM            https://markimicrowave.com/products/surface-mount/mixers/mm1a-0330hpsm
-    [ok     ]   0.9s  HTTP 200  178 kB  160 links, 1250 words
+    [ok     ]   0.6s  HTTP 200  178 kB  160 links, 1250 words
                https://markimicrowave.com/products/connectorized/amplifiers/
                parsed 32 part(s), 32 with a datasheet link
                  AMM2-0020UH              https://markimicrowave.com/products/connectorized/amplifiers/amm2-0020
@@ -74,23 +75,15 @@ CATALOG PAGES: fetch -> render check -> parse
 
   MACOM  [macom]
     datasheet pattern known; LISTING page unproven -- probing candidates
-    [ok     ]   0.8s  HTTP 200  58 kB  222 links, 706 words
+    [ok     ]   0.5s  HTTP 200  58 kB  222 links, 706 words
                https://www.macom.com/products
-               parsed 8 part(s), 0 with a datasheet link
-                 200_V                    (none)
-                 500V                     (none)
-                 1000V                    (none)
-                 SWITCHES-SP3T            (none)
-                 SWITCHES-SP4T            (none)
-                 SWITCHES-SP5T            (none)
-                 SWITCHES-SP6T            (none)
-                 SWITCHES-SP8T            (none)
+               parsed 0 part(s), 0 with a datasheet link
     [error  ]   0.4s  https://www.macom.com/products/rf-microwave
                -> HTTPError: HTTP Error 404: Not Found
 
   Skyworks  [skyworks]
     datasheet pattern known; LISTING page unproven -- probing candidates
-    [ok     ]   0.7s  HTTP 200  199 kB  1198 links, 2699 words
+    [ok     ]   0.9s  HTTP 200  199 kB  1198 links, 2699 words
                https://www.skyworksinc.com/en/Products
                parsed 0 part(s), 0 with a datasheet link
     [ok     ]   0.7s  HTTP 200  218 kB  1216 links, 2949 words
@@ -117,28 +110,28 @@ DISCOVERY: find listing URLs from a seed page, then follow up to 4
       https://markimicrowave.com/products/connectorized/mixers/t3-high-linearity/
       https://markimicrowave.com/products/connectorized/mixers/triple-balanced/
       https://markimicrowave.com/products/connectorized/mixers/integrated-drive-mixers/
-    [ok     ]   0.8s  310 kB  235 links  2142 words  -> 97 part(s), 97 with datasheet
+    [ok     ]   0.9s  310 kB  235 links  2142 words  -> 97 part(s), 97 with datasheet
                  T3-07MQP                 https://markimicrowave.com/products/connectorized/mixers/t3-07mqp/
                  T3-07LQP                 https://markimicrowave.com/products/connectorized/mixers/t3-07lqp/
                  T3A-07PA                 https://markimicrowave.com/products/connectorized/mixers/t3a-07pa/
                  T3-12MQP                 https://markimicrowave.com/products/connectorized/mixers/t3-12mqp/
                  T3-12LQP                 https://markimicrowave.com/products/connectorized/mixers/t3-12lqp/
                  MM1-0212SS               https://markimicrowave.com/products/connectorized/mixers/mm1-0212s
-    [ok     ]   1.1s  310 kB  235 links  2154 words  -> 97 part(s), 97 with datasheet
+    [ok     ]   1.0s  310 kB  235 links  2154 words  -> 97 part(s), 97 with datasheet
                  T3-07MQP                 https://markimicrowave.com/products/connectorized/mixers/t3-07mqp/
                  T3-07LQP                 https://markimicrowave.com/products/connectorized/mixers/t3-07lqp/
                  T3A-07PA                 https://markimicrowave.com/products/connectorized/mixers/t3a-07pa/
                  T3-12MQP                 https://markimicrowave.com/products/connectorized/mixers/t3-12mqp/
                  T3-12LQP                 https://markimicrowave.com/products/connectorized/mixers/t3-12lqp/
                  MM1-0212SS               https://markimicrowave.com/products/connectorized/mixers/mm1-0212s
-    [ok     ]   1.2s  309 kB  235 links  2103 words  -> 97 part(s), 97 with datasheet
+    [ok     ]   0.9s  309 kB  235 links  2103 words  -> 97 part(s), 97 with datasheet
                  T3-07MQP                 https://markimicrowave.com/products/connectorized/mixers/t3-07mqp/
                  T3-07LQP                 https://markimicrowave.com/products/connectorized/mixers/t3-07lqp/
                  T3A-07PA                 https://markimicrowave.com/products/connectorized/mixers/t3a-07pa/
                  T3-12MQP                 https://markimicrowave.com/products/connectorized/mixers/t3-12mqp/
                  T3-12LQP                 https://markimicrowave.com/products/connectorized/mixers/t3-12lqp/
                  MM1-0212SS               https://markimicrowave.com/products/connectorized/mixers/mm1-0212s
-    [ok     ]   0.9s  310 kB  235 links  2129 words  -> 97 part(s), 97 with datasheet
+    [ok     ]   1.2s  310 kB  235 links  2129 words  -> 97 part(s), 97 with datasheet
                  T3-07MQP                 https://markimicrowave.com/products/connectorized/mixers/t3-07mqp/
                  T3-07LQP                 https://markimicrowave.com/products/connectorized/mixers/t3-07lqp/
                  T3A-07PA                 https://markimicrowave.com/products/connectorized/mixers/t3a-07pa/
@@ -151,34 +144,31 @@ DISCOVERY: find listing URLs from a seed page, then follow up to 4
       https://www.macom.com/products/rf-microwave-mmwave/amplifiers/catv/catv-amplifiers
       https://www.macom.com/products/rf-microwave-mmwave/amplifiers/catv/fttx-amplifiers
       https://www.macom.com/products/rf-microwave-mmwave/amplifiers/hybrid-amplifiers/hybrid-amplifiers-gain-block
-    [ok     ]   0.4s  191 kB  237 links  858 words  -> 23 part(s), 0 with datasheet
-                 200_V                    (none)
-                 500V                     (none)
-                 1000V                    (none)
-                 SWITCHES-SP3T            (none)
-                 SWITCHES-SP4T            (none)
-                 SWITCHES-SP5T            (none)
-    [ok     ]   2.1s  271 kB  251 links  983 words  -> 37 part(s), 0 with datasheet
-                 200_V                    (none)
-                 500V                     (none)
-                 1000V                    (none)
-                 SWITCHES-SP3T            (none)
-                 SWITCHES-SP4T            (none)
-                 SWITCHES-SP5T            (none)
-    [ok     ]   0.3s  98 kB  226 links  815 words  -> 11 part(s), 0 with datasheet
-                 200_V                    (none)
-                 500V                     (none)
-                 1000V                    (none)
-                 SWITCHES-SP3T            (none)
-                 SWITCHES-SP4T            (none)
-                 SWITCHES-SP5T            (none)
-    [ok     ]   0.6s  789 kB  356 links  1223 words  -> 115 part(s), 0 with datasheet
-                 200_V                    (none)
-                 500V                     (none)
-                 1000V                    (none)
-                 SWITCHES-SP3T            (none)
-                 SWITCHES-SP4T            (none)
-                 SWITCHES-SP5T            (none)
+    [ok     ]   1.4s  191 kB  237 links  858 words  -> 15 part(s), 0 with datasheet
+                 MAAM-007239              (none)
+                 MAAM-008818              (none)
+                 MAAM-009778              (none)
+                 MAAM-010237              (none)
+                 MAAM-007805              (none)
+                 MAAM-009450              (none)
+    [ok     ]   0.4s  271 kB  251 links  983 words  -> 29 part(s), 0 with datasheet
+                 MAAM-011297              (none)
+                 MAAL-011139              (none)
+                 MAAM-011258              (none)
+                 MAAL-011119              (none)
+                 MAAMSS0060               (none)
+                 MAAM-011300              (none)
+    [ok     ]   0.3s  98 kB  226 links  815 words  -> 3 part(s), 0 with datasheet
+                 MAAM-008863              (none)
+                 MAAM-007807              (none)
+                 MAAM-010333              (none)
+    [ok     ]   0.6s  789 kB  356 links  1223 words  -> 107 part(s), 0 with datasheet
+                 CA28                     (none)
+                 SMA37                    (none)
+                 SMA57                    (none)
+                 SMA77                    (none)
+                 PA511                    (none)
+                 A5-6                     (none)
   Skyworks           discovered 4 candidate listing URL(s) from 2 seed page(s)
       https://www.skyworksinc.com/en/Products/Timing/NetSync-Network-Synchronizer-Clocks
       https://www.skyworksinc.com/en/Products/TV-and-Video/Evaluation-Kits#collapseall
@@ -186,9 +176,8 @@ DISCOVERY: find listing URLs from a seed page, then follow up to 4
       https://www.skyworksinc.com/en/Products/Voice/Voice-DAAs
     [ok     ]   0.7s  199 kB  1174 links  3003 words  -> 0 part(s), 0 with datasheet
     [ok     ]   0.7s  214 kB  1205 links  3076 words  -> 0 part(s), 0 with datasheet
-    [error  ]   0.7s  https://www.skyworksinc.com/en/Products/Voice/Si3000-Voice-Codecs
-               -> HTTPError: HTTP Error 404: Page not found
-    [ok     ]   0.7s  196 kB  1174 links  2757 words  -> 0 part(s), 0 with datasheet
+    [ok     ]   1.0s  194 kB  1184 links  2584 words  -> 0 part(s), 0 with datasheet
+    [ok     ]   0.6s  196 kB  1174 links  2757 words  -> 0 part(s), 0 with datasheet
 
 ============================================================================
 ADI: part numbers from the space portfolio spreadsheet (no scraping)
@@ -208,39 +197,45 @@ DATASHEET PDFs: fetch -> %PDF magic -> text extraction
                construction cues present: NONE
 
   marki: trying 2 of 204 datasheet URL(s)
-    [ok     ]   6.7s  MM1-0320LBH          2929 kB  %PDF  (followed HTML -> MM1-0320LBH-GaAs%20MMIC%20Double%20Balanced%20Mixer.pdf)
+    [ok     ]   6.5s  MM1-0320LBH          2929 kB  %PDF  (followed HTML -> MM1-0320LBH-GaAs%20MMIC%20Double%20Balanced%20Mixer.pdf)
                text extraction FAILED: __EXTRACT_FAILED__ PdfminerException
-    [ok     ]   5.9s  MM1-1886HM           2929 kB  %PDF  (followed HTML -> MM1-1886HM-GaAs%20MMIC%20mmWave%20Double%20Balanced%20Mixer.pdf)
+    [ok     ]   4.6s  MM1-1886HM           2929 kB  %PDF  (followed HTML -> MM1-1886HM-GaAs%20MMIC%20mmWave%20Double%20Balanced%20Mixer.pdf)
                text extraction FAILED: __EXTRACT_FAILED__ PdfminerException
-
-  macom: trying 2 of 162 datasheet URL(s)
-    [no-pdf ]   0.5s  200_V                1 candidate URL(s) tried; last: HTTPError on 200_V.pdf
-    [no-pdf ]   0.3s  500V                 1 candidate URL(s) tried; last: HTTPError on 500V.pdf
 
   skyworks: trying 2 of 16 datasheet URL(s)
-    [no-pdf ]   2.1s  SKY67181-396LF       2 candidate URL(s) tried; last: HTML with no PDF link; page says: "function OptanonWrapper() { // Get initial OnetrustActiveGroups ids if (typeof OptanonWrapperCount == "undefin"
-    [no-pdf ]   1.9s  SKY67183-396LF       2 candidate URL(s) tried; last: HTML with no PDF link; page says: "function OptanonWrapper() { // Get initial OnetrustActiveGroups ids if (typeof OptanonWrapperCount == "undefin"
+    [no-pdf ]   2.6s  SKY67181-396LF       2 candidate URL(s) tried; last: HTML with no PDF link; page says: "function OptanonWrapper() { // Get initial OnetrustActiveGroups ids if (typeof OptanonWrapperCount == "undefin"
+    [no-pdf ]   2.0s  SKY67183-396LF       2 candidate URL(s) tried; last: HTML with no PDF link; page says: "function OptanonWrapper() { // Get initial OnetrustActiveGroups ids if (typeof OptanonWrapperCount == "undefin"
+
+  macom: trying 2 of 154 datasheet URL(s)
+    [ok     ]   1.3s  MAAM-007239          965 kB  %PDF  (HTTP 200 direct)
+               extracted 4611 chars / 869 words
+               "MAAM-007239 Broadband CATV Single Ended 3-Way Active Splitter 50 - 1100 MHz Rev. V2 Features Functional Schematic  3-Way Splitter  Single Ended Inpu"
+               construction cues present: GaAs, plastic
+    [ok     ]   0.6s  MAAM-008818          864 kB  %PDF  (HTTP 200 direct)
+               extracted 4071 chars / 714 words
+               "MAAM-008818 Broadband CATV Single Ended 2-Way Active Splitter 50 - 1100 MHz Rev. V2 Features Functional Schematic  2-Way Splitter  Single Ended Inpu"
+               construction cues present: GaAs, plastic
 
   adi: trying 2 of 186 datasheet URL(s)
-    [no-pdf ]   0.4s  AD1671S              1 candidate URL(s) tried; last: HTTPError on ad1671s.pdf
-    [no-pdf ]   0.3s  AD1672S              1 candidate URL(s) tried; last: HTTPError on ad1672s.pdf
+    [no-pdf ]   1.5s  AD1671S              4 candidate URL(s) tried; last: HTTPError on AD1671.pdf
+    [no-pdf ]   1.4s  AD1672S              4 candidate URL(s) tried; last: HTTPError on AD1672.pdf
 
 ============================================================================
 CONTROL: Mini-Circuits (local JSON catalog -> PDF)
 ============================================================================
   loaded 15939 parts from minicircuits_products_full.json
-    [ok     ]   1.7s  10F-10F+           261 kB  %PDF  278 words extracted
+    [ok     ]   2.0s  10F-10F+           261 kB  %PDF  278 words extracted
     [ok     ]   0.4s  10F-10M+           295 kB  %PDF  287 words extracted
 
 ============================================================================
 SCORECARD
 ============================================================================
-  vendor               parts  with ds   verdict
-  Qorvo                  106       66   READY to wire in
-  Marki Microwave        204      204   READY to wire in
-  Analog Devices         186      186   READY to wire in
-  MACOM                  162      162   READY to wire in
-  Skyworks                16       16   READY to wire in
+  vendor               parts  cand ds   verdict
+  Qorvo                  106       66   PROVEN (1 PDF(s) fetched + text extracted)
+  Marki Microwave        204      204   parts + candidate URLs, but NO verified PDF yet
+  Analog Devices         186      186   parts + candidate URLs, but NO verified PDF yet
+  MACOM                  154      154   PROVEN (2 PDF(s) fetched + text extracted)
+  Skyworks                16       16   parts + candidate URLs, but NO verified PDF yet
 
 WHAT TO CONCLUDE
 ============================================================================
@@ -252,3 +247,5 @@ WHAT TO CONCLUDE
   back but parsed 0 parts and says 'looks JS-rendered', its catalog is
   built in the browser and the answer is to save pages from your own
   Chrome and re-run with --local.
+
+report written to C:\Users\lane.white\spacequal_catalog_report.txt
