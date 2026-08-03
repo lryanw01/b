@@ -1,25 +1,3 @@
-PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\spacequal.py"
-
-==============================================================
-  spacequal - is this RF part space-qualifiable?
-==============================================================
-  dataset : not scanned yet  (menu option L)
-  model   : tfidf, thr 92%, 2026-08-03 09:20
---------------------------------------------------------------
-  1) BUILD DATASET     scan every local datasheet and label it
-  2) TRAIN             fit the classifier on that dataset
-  3) SCORE A PARAGRAPH run the model on some text
-  4) DEBUG PARSING     what is read from each vendor's format
---------------------------------------------------------------
-  5) Settings
-  6) Advanced          (eval, review, downloads, Mini-Circuits, selftest)
-  0) Quit
---------------------------------------------------------------
-  choice> 1
-==============================================================
-  BUILD DATASET
-==============================================================
-
   DATASHEET LIBRARY    C:\Users\lane.white\Downloads\rfparts\data\datasheets
     4091 file(s) in 4 vendor folder(s): MACOM (1594), Marki Microwave (1546), Qorvo (926), Skyworks (25)
 
@@ -36,154 +14,225 @@ PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\spacequal.py"
     ORACLE TOTAL         10398 part number(s) known to be space
 
   READING DATASHEETS   (sections text, min 80 chars to keep)
-    [    25/4091] 25 part(s) kept, 0 problem(s), eta 1559s
-    [    50/4091] 50 part(s) kept, 0 problem(s), eta 1719s
-    [    75/4091] 75 part(s) kept, 0 problem(s), eta 1514s
-    [   100/4091] 100 part(s) kept, 0 problem(s), eta 1340s
-    [   125/4091] 125 part(s) kept, 0 problem(s), eta 1392s
-    [   150/4091] 150 part(s) kept, 0 problem(s), eta 1276s
-    [   175/4091] 174 part(s) kept, 1 problem(s), eta 1264s
-    [   200/4091] 199 part(s) kept, 1 problem(s), eta 1285s
-    [   225/4091] 224 part(s) kept, 1 problem(s), eta 1281s
-    [   250/4091] 249 part(s) kept, 1 problem(s), eta 1287s
-    [   275/4091] 274 part(s) kept, 1 problem(s), eta 1313s
-    [   300/4091] 299 part(s) kept, 1 problem(s), eta 1314s
-    [   325/4091] 324 part(s) kept, 1 problem(s), eta 1345s
-    [   350/4091] 349 part(s) kept, 1 problem(s), eta 1338s
-    [   375/4091] 374 part(s) kept, 1 problem(s), eta 1327s
-    [   400/4091] 399 part(s) kept, 1 problem(s), eta 1328s
-    [   425/4091] 424 part(s) kept, 1 problem(s), eta 1314s
-    [   450/4091] 449 part(s) kept, 1 problem(s), eta 1303s
-    [   475/4091] 474 part(s) kept, 1 problem(s), eta 1289s
-    [   500/4091] 499 part(s) kept, 1 problem(s), eta 1297s
-    [   525/4091] 524 part(s) kept, 1 problem(s), eta 1310s
-    [   550/4091] 549 part(s) kept, 1 problem(s), eta 1309s
-    [   575/4091] 574 part(s) kept, 1 problem(s), eta 1339s
-    [   600/4091] 598 part(s) kept, 2 problem(s), eta 1321s
-    [   625/4091] 622 part(s) kept, 3 problem(s), eta 1294s
-    [   650/4091] 647 part(s) kept, 3 problem(s), eta 1282s
-    [   675/4091] 672 part(s) kept, 3 problem(s), eta 1254s
-    [   700/4091] 697 part(s) kept, 3 problem(s), eta 1228s
-    [   725/4091] 722 part(s) kept, 3 problem(s), eta 1205s
-    [   750/4091] 747 part(s) kept, 3 problem(s), eta 1202s
-    [   775/4091] 772 part(s) kept, 3 problem(s), eta 1177s
-    [   800/4091] 797 part(s) kept, 3 problem(s), eta 1157s
-    [   825/4091] 822 part(s) kept, 3 problem(s), eta 1140s
-    [   850/4091] 847 part(s) kept, 3 problem(s), eta 1133s
-    [   875/4091] 872 part(s) kept, 3 problem(s), eta 1122s
-    [   900/4091] 897 part(s) kept, 3 problem(s), eta 1148s
-    [   925/4091] 922 part(s) kept, 3 problem(s), eta 1139s
-    [   950/4091] 947 part(s) kept, 3 problem(s), eta 1123s
-    [   975/4091] 972 part(s) kept, 3 problem(s), eta 1107s
-    [  1000/4091] 997 part(s) kept, 3 problem(s), eta 1100s
-    [  1025/4091] 1022 part(s) kept, 3 problem(s), eta 1097s
-    [  1050/4091] 1047 part(s) kept, 3 problem(s), eta 1093s
-    [  1075/4091] 1072 part(s) kept, 3 problem(s), eta 1086s
-    [  1100/4091] 1097 part(s) kept, 3 problem(s), eta 1077s
-    [  1125/4091] 1122 part(s) kept, 3 problem(s), eta 1071s
-    [  1150/4091] 1147 part(s) kept, 3 problem(s), eta 1060s
-    [  1175/4091] 1172 part(s) kept, 3 problem(s), eta 1050s
-    [  1200/4091] 1197 part(s) kept, 3 problem(s), eta 1043s
-    [  1225/4091] 1222 part(s) kept, 3 problem(s), eta 1038s
-    [  1250/4091] 1247 part(s) kept, 3 problem(s), eta 1030s
-    [  1275/4091] 1272 part(s) kept, 3 problem(s), eta 1023s
-    [  1300/4091] 1297 part(s) kept, 3 problem(s), eta 1012s
-    [  1325/4091] 1322 part(s) kept, 3 problem(s), eta 1008s
-    [  1350/4091] 1347 part(s) kept, 3 problem(s), eta 1005s
-    [  1375/4091] 1372 part(s) kept, 3 problem(s), eta 988s
-    [  1450/4091] 1419 part(s) kept, 31 problem(s), eta 936s
-    [  1475/4091] 1444 part(s) kept, 31 problem(s), eta 919s
-    [  1500/4091] 1469 part(s) kept, 31 problem(s), eta 915s
-    [  1525/4091] 1494 part(s) kept, 31 problem(s), eta 909s
-    [  1550/4091] 1519 part(s) kept, 31 problem(s), eta 902s
-    [  1575/4091] 1544 part(s) kept, 31 problem(s), eta 911s
-    [  1600/4091] 1569 part(s) kept, 31 problem(s), eta 919s
-    [  1625/4091] 1594 part(s) kept, 31 problem(s), eta 896s
-    [  1650/4091] 1619 part(s) kept, 31 problem(s), eta 874s
-    [  1675/4091] 1644 part(s) kept, 31 problem(s), eta 852s
-    [  1700/4091] 1669 part(s) kept, 31 problem(s), eta 831s
-    [  1725/4091] 1694 part(s) kept, 31 problem(s), eta 811s
-    [  1750/4091] 1719 part(s) kept, 31 problem(s), eta 791s
-    [  1775/4091] 1744 part(s) kept, 31 problem(s), eta 772s
-    [  1800/4091] 1769 part(s) kept, 31 problem(s), eta 753s
-    [  1825/4091] 1794 part(s) kept, 31 problem(s), eta 735s
-    [  1850/4091] 1819 part(s) kept, 31 problem(s), eta 718s
-    [  1875/4091] 1844 part(s) kept, 31 problem(s), eta 700s
-    [  1900/4091] 1869 part(s) kept, 31 problem(s), eta 684s
-    [  1925/4091] 1894 part(s) kept, 31 problem(s), eta 667s
-    [  1950/4091] 1919 part(s) kept, 31 problem(s), eta 651s
-    [  1975/4091] 1944 part(s) kept, 31 problem(s), eta 636s
-    [  2000/4091] 1969 part(s) kept, 31 problem(s), eta 620s
-    [  2025/4091] 1994 part(s) kept, 31 problem(s), eta 606s
-    [  2050/4091] 2019 part(s) kept, 31 problem(s), eta 591s
-    [  2075/4091] 2044 part(s) kept, 31 problem(s), eta 577s
-    [  2100/4091] 2069 part(s) kept, 31 problem(s), eta 563s
-    [  2125/4091] 2094 part(s) kept, 31 problem(s), eta 550s
-    [  2150/4091] 2119 part(s) kept, 31 problem(s), eta 537s
-    [  2175/4091] 2144 part(s) kept, 31 problem(s), eta 524s
-    [  2200/4091] 2169 part(s) kept, 31 problem(s), eta 511s
-    [  2225/4091] 2194 part(s) kept, 31 problem(s), eta 499s
-    [  2250/4091] 2219 part(s) kept, 31 problem(s), eta 487s
-    [  2275/4091] 2244 part(s) kept, 31 problem(s), eta 475s
-    [  2300/4091] 2269 part(s) kept, 31 problem(s), eta 464s
-    [  2325/4091] 2294 part(s) kept, 31 problem(s), eta 453s
-    [  2350/4091] 2319 part(s) kept, 31 problem(s), eta 442s
-    [  2375/4091] 2344 part(s) kept, 31 problem(s), eta 431s
-    [  2400/4091] 2369 part(s) kept, 31 problem(s), eta 420s
-    [  2425/4091] 2394 part(s) kept, 31 problem(s), eta 410s
-    [  2450/4091] 2419 part(s) kept, 31 problem(s), eta 400s
-    [  2475/4091] 2444 part(s) kept, 31 problem(s), eta 390s
-    [  2500/4091] 2469 part(s) kept, 31 problem(s), eta 380s
-    [  2525/4091] 2494 part(s) kept, 31 problem(s), eta 371s
-    [  2550/4091] 2519 part(s) kept, 31 problem(s), eta 361s
-    [  2575/4091] 2544 part(s) kept, 31 problem(s), eta 352s
-    [  2600/4091] 2569 part(s) kept, 31 problem(s), eta 343s
-    [  2625/4091] 2594 part(s) kept, 31 problem(s), eta 334s
-    [  2650/4091] 2619 part(s) kept, 31 problem(s), eta 326s
-    [  2675/4091] 2644 part(s) kept, 31 problem(s), eta 317s
-    [  2700/4091] 2669 part(s) kept, 31 problem(s), eta 309s
-    [  2725/4091] 2694 part(s) kept, 31 problem(s), eta 301s
-    [  2750/4091] 2719 part(s) kept, 31 problem(s), eta 293s
-    [  2775/4091] 2744 part(s) kept, 31 problem(s), eta 285s
-    [  2800/4091] 2769 part(s) kept, 31 problem(s), eta 277s
-    [  2825/4091] 2794 part(s) kept, 31 problem(s), eta 269s
-    [  2850/4091] 2819 part(s) kept, 31 problem(s), eta 262s
-    [  2875/4091] 2844 part(s) kept, 31 problem(s), eta 255s
-    [  2900/4091] 2869 part(s) kept, 31 problem(s), eta 247s
-    [  2925/4091] 2894 part(s) kept, 31 problem(s), eta 240s
-    [  2950/4091] 2919 part(s) kept, 31 problem(s), eta 233s
-    [  2975/4091] 2944 part(s) kept, 31 problem(s), eta 226s
-    [  3000/4091] 2969 part(s) kept, 31 problem(s), eta 219s
-    [  3025/4091] 2994 part(s) kept, 31 problem(s), eta 213s
-    [  3050/4091] 3019 part(s) kept, 31 problem(s), eta 206s
-    [  3075/4091] 3044 part(s) kept, 31 problem(s), eta 199s
-    [  3100/4091] 3066 part(s) kept, 34 problem(s), eta 193s
-    [  3125/4091] 3081 part(s) kept, 44 problem(s), eta 187s
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-    [  3150/4091] 3098 part(s) kept, 52 problem(s), eta 180s
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
-Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+    Ctrl-C is safe: parsed files are checkpointed to parse_cache.json
+    [    25/4091] 24 kept, 0 problem(s), 0 reused, eta 1524s
+    [    50/4091] 49 kept, 0 problem(s), 0 reused, eta 1613s
+    [    75/4091] 74 kept, 0 problem(s), 0 reused, eta 1456s
+    [   100/4091] 99 kept, 0 problem(s), 0 reused, eta 1294s
+    [   125/4091] 124 kept, 0 problem(s), 0 reused, eta 1357s
+    [   150/4091] 149 kept, 0 problem(s), 0 reused, eta 1246s
+    [   175/4091] 173 kept, 1 problem(s), 0 reused, eta 1237s
+    [   200/4091] 198 kept, 1 problem(s), 0 reused, eta 1234s
+    [   225/4091] 223 kept, 1 problem(s), 0 reused, eta 1263s
+    [   250/4091] 248 kept, 1 problem(s), 0 reused, eta 1270s
+    [   275/4091] 273 kept, 1 problem(s), 0 reused, eta 1297s
+    [   300/4091] 298 kept, 1 problem(s), 0 reused, eta 1297s
+    [   325/4091] 323 kept, 1 problem(s), 0 reused, eta 1332s
+    [   350/4091] 348 kept, 1 problem(s), 0 reused, eta 1325s
+    [   375/4091] 373 kept, 1 problem(s), 0 reused, eta 1307s
+    [   400/4091] 398 kept, 1 problem(s), 0 reused, eta 1302s
+    [   425/4091] 423 kept, 1 problem(s), 0 reused, eta 1284s
+    [   450/4091] 448 kept, 1 problem(s), 0 reused, eta 1270s
+    [   475/4091] 473 kept, 1 problem(s), 0 reused, eta 1253s
+    [   500/4091] 498 kept, 1 problem(s), 0 reused, eta 1258s
+    [   525/4091] 523 kept, 1 problem(s), 0 reused, eta 1273s
+    [   550/4091] 548 kept, 1 problem(s), 0 reused, eta 1265s
+    [   575/4091] 573 kept, 1 problem(s), 0 reused, eta 1291s
+    [   600/4091] 597 kept, 2 problem(s), 0 reused, eta 1279s
+    [   625/4091] 621 kept, 3 problem(s), 0 reused, eta 1253s
+    [   650/4091] 646 kept, 3 problem(s), 0 reused, eta 1242s
+    [   675/4091] 671 kept, 3 problem(s), 0 reused, eta 1218s
+    [   700/4091] 696 kept, 3 problem(s), 0 reused, eta 1193s
+    [   725/4091] 721 kept, 3 problem(s), 0 reused, eta 1170s
+    [   750/4091] 746 kept, 3 problem(s), 0 reused, eta 1169s
+    [   775/4091] 771 kept, 3 problem(s), 0 reused, eta 1143s
+    [   800/4091] 796 kept, 3 problem(s), 0 reused, eta 1125s
+    [   825/4091] 821 kept, 3 problem(s), 0 reused, eta 1109s
+    [   850/4091] 846 kept, 3 problem(s), 0 reused, eta 1103s
+    [   875/4091] 871 kept, 3 problem(s), 0 reused, eta 1092s
+    [   900/4091] 896 kept, 3 problem(s), 0 reused, eta 1117s
+    [   925/4091] 921 kept, 3 problem(s), 0 reused, eta 1110s
+    [   950/4091] 946 kept, 3 problem(s), 0 reused, eta 1095s
+    [   975/4091] 971 kept, 3 problem(s), 0 reused, eta 1079s
+    [  1000/4091] 996 kept, 3 problem(s), 0 reused, eta 1071s
+    [  1025/4091] 1021 kept, 3 problem(s), 0 reused, eta 1070s
+    [  1050/4091] 1046 kept, 3 problem(s), 0 reused, eta 1066s
+    [  1075/4091] 1071 kept, 3 problem(s), 0 reused, eta 1060s
+    [  1100/4091] 1096 kept, 3 problem(s), 0 reused, eta 1052s
+    [  1125/4091] 1121 kept, 3 problem(s), 0 reused, eta 1047s
+    [  1150/4091] 1146 kept, 3 problem(s), 0 reused, eta 1036s
+    [  1175/4091] 1171 kept, 3 problem(s), 0 reused, eta 1026s
+    [  1200/4091] 1196 kept, 3 problem(s), 0 reused, eta 1020s
+    [  1225/4091] 1221 kept, 3 problem(s), 0 reused, eta 1015s
+    [  1250/4091] 1246 kept, 3 problem(s), 0 reused, eta 1008s
+    [  1275/4091] 1271 kept, 3 problem(s), 0 reused, eta 1002s
+    [  1300/4091] 1296 kept, 3 problem(s), 0 reused, eta 991s
+    [  1325/4091] 1321 kept, 3 problem(s), 0 reused, eta 987s
+    [  1350/4091] 1346 kept, 3 problem(s), 0 reused, eta 984s
+    [  1375/4091] 1371 kept, 3 problem(s), 0 reused, eta 969s
+    [  1400/4091] 1389 kept, 10 problem(s), 0 reused, eta 951s
+    [  1425/4091] 1398 kept, 26 problem(s), 0 reused, eta 933s
+    [  1450/4091] 1418 kept, 31 problem(s), 0 reused, eta 917s
+    [  1475/4091] 1443 kept, 31 problem(s), 0 reused, eta 900s
+    [  1500/4091] 1468 kept, 31 problem(s), 0 reused, eta 896s
+    [  1525/4091] 1493 kept, 31 problem(s), 0 reused, eta 891s
+    [  1550/4091] 1518 kept, 31 problem(s), 0 reused, eta 885s
+    [  1575/4091] 1543 kept, 31 problem(s), 0 reused, eta 889s
+    [  1600/4091] 1568 kept, 31 problem(s), 0 reused, eta 885s
+    [  1625/4091] 1593 kept, 31 problem(s), 0 reused, eta 863s
+    [  1650/4091] 1618 kept, 31 problem(s), 0 reused, eta 842s
+    [  1675/4091] 1643 kept, 31 problem(s), 0 reused, eta 821s
+    [  1700/4091] 1668 kept, 31 problem(s), 0 reused, eta 801s
+    [  1725/4091] 1693 kept, 31 problem(s), 0 reused, eta 781s
+    [  1750/4091] 1718 kept, 31 problem(s), 0 reused, eta 762s
+    [  1775/4091] 1743 kept, 31 problem(s), 0 reused, eta 744s
+    [  1800/4091] 1768 kept, 31 problem(s), 0 reused, eta 726s
+    [  1825/4091] 1793 kept, 31 problem(s), 0 reused, eta 708s
+    [  1850/4091] 1818 kept, 31 problem(s), 0 reused, eta 691s
+    [  1875/4091] 1843 kept, 31 problem(s), 0 reused, eta 674s
+    [  1900/4091] 1868 kept, 31 problem(s), 0 reused, eta 658s
+    [  1925/4091] 1893 kept, 31 problem(s), 0 reused, eta 642s
+    [  1950/4091] 1918 kept, 31 problem(s), 0 reused, eta 627s
+    [  1975/4091] 1943 kept, 31 problem(s), 0 reused, eta 612s
+    [  2000/4091] 1968 kept, 31 problem(s), 0 reused, eta 597s
+    [  2025/4091] 1993 kept, 31 problem(s), 0 reused, eta 583s
+    [  2050/4091] 2018 kept, 31 problem(s), 0 reused, eta 569s
+    [  2075/4091] 2043 kept, 31 problem(s), 0 reused, eta 556s
+    [  2100/4091] 2068 kept, 31 problem(s), 0 reused, eta 542s
+    [  2125/4091] 2093 kept, 31 problem(s), 0 reused, eta 529s
+    [  2150/4091] 2118 kept, 31 problem(s), 0 reused, eta 517s
+    [  2175/4091] 2143 kept, 31 problem(s), 0 reused, eta 505s
+    [  2200/4091] 2168 kept, 31 problem(s), 0 reused, eta 493s
+    [  2225/4091] 2193 kept, 31 problem(s), 0 reused, eta 481s
+    [  2250/4091] 2218 kept, 31 problem(s), 0 reused, eta 470s
+    [  2275/4091] 2243 kept, 31 problem(s), 0 reused, eta 458s
+    [  2300/4091] 2268 kept, 31 problem(s), 0 reused, eta 447s
+    [  2325/4091] 2293 kept, 31 problem(s), 0 reused, eta 437s
+    [  2350/4091] 2318 kept, 31 problem(s), 0 reused, eta 426s
+    [  2375/4091] 2343 kept, 31 problem(s), 0 reused, eta 416s
+    [  2400/4091] 2368 kept, 31 problem(s), 0 reused, eta 406s
+    [  2425/4091] 2393 kept, 31 problem(s), 0 reused, eta 396s
+    [  2450/4091] 2418 kept, 31 problem(s), 0 reused, eta 386s
+    [  2475/4091] 2443 kept, 31 problem(s), 0 reused, eta 377s
+    [  2500/4091] 2468 kept, 31 problem(s), 0 reused, eta 367s
+    [  2525/4091] 2493 kept, 31 problem(s), 0 reused, eta 358s
+    [  2550/4091] 2518 kept, 31 problem(s), 0 reused, eta 349s
+    [  2575/4091] 2543 kept, 31 problem(s), 0 reused, eta 340s
+    [  2600/4091] 2568 kept, 31 problem(s), 0 reused, eta 332s
+    [  2625/4091] 2593 kept, 31 problem(s), 0 reused, eta 323s
+    [  2650/4091] 2618 kept, 31 problem(s), 0 reused, eta 315s
+    [  2675/4091] 2643 kept, 31 problem(s), 0 reused, eta 307s
+    [  2700/4091] 2668 kept, 31 problem(s), 0 reused, eta 299s
+    [  2725/4091] 2693 kept, 31 problem(s), 0 reused, eta 291s
+    [  2750/4091] 2718 kept, 31 problem(s), 0 reused, eta 283s
+    [  2775/4091] 2743 kept, 31 problem(s), 0 reused, eta 275s
+    [  2800/4091] 2768 kept, 31 problem(s), 0 reused, eta 268s
+    [  2825/4091] 2793 kept, 31 problem(s), 0 reused, eta 261s
+    [  2850/4091] 2818 kept, 31 problem(s), 0 reused, eta 253s
+    [  2875/4091] 2843 kept, 31 problem(s), 0 reused, eta 246s
+    [  2900/4091] 2868 kept, 31 problem(s), 0 reused, eta 239s
+    [  2925/4091] 2893 kept, 31 problem(s), 0 reused, eta 232s
+    [  2950/4091] 2918 kept, 31 problem(s), 0 reused, eta 226s
+    [  2975/4091] 2943 kept, 31 problem(s), 0 reused, eta 219s
+    [  3000/4091] 2968 kept, 31 problem(s), 0 reused, eta 212s
+    [  3025/4091] 2993 kept, 31 problem(s), 0 reused, eta 206s
+    [  3050/4091] 3018 kept, 31 problem(s), 0 reused, eta 199s
+    [  3075/4091] 3043 kept, 31 problem(s), 0 reused, eta 193s
+    [  3100/4091] 3065 kept, 34 problem(s), 0 reused, eta 187s
+    [  3125/4091] 3080 kept, 44 problem(s), 0 reused, eta 181s
+    [  3150/4091] 3097 kept, 52 problem(s), 0 reused, eta 175s
+    [  3175/4091] 3103 kept, 71 problem(s), 0 reused, eta 169s
+    [  3200/4091] 3114 kept, 85 problem(s), 0 reused, eta 163s
+    [  3225/4091] 3127 kept, 97 problem(s), 0 reused, eta 157s
+    [  3250/4091] 3134 kept, 115 problem(s), 0 reused, eta 152s
+    [  3275/4091] 3135 kept, 139 problem(s), 0 reused, eta 146s
+    [  3300/4091] 3139 kept, 160 problem(s), 0 reused, eta 140s
+    [  3325/4091] 3142 kept, 182 problem(s), 0 reused, eta 135s
+    [  3350/4091] 3143 kept, 206 problem(s), 0 reused, eta 130s
+    [  3375/4091] 3145 kept, 229 problem(s), 0 reused, eta 124s
+    [  3400/4091] 3147 kept, 252 problem(s), 0 reused, eta 119s
+    [  3425/4091] 3153 kept, 271 problem(s), 0 reused, eta 114s
+    [  3450/4091] 3155 kept, 294 problem(s), 0 reused, eta 109s
+    [  3475/4091] 3162 kept, 312 problem(s), 0 reused, eta 104s
+    [  3500/4091] 3164 kept, 335 problem(s), 0 reused, eta 99s
+    [  3525/4091] 3174 kept, 350 problem(s), 0 reused, eta 94s
+    [  3550/4091] 3176 kept, 373 problem(s), 0 reused, eta 89s
+    [  3575/4091] 3180 kept, 394 problem(s), 0 reused, eta 85s
+    [  3600/4091] 3189 kept, 410 problem(s), 0 reused, eta 80s
+    [  3625/4091] 3192 kept, 432 problem(s), 0 reused, eta 75s
+    [  3650/4091] 3194 kept, 455 problem(s), 0 reused, eta 71s
+    [  3675/4091] 3196 kept, 478 problem(s), 0 reused, eta 66s
+    [  3700/4091] 3201 kept, 498 problem(s), 0 reused, eta 62s
+    [  3725/4091] 3208 kept, 516 problem(s), 0 reused, eta 58s
+    [  3750/4091] 3212 kept, 537 problem(s), 0 reused, eta 53s
+    [  3775/4091] 3213 kept, 561 problem(s), 0 reused, eta 49s
+    [  3800/4091] 3213 kept, 586 problem(s), 0 reused, eta 45s
+    [  3825/4091] 3215 kept, 609 problem(s), 0 reused, eta 41s
+    [  3850/4091] 3223 kept, 626 problem(s), 0 reused, eta 37s
+    [  3875/4091] 3224 kept, 650 problem(s), 0 reused, eta 33s
+    [  3900/4091] 3231 kept, 668 problem(s), 0 reused, eta 29s
+    [  3925/4091] 3236 kept, 688 problem(s), 0 reused, eta 25s
+    [  3950/4091] 3240 kept, 709 problem(s), 0 reused, eta 21s
+    [  3975/4091] 3243 kept, 731 problem(s), 0 reused, eta 17s
+    [  4000/4091] 3244 kept, 755 problem(s), 0 reused, eta 13s
+    [  4025/4091] 3244 kept, 780 problem(s), 0 reused, eta 10s
+    [  4050/4091] 3246 kept, 803 problem(s), 0 reused, eta 6s
+    [  4075/4091] 3256 kept, 818 problem(s), 0 reused, eta 2s
+    [  4091/4091] 3272 kept, 818 problem(s), 0 reused
+    parsed 4091 file(s), reused 0 from cache, 818 problem(s), in 9.9 min
+
+  REMOVING TEMPLATE CHROME
+    MACOM              nothing repeated on >=85% of 1563 page(s)
+    Marki Microwave    nothing repeated on >=85% of 1533 page(s)
+    Qorvo              dropped 1 line(s) common to 152 page(s)
+    Skyworks           nothing repeated on >=85% of 25 page(s)
+
+  LABELLING
+       3031  absent -> N
+        124  everythingRF saved listing
+         71  evidence: aerospace/space catalog
+         47  spec space=qualified
+
+  DATASET
+    4091 file(s) on disk -> 3273 labelled part(s), 818 problem(s)
+
+  vendor              parts   pos   neg  unlab  cmos  avg chars  kinds
+  MACOM                1563   169  1394      0    33        909  pdf:1563
+  Marki Microwave      1533    17  1516      0     1        867  html:1533
+  Qorvo                 152    56    96      0     0        525  html:152
+  Skyworks               25     0    25      0     0       1955  pdf:25
+  TOTAL                3273   242  3031      0
+
+  FIELD COVERAGE (parts with each field populated)
+  vendor               descr    feat    apps    qual
+  MACOM              1281/1563 1495/1563 735/1563 1548/1563
+  Marki Microwave    1533/1533 1492/1533 1002/1533 1533/1533
+  Qorvo              152/152   0/152   0/152 152/152
+  Skyworks             25/25   25/25   25/25   19/25
+
+  note: 1515 of the negatives are not in the rfparts DB at all,
+    so 'absent from every space source' is weaker evidence for them --
+    the DB never had a chance to label them either way.
+
+  ! NO POSITIVES for: Skyworks
+    Every datasheet from those vendors became a NEGATIVE. If you
+    expect some to be space parts, your label sources do not cover
+    that vendor -- add its everythingRF pages, or re-run that
+    vendor's ingest so the DB carries a space signal.
+
+  PROBLEMS (818) -- first few:
+    MACOM\ETC1-1-6.pdf                                         only 57 char(s) of usable text: text extracted but no description/features/applications heading was found
+    MACOM\MABA-000001-75KIT1.pdf                               only 75 char(s) of usable text: text extracted but no description/features/applications heading was found
+    MACOM\MABA-009488-61HWCA.pdf                               only 73 char(s) of usable text: text extracted but no description/features/applications heading was found
+    MACOM\MRF136.pdf                                           only 52 char(s) of usable text: text extracted but no description/features/applications heading was found
+    MACOM\MRF137.pdf                                           only 60 char(s) of usable text: text extracted but no description/features/applications heading was found
+    MACOM\MRF140.pdf                                           only 53 char(s) of usable text: text extracted but no description/features/applications heading was found
+    MACOM\MRF141.pdf                                           only 55 char(s) of usable text: text extracted but no description/features/applications heading was found
+    MACOM\MRF141G.pdf                                          only 45 char(s) of usable text: text extracted but no description/features/applications heading was found
+    ... and 810 more (full list in C:\Users\lane.white\.spacequal\local_problems.json)
+
+  saved dataset -> C:\Users\lane.white\.spacequal\local_corpus.json
+  cached text   -> C:\Users\lane.white\.spacequal\localtext
+  problem list  -> C:\Users\lane.white\.spacequal\local_problems.json
+
+  Next: TRAIN (menu option 2).
