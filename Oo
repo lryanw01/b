@@ -1,5 +1,189 @@
-vendor navigation:
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\spacequal.py"
 
-Marki:
-https://markimicrowave.com/products/[connectorized/surface-mount/bare-die/waveguide]/[category]/(sometimes includes "?page=1" after final "/")
+==============================================================
+  spacequal - is this RF part space-qualifiable?
+==============================================================
+  dataset : not scanned yet  (menu option L)
+  model   : tfidf, thr 92%, 2026-08-03 09:20
+--------------------------------------------------------------
+  1) BUILD DATASET     scan every local datasheet and label it
+  2) TRAIN             fit the classifier on that dataset
+  3) SCORE A PARAGRAPH run the model on some text
+  4) DEBUG PARSING     what is read from each vendor's format
+--------------------------------------------------------------
+  5) Settings
+  6) Advanced          (eval, review, downloads, Mini-Circuits, selftest)
+  0) Quit
+--------------------------------------------------------------
+  choice> 1
+==============================================================
+  BUILD DATASET
+==============================================================
 
+  DATASHEET LIBRARY    C:\Users\lane.white\Downloads\rfparts\data\datasheets
+    4091 file(s) in 4 vendor folder(s): MACOM (1594), Marki Microwave (1546), Qorvo (926), Skyworks (25)
+
+  LABEL SOURCES
+    everythingRF pages   589 file(s) -> 9308 part number(s)
+    rfparts DB           10396 space-labelled part(s)
+      in both sources    9306
+      DB only            1090
+      why the DB calls them space:
+          10247  spec space=qualified             e.g. RWP1027200-53 [specs.space=qualified]
+            147  evidence: aerospace/space catalog e.g. SAMP7717Z [application-space]
+              2  spec space=hi_rel                e.g. RA89-1 [specs.space=hi_rel]
+      top vendors: RF-Lambda (1340), Stellant Systems (983), Mini Circuits (886), Wainwright Instruments (885), Qorvo (407), Texas Instruments (383)
+    ORACLE TOTAL         10398 part number(s) known to be space
+
+  READING DATASHEETS   (sections text, min 80 chars to keep)
+    [    25/4091] 25 part(s) kept, 0 problem(s), eta 1559s
+    [    50/4091] 50 part(s) kept, 0 problem(s), eta 1719s
+    [    75/4091] 75 part(s) kept, 0 problem(s), eta 1514s
+    [   100/4091] 100 part(s) kept, 0 problem(s), eta 1340s
+    [   125/4091] 125 part(s) kept, 0 problem(s), eta 1392s
+    [   150/4091] 150 part(s) kept, 0 problem(s), eta 1276s
+    [   175/4091] 174 part(s) kept, 1 problem(s), eta 1264s
+    [   200/4091] 199 part(s) kept, 1 problem(s), eta 1285s
+    [   225/4091] 224 part(s) kept, 1 problem(s), eta 1281s
+    [   250/4091] 249 part(s) kept, 1 problem(s), eta 1287s
+    [   275/4091] 274 part(s) kept, 1 problem(s), eta 1313s
+    [   300/4091] 299 part(s) kept, 1 problem(s), eta 1314s
+    [   325/4091] 324 part(s) kept, 1 problem(s), eta 1345s
+    [   350/4091] 349 part(s) kept, 1 problem(s), eta 1338s
+    [   375/4091] 374 part(s) kept, 1 problem(s), eta 1327s
+    [   400/4091] 399 part(s) kept, 1 problem(s), eta 1328s
+    [   425/4091] 424 part(s) kept, 1 problem(s), eta 1314s
+    [   450/4091] 449 part(s) kept, 1 problem(s), eta 1303s
+    [   475/4091] 474 part(s) kept, 1 problem(s), eta 1289s
+    [   500/4091] 499 part(s) kept, 1 problem(s), eta 1297s
+    [   525/4091] 524 part(s) kept, 1 problem(s), eta 1310s
+    [   550/4091] 549 part(s) kept, 1 problem(s), eta 1309s
+    [   575/4091] 574 part(s) kept, 1 problem(s), eta 1339s
+    [   600/4091] 598 part(s) kept, 2 problem(s), eta 1321s
+    [   625/4091] 622 part(s) kept, 3 problem(s), eta 1294s
+    [   650/4091] 647 part(s) kept, 3 problem(s), eta 1282s
+    [   675/4091] 672 part(s) kept, 3 problem(s), eta 1254s
+    [   700/4091] 697 part(s) kept, 3 problem(s), eta 1228s
+    [   725/4091] 722 part(s) kept, 3 problem(s), eta 1205s
+    [   750/4091] 747 part(s) kept, 3 problem(s), eta 1202s
+    [   775/4091] 772 part(s) kept, 3 problem(s), eta 1177s
+    [   800/4091] 797 part(s) kept, 3 problem(s), eta 1157s
+    [   825/4091] 822 part(s) kept, 3 problem(s), eta 1140s
+    [   850/4091] 847 part(s) kept, 3 problem(s), eta 1133s
+    [   875/4091] 872 part(s) kept, 3 problem(s), eta 1122s
+    [   900/4091] 897 part(s) kept, 3 problem(s), eta 1148s
+    [   925/4091] 922 part(s) kept, 3 problem(s), eta 1139s
+    [   950/4091] 947 part(s) kept, 3 problem(s), eta 1123s
+    [   975/4091] 972 part(s) kept, 3 problem(s), eta 1107s
+    [  1000/4091] 997 part(s) kept, 3 problem(s), eta 1100s
+    [  1025/4091] 1022 part(s) kept, 3 problem(s), eta 1097s
+    [  1050/4091] 1047 part(s) kept, 3 problem(s), eta 1093s
+    [  1075/4091] 1072 part(s) kept, 3 problem(s), eta 1086s
+    [  1100/4091] 1097 part(s) kept, 3 problem(s), eta 1077s
+    [  1125/4091] 1122 part(s) kept, 3 problem(s), eta 1071s
+    [  1150/4091] 1147 part(s) kept, 3 problem(s), eta 1060s
+    [  1175/4091] 1172 part(s) kept, 3 problem(s), eta 1050s
+    [  1200/4091] 1197 part(s) kept, 3 problem(s), eta 1043s
+    [  1225/4091] 1222 part(s) kept, 3 problem(s), eta 1038s
+    [  1250/4091] 1247 part(s) kept, 3 problem(s), eta 1030s
+    [  1275/4091] 1272 part(s) kept, 3 problem(s), eta 1023s
+    [  1300/4091] 1297 part(s) kept, 3 problem(s), eta 1012s
+    [  1325/4091] 1322 part(s) kept, 3 problem(s), eta 1008s
+    [  1350/4091] 1347 part(s) kept, 3 problem(s), eta 1005s
+    [  1375/4091] 1372 part(s) kept, 3 problem(s), eta 988s
+    [  1450/4091] 1419 part(s) kept, 31 problem(s), eta 936s
+    [  1475/4091] 1444 part(s) kept, 31 problem(s), eta 919s
+    [  1500/4091] 1469 part(s) kept, 31 problem(s), eta 915s
+    [  1525/4091] 1494 part(s) kept, 31 problem(s), eta 909s
+    [  1550/4091] 1519 part(s) kept, 31 problem(s), eta 902s
+    [  1575/4091] 1544 part(s) kept, 31 problem(s), eta 911s
+    [  1600/4091] 1569 part(s) kept, 31 problem(s), eta 919s
+    [  1625/4091] 1594 part(s) kept, 31 problem(s), eta 896s
+    [  1650/4091] 1619 part(s) kept, 31 problem(s), eta 874s
+    [  1675/4091] 1644 part(s) kept, 31 problem(s), eta 852s
+    [  1700/4091] 1669 part(s) kept, 31 problem(s), eta 831s
+    [  1725/4091] 1694 part(s) kept, 31 problem(s), eta 811s
+    [  1750/4091] 1719 part(s) kept, 31 problem(s), eta 791s
+    [  1775/4091] 1744 part(s) kept, 31 problem(s), eta 772s
+    [  1800/4091] 1769 part(s) kept, 31 problem(s), eta 753s
+    [  1825/4091] 1794 part(s) kept, 31 problem(s), eta 735s
+    [  1850/4091] 1819 part(s) kept, 31 problem(s), eta 718s
+    [  1875/4091] 1844 part(s) kept, 31 problem(s), eta 700s
+    [  1900/4091] 1869 part(s) kept, 31 problem(s), eta 684s
+    [  1925/4091] 1894 part(s) kept, 31 problem(s), eta 667s
+    [  1950/4091] 1919 part(s) kept, 31 problem(s), eta 651s
+    [  1975/4091] 1944 part(s) kept, 31 problem(s), eta 636s
+    [  2000/4091] 1969 part(s) kept, 31 problem(s), eta 620s
+    [  2025/4091] 1994 part(s) kept, 31 problem(s), eta 606s
+    [  2050/4091] 2019 part(s) kept, 31 problem(s), eta 591s
+    [  2075/4091] 2044 part(s) kept, 31 problem(s), eta 577s
+    [  2100/4091] 2069 part(s) kept, 31 problem(s), eta 563s
+    [  2125/4091] 2094 part(s) kept, 31 problem(s), eta 550s
+    [  2150/4091] 2119 part(s) kept, 31 problem(s), eta 537s
+    [  2175/4091] 2144 part(s) kept, 31 problem(s), eta 524s
+    [  2200/4091] 2169 part(s) kept, 31 problem(s), eta 511s
+    [  2225/4091] 2194 part(s) kept, 31 problem(s), eta 499s
+    [  2250/4091] 2219 part(s) kept, 31 problem(s), eta 487s
+    [  2275/4091] 2244 part(s) kept, 31 problem(s), eta 475s
+    [  2300/4091] 2269 part(s) kept, 31 problem(s), eta 464s
+    [  2325/4091] 2294 part(s) kept, 31 problem(s), eta 453s
+    [  2350/4091] 2319 part(s) kept, 31 problem(s), eta 442s
+    [  2375/4091] 2344 part(s) kept, 31 problem(s), eta 431s
+    [  2400/4091] 2369 part(s) kept, 31 problem(s), eta 420s
+    [  2425/4091] 2394 part(s) kept, 31 problem(s), eta 410s
+    [  2450/4091] 2419 part(s) kept, 31 problem(s), eta 400s
+    [  2475/4091] 2444 part(s) kept, 31 problem(s), eta 390s
+    [  2500/4091] 2469 part(s) kept, 31 problem(s), eta 380s
+    [  2525/4091] 2494 part(s) kept, 31 problem(s), eta 371s
+    [  2550/4091] 2519 part(s) kept, 31 problem(s), eta 361s
+    [  2575/4091] 2544 part(s) kept, 31 problem(s), eta 352s
+    [  2600/4091] 2569 part(s) kept, 31 problem(s), eta 343s
+    [  2625/4091] 2594 part(s) kept, 31 problem(s), eta 334s
+    [  2650/4091] 2619 part(s) kept, 31 problem(s), eta 326s
+    [  2675/4091] 2644 part(s) kept, 31 problem(s), eta 317s
+    [  2700/4091] 2669 part(s) kept, 31 problem(s), eta 309s
+    [  2725/4091] 2694 part(s) kept, 31 problem(s), eta 301s
+    [  2750/4091] 2719 part(s) kept, 31 problem(s), eta 293s
+    [  2775/4091] 2744 part(s) kept, 31 problem(s), eta 285s
+    [  2800/4091] 2769 part(s) kept, 31 problem(s), eta 277s
+    [  2825/4091] 2794 part(s) kept, 31 problem(s), eta 269s
+    [  2850/4091] 2819 part(s) kept, 31 problem(s), eta 262s
+    [  2875/4091] 2844 part(s) kept, 31 problem(s), eta 255s
+    [  2900/4091] 2869 part(s) kept, 31 problem(s), eta 247s
+    [  2925/4091] 2894 part(s) kept, 31 problem(s), eta 240s
+    [  2950/4091] 2919 part(s) kept, 31 problem(s), eta 233s
+    [  2975/4091] 2944 part(s) kept, 31 problem(s), eta 226s
+    [  3000/4091] 2969 part(s) kept, 31 problem(s), eta 219s
+    [  3025/4091] 2994 part(s) kept, 31 problem(s), eta 213s
+    [  3050/4091] 3019 part(s) kept, 31 problem(s), eta 206s
+    [  3075/4091] 3044 part(s) kept, 31 problem(s), eta 199s
+    [  3100/4091] 3066 part(s) kept, 34 problem(s), eta 193s
+    [  3125/4091] 3081 part(s) kept, 44 problem(s), eta 187s
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+    [  3150/4091] 3098 part(s) kept, 52 problem(s), eta 180s
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
+Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats
