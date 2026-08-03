@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """spacequal — predict whether a Mini-Circuits part is SPACE-QUALIFIABLE from its
 datasheet blurb, using a locally-trained classifier. No API keys, no paid calls.
 
