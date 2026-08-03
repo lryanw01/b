@@ -177,6 +177,7 @@ DEFAULT_CATALOG = r"C:\Users\lane.white\Downloads\rfparts\rfparts\sources\minici
 DEFAULT_LOCAL_DS = r"C:\Users\lane.white\Downloads\rfparts\data\datasheets"
 LOCAL_JSON = WORKDIR / "local_corpus.json"
 LOCAL_ERRORS = WORKDIR / "local_problems.json"
+LOCAL_CACHE = WORKDIR / "parse_cache.json"
 LOCAL_TXT = WORKDIR / "localtext"
 LOCAL_MIN_CHARS = 80        # targeted fields are far shorter than a whole sheet
 
@@ -2604,6 +2605,49 @@ HTML_SECTION_IDS = {
 }
 
 
+_PDF_HEAD_SAMPLE = 65536
+_CORRUPT_BYTE_RATIO = 0.02
+
+
+def _quiet_pdf_logging():
+    """Silence pdfminer's per-font warnings.
+
+    On a damaged font descriptor pdfminer emits 'Could not get FontBBox...' for
+    every font on every page. Thousands of those lines to a Windows console is
+    slow enough to look like a hang, and they bury the progress output."""
+    import logging
+    for name in ("pdfminer", "pdfminer.pdffont", "pdfminer.pdfinterp",
+                 "pdfminer.pdfpage", "pdfminer.converter", "pdfplumber",
+                 "pypdf", "PyPDF2"):
+        logging.getLogger(name).setLevel(logging.ERROR)
+
+
+def pdf_quick_reject(path):
+    """Reason to skip a PDF WITHOUT opening it properly, or None.
+
+    Reads 64 kB and counts UTF-8-encoded U+FFFD (ef bf bd) directly in the
+    bytes -- no decode, no PDF parse. A text-mangled download is otherwise
+    handed to pdfplumber, which walks a damaged xref, emits a flood of font
+    warnings and returns nothing anyway. On a library with several hundred such
+    files that is the difference between minutes and hours."""
+    try:
+        with Path(path).open("rb") as fh:
+            head = fh.read(_PDF_HEAD_SAMPLE)
+    except OSError as e:
+        return f"unreadable: {e}"
+    if head[:5] != b"%PDF-":
+        return None
+    bad = head.count(b"\xef\xbf\xbd") * 3
+    ratio = bad / max(1, len(head))
+    if ratio > _CORRUPT_BYTE_RATIO:
+        return (f"CORRUPT: ~{100 * ratio:.0f}% of the bytes are UTF-8 "
+                f"replacement characters. Saved through a TEXT decode "
+                f"(response.text instead of response.content), which destroys "
+                f"the compressed streams irreversibly. Re-download in binary "
+                f"mode.")
+    return None
+
+
 def sniff_datasheet_kind(path):
     """Real file type from the first bytes, ignoring the extension.
 
@@ -2875,6 +2919,11 @@ def extract_datasheet_fields(path, text_mode="sections", pages=3,
               "qual_notes": "", "text": "", "parse": info}
 
     if kind == "pdf":
+        reject = pdf_quick_reject(path)
+        if reject:
+            info["note"] = reject
+            info["corrupt"] = True
+            return fields
         full, layout = pdf_prose_text(path, pages=pages)
         info["layout"] = layout
         info["raw_chars"] = len(full)
@@ -3296,52 +3345,108 @@ def build_local_corpus(root=None, db_path=None, erf_html=None, vendors=None,
 
     # ---- extract text once per (vendor, part); keep the richest file ----------
     LOCAL_TXT.mkdir(parents=True, exist_ok=True)
+    _quiet_pdf_logging()
+    cache = _load(LOCAL_CACHE, {}) or {}
+    if not isinstance(cache, dict):
+        cache = {}
     print(f"\n  READING DATASHEETS   ({text_mode} text, "
           f"min {min_chars} chars to keep)")
+    if cache:
+        print(f"    {len(cache)} file(s) already parsed in a previous run will be "
+              f"reused")
+    print(f"    Ctrl-C is safe: parsed files are checkpointed to "
+          f"{LOCAL_CACHE.name}")
     best = {}
     errors = []
     started = time.time()
-    for i, (vkey, folder, path) in enumerate(files, 1):
-        rel = str(path.relative_to(root))
-        pn = _pn_from_filename(path.stem)
-        if not pn:
-            errors.append({"file": rel, "vendor": vkey,
-                           "problem": "no part number could be read from the "
-                                      "filename"})
-            continue
+    interrupted = False
+    n_cached = n_parsed = 0
+    cache_dirty = 0
+
+    def _flush_cache():
         try:
-            got = extract_datasheet_fields(path, text_mode=text_mode)
-            text = got.get("text", "")
-        except Exception as e:                       # a bad PDF must not stop us
-            errors.append({"file": rel, "vendor": vkey,
-                           "problem": f"{type(e).__name__}: {e}"[:140]})
-            continue
-        n_chars = len(text.strip())
-        if n_chars < min_chars:
-            note = (got.get("parse") or {}).get("note", "")
-            errors.append({"file": rel, "vendor": vkey, "pn": pn,
-                           "kind": (got.get("parse") or {}).get("kind", ""),
-                           "problem": (f"only {n_chars} char(s) of usable text"
-                                       + (f": {note}" if note else ""))})
-            continue
-        if not keep_pn:
-            text = redact_pn(text, pn)
-        key = (vkey, loose_pn(pn))
-        prev = best.get(key)
-        if prev is None or len(text) > len(prev["text"]):
-            best[key] = {"vendor": vkey, "pn": pn, "file": str(path),
-                         "kind": path.suffix.lower().lstrip("."),
-                         "folder": folder, "text": text,
-                         "fields": {k: got.get(k, "")
-                                    for k in ("title", "description", "features",
-                                              "applications", "qual_notes")},
-                         "parse": got.get("parse", {})}
+            _save(LOCAL_CACHE, cache)
+        except OSError:
+            pass
+
+    for i, (vkey, folder, path) in enumerate(files, 1):
+        # Progress FIRST, so it appears even for files that fail. Printing it at
+        # the end of the body meant a run of unreadable files (a whole vendor of
+        # corrupt PDFs) produced no output at all and looked frozen.
         if progress and (i % every == 0 or i == len(files)):
             rate = i / max(1e-6, time.time() - started)
             eta = (len(files) - i) / max(1e-6, rate)
-            print(f"    [{i:>6}/{len(files)}] {len(best)} part(s) kept, "
-                  f"{len(errors)} problem(s)"
+            print(f"    [{i:>6}/{len(files)}] {len(best)} kept, "
+                  f"{len(errors)} problem(s), {n_cached} reused"
                   + (f", eta {eta:.0f}s" if i < len(files) else ""), flush=True)
+        try:
+            rel = str(path.relative_to(root))
+            pn = _pn_from_filename(path.stem)
+            if not pn:
+                errors.append({"file": rel, "vendor": vkey,
+                               "problem": "no part number could be read from "
+                                          "the filename"})
+                continue
+            # Cache key includes size+mtime, so an edited or replaced file is
+            # re-parsed while everything else is free on a second run.
+            try:
+                st = path.stat()
+                ckey = f"{path}|{st.st_size}|{int(st.st_mtime)}"
+            except OSError as e:
+                errors.append({"file": rel, "vendor": vkey,
+                               "problem": f"stat failed: {e}"})
+                continue
+            hit = cache.get(ckey)
+            if isinstance(hit, dict):
+                got = hit
+                n_cached += 1
+            else:
+                got = extract_datasheet_fields(path, text_mode=text_mode)
+                # store only what is needed to rebuild, not the whole object
+                cache[ckey] = {k: got.get(k, "") for k in
+                               ("title", "description", "features",
+                                "applications", "qual_notes", "text")}
+                cache[ckey]["parse"] = got.get("parse", {})
+                n_parsed += 1
+                cache_dirty += 1
+                if cache_dirty >= 100:
+                    _flush_cache()
+                    cache_dirty = 0
+            text = got.get("text", "")
+            n_chars = len(text.strip())
+            if n_chars < min_chars:
+                note = (got.get("parse") or {}).get("note", "")
+                errors.append({"file": rel, "vendor": vkey, "pn": pn,
+                               "kind": (got.get("parse") or {}).get("kind", ""),
+                               "problem": (f"only {n_chars} char(s) of usable "
+                                           f"text" + (f": {note}" if note else ""))})
+                continue
+            if not keep_pn:
+                text = redact_pn(text, pn)
+            key = (vkey, loose_pn(pn))
+            prev = best.get(key)
+            if prev is None or len(text) > len(prev["text"]):
+                best[key] = {"vendor": vkey, "pn": pn, "file": str(path),
+                             "kind": path.suffix.lower().lstrip("."),
+                             "folder": folder, "text": text,
+                             "fields": {k: got.get(k, "")
+                                        for k in ("title", "description",
+                                                  "features", "applications",
+                                                  "qual_notes")},
+                             "parse": got.get("parse", {})}
+        except KeyboardInterrupt:
+            interrupted = True
+            print(f"\n    ! interrupted at file {i}/{len(files)}. Keeping the "
+                  f"{len(best)} part(s) already read and building a dataset "
+                  f"from them.")
+            break
+        except Exception as e:                       # one bad file must not stop us
+            errors.append({"file": str(path), "vendor": vkey,
+                           "problem": f"{type(e).__name__}: {e}"[:160]})
+            continue
+    _flush_cache()
+    print(f"    parsed {n_parsed} file(s), reused {n_cached} from cache, "
+          f"{len(errors)} problem(s), in {(time.time() - started) / 60:.1f} min")
 
     if not best:
         raise SystemExit(
@@ -3361,6 +3466,21 @@ def build_local_corpus(root=None, db_path=None, erf_html=None, vendors=None,
             if not lines:
                 print(f"    {VENDORS[vkey]['name']:<18} nothing repeated on "
                       f">=85% of {len(recs)} page(s)")
+                continue
+            # Safety valve: if a vendor's sheets are near-identical, almost every
+            # line is 'repeated' and removal would delete the content itself,
+            # silently dropping the whole vendor below the length minimum. Better
+            # to keep the duplication than to lose the vendor.
+            trials = [(len(r["text"]), len(_drop_lines(r["text"], lines)))
+                      for r in recs[:40]]
+            kept_frac = (sum(b for _a, b in trials)
+                         / max(1, sum(a for a, _b in trials)))
+            if kept_frac < 0.4:
+                print(f"    {VENDORS[vkey]['name']:<18} SKIPPED: those "
+                      f"{len(lines)} repeated line(s) are "
+                      f"{100 * (1 - kept_frac):.0f}% of the text -- these "
+                      f"datasheets are near-identical, so removal would delete "
+                      f"the content")
                 continue
             boiler[vkey] = sorted(lines)
             for r in recs:
@@ -3425,6 +3545,8 @@ def build_local_corpus(root=None, db_path=None, erf_html=None, vendors=None,
     corpus = {
         "root": str(root),
         "built": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "interrupted": interrupted,
+        "files_read": n_parsed + n_cached,
         "absent_as": absent_as,
         "text_mode": text_mode,
         "oracle": diag,
@@ -3446,6 +3568,12 @@ def build_local_corpus(root=None, db_path=None, erf_html=None, vendors=None,
 def _report_local_corpus(corpus):
     c = corpus["counts"]
     print(f"\n  DATASET")
+    if corpus.get("interrupted"):
+        print(f"    ! PARTIAL: the run was interrupted after "
+              f"{corpus.get('files_read', 0)} of {c['files_seen']} file(s).")
+        print("      This dataset is usable but incomplete. Re-run BUILD to "
+              "finish --\n      already-parsed files come from the cache, so it "
+              "resumes quickly.")
     print(f"    {c['files_seen']} file(s) on disk -> {c['parts']} labelled part(s)"
           + (f", {c['problems']} problem(s)" if c["problems"] else ""))
     print(f"\n  {'vendor':<18} {'parts':>6} {'pos':>5} {'neg':>5} {'unlab':>6} "
