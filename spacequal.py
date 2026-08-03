@@ -178,7 +178,7 @@ DEFAULT_LOCAL_DS = r"C:\Users\lane.white\Downloads\rfparts\data\datasheets"
 LOCAL_JSON = WORKDIR / "local_corpus.json"
 LOCAL_ERRORS = WORKDIR / "local_problems.json"
 LOCAL_TXT = WORKDIR / "localtext"
-LOCAL_MIN_CHARS = 120       # an HTML product page carries less prose than a PDF
+LOCAL_MIN_CHARS = 80        # targeted fields are far shorter than a whole sheet
 
 # ------------------------------------------------------------- domain priors
 # Hand-written engineering knowledge, applied on top of the learned model as an
@@ -1832,19 +1832,41 @@ _SL_CMOS_TEXT = [
 ]
 
 
+_SL_FEATURES = ("<li>Hermetic package option</li><li>MIL-STD-883 screening "
+                "available</li><li>-55 C to +125 C operation</li>"
+                "<li>Bare die available</li>")
+_SL_APPS = ("<li>Satellite communications payloads</li>"
+            "<li>Space qualified subsystems</li><li>Radar</li>")
+_SL_FEATURES_COMM = ("<li>Low cost plastic package</li><li>RoHS compliant tape "
+                     "and reel</li><li>0 to 70 C commercial range</li>"
+                     "<li>Evaluation board available</li>")
+_SL_APPS_COMM = ("<li>Consumer handsets</li><li>Set top boxes</li>"
+                 "<li>Commercial wireless infrastructure</li>")
+
+
 def _sl_page(vendor, pn, body, rnd):
-    """A vendor product page: real template chrome around the product prose."""
+    """A vendor product page: real template chrome around real section anchors,
+    so the selftest exercises the same field extraction the real files use."""
     chrome_top = "\n".join(f"<li>{c}</li>" for c in _SL_CHROME[:3])
     chrome_bot = "\n".join(f"<p>{c}</p>" for c in _SL_CHROME[3:])
     filler = " ".join(rnd.sample(_FILLER.split(), 10))
+    feats, apps = _SL_FEATURES, _SL_APPS
+    if "CMOS" in body or "plastic" in body:
+        feats, apps = _SL_FEATURES_COMM, _SL_APPS_COMM
     return (
         f"<!DOCTYPE html><html><head>"
         f"<title>{vendor} {pn} Product Page</title>"
         f"<meta name=\"description\" content=\"{vendor} {pn} RF component\">"
         f"<style>.x{{color:red}}</style><script>var a=1;</script>"
         f"</head><body><nav><ul>{chrome_top}</ul></nav>"
-        f"<h1>{pn}</h1><div class=\"desc\"><p>{body}</p><p>{filler}</p></div>"
+        f"<h1>{pn}</h1>"
+        f"<h3 id=\"general-description\">General Description</h3>"
+        f"<p>{body}</p>"
+        f"<h3 id=\"features\">Features</h3><ul>{feats}</ul>"
+        f"<h3 id=\"applications\">Applications</h3><ul>{apps}</ul>"
+        f"<h3 id=\"specifications\">Specifications</h3>"
         f"<table><tr><td>1.0</td><td>2.5</td><td>3.7</td></tr></table>"
+        f"<p>{filler}</p>"
         f"<footer>{chrome_bot}</footer></body></html>")
 
 
@@ -2501,20 +2523,436 @@ def _local_text_path(vendor_key, pn):
     return LOCAL_TXT / slug / f"{safe}.txt"
 
 
-def extract_local_text(path, max_chars=FULL_TEXT_CHARS, text_mode="full"):
-    """Classifier text from a local file, PDF or HTML."""
-    path = Path(path)
-    suffix = path.suffix.lower()
+# ===========================================================================
+#  TARGETED FIELD EXTRACTION
+# ===========================================================================
+#  Reading the WHOLE datasheet was the wrong default. Most of a datasheet is
+#  parametric tables and plots, which say nothing about qualifiability and
+#  dilute every TF-IDF weight. What predicts space-qualifiability is the prose:
+#  the description, the feature bullets (construction and screening language),
+#  the applications list -- plus any qualification wording wherever it appears.
+#
+#  Verified against real files from all four vendors:
+#
+#    Marki      HTML, Svelte product page. Clean anchors:
+#               <h3 id="general-description">, id="features", id="applications".
+#               Applications is often literally "N/A".
+#    MACOM      PDF, two-column. 'Features' bullets then 'Description' prose,
+#               ending at 'Electrical Specifications'/'Ordering Information'.
+#               Applications usually folded into the description as
+#               "Typical applications include ...".
+#    Skyworks   PDF, two-column, 'PRODUCT SUMMARY' header. Separate
+#               'Applications', 'Features' and 'Description' sections.
+#    Qorvo      the four samples are DAMAGED PDFs saved with a .html extension
+#               (see sniff_datasheet_kind) and yield no text at all.
+#
+#  Two findings drive the implementation:
+#
+#  1. FILE TYPE MUST BE SNIFFED, NOT TRUSTED. Every Qorvo sample is a PDF named
+#     .html. Dispatching on the extension sent PDF bytes to the HTML parser and
+#     produced nothing, silently.
+#  2. TWO-COLUMN PDFS MUST BE READ COLUMN BY COLUMN. Flowed extraction
+#     interleaves the columns line by line, so a Skyworks description came out
+#     as "Skyworks GreenTM products are compliant with The SKY53759-11 is a
+#     highly integrated LNA filter module that all applicable legislation..."
+#     -- two unrelated columns zipped together. Cropping to each column first
+#     fixes it completely.
+
+FIELD_PATTERNS = {
+    "description": [r"general\s+descriptions?", r"product\s+descriptions?",
+                    r"detailed\s+descriptions?", r"descriptions?",
+                    r"device\s+overview", r"overview", r"general\s+information"],
+    "features": [r"key\s+features", r"features\s*(?:&|and)\s*benefits",
+                 r"features", r"highlights"],
+    "applications": [r"typical\s+applications?", r"target\s+applications?",
+                     r"end\s+applications?", r"applications?"],
+}
+
+# A line starting with any of these ends the section we are collecting. They are
+# the headings that follow the prose on real datasheets, plus page furniture.
+STOP_PATTERNS = [
+    r"electrical\s+specification", r"absolute\s+maximum", r"ordering\s+information",
+    r"pin\s+(?:configuration|description|out|assignment)",
+    r"port\s+(?:configuration|functions)", r"functional\s+(?:block|schematic)",
+    r"block\s+diagram", r"table\s+of\s+contents", r"revision\s+history",
+    r"typical\s+performance", r"mechanical\s+data", r"outline\s+drawing",
+    r"package\s+(?:information|drawing|dimensions)", r"evaluation\s+board",
+    r"specifications?", r"parameter\s+conditions", r"table\s+\d", r"figure\s+\d",
+    r"recommended\s+operating", r"handling\s+(?:and|&)?\s*storage",
+    r"tape\s+and\s+reel", r"footprint", r"application\s+circuit", r"s-?parameter",
+    r"schematic", r"product\s+summary", r"proprietary\s+information",
+    r"visit\s+www", r"for\s+further\s+information", r"phone\s*\[", r"copyright",
+    r"all\s+rights\s+reserved", r"\S+\s+technology\s+solutions",
+    r"skyworks\s+solutions", r"m/a-?com", r"data\s+sheet\s+\d",
+]
+_FIELD_RX = {k: [re.compile(r"^\W{0,3}(?:\d+[\.\)]\s*)?(?:%s)\s*[:\-]?\s*$" % p,
+                            re.I) for p in v]
+             for k, v in FIELD_PATTERNS.items()}
+_FIELD_INLINE_RX = {k: [re.compile(r"^\W{0,3}(?:%s)\s*[:\-]\s*(\S.*)$" % p, re.I)
+                        for p in v] for k, v in FIELD_PATTERNS.items()}
+_STOP_RX = [re.compile(r"^\W{0,3}(?:\d+[\.\)]\s*)?(?:%s)\b" % p, re.I)
+            for p in STOP_PATTERNS]
+_STOP_INLINE_RX = re.compile("|".join(STOP_PATTERNS), re.I)
+
+MAX_FIELD_CHARS = 1500      # per field; descriptions are a paragraph or two
+MAX_QUAL_NOTES = 1200
+HTML_SECTION_IDS = {
+    "description": ["general-description", "description", "product-description",
+                    "device-overview", "overview", "general-info"],
+    "features": ["features", "key-features", "features-benefits"],
+    "applications": ["applications", "typical-applications", "target-applications"],
+}
+
+
+def sniff_datasheet_kind(path):
+    """Real file type from the first bytes, ignoring the extension.
+
+    Every Qorvo sample in the reference set is a PDF named '.html'. Trusting the
+    extension fed PDF bytes to the HTML parser and produced an empty string with
+    no error, which is the worst possible failure: a silent one."""
     try:
-        raw = path.read_bytes()
+        head = Path(path).open("rb").read(2048)
     except OSError:
-        return ""
-    if suffix == ".pdf":
-        return (extract_full_text(raw, max_chars) if text_mode == "full"
-                else extract_overview(raw))
-    if suffix in (".html", ".htm"):
-        return html_to_text(raw, max_chars)
-    return _strip_tables(raw.decode("utf-8", "replace"), max_chars)
+        return "unreadable"
+    if head[:5] == b"%PDF-":
+        return "pdf"
+    stripped = head.lstrip()[:400].lower()
+    if (stripped.startswith(b"<!doctype html") or stripped.startswith(b"<html")
+            or stripped.startswith(b"<?xml") and b"<html" in head[:2048].lower()
+            or b"<html" in head[:2048].lower()):
+        return "html"
+    if head[:2] == b"PK":
+        return "zip"
+    return "text"
+
+
+def _pdf_corruption_note(path):
+    """Explain WHY a PDF yielded no text, since the two causes need opposite
+    fixes: a scanned page needs OCR, a mangled download needs re-downloading."""
+    try:
+        raw = Path(path).read_bytes()
+    except OSError:
+        return "file could not be read"
+    repl = raw.decode("utf-8", "replace").count("\ufffd")
+    total = max(1, len(raw))
+    if repl and repl / total > 0.05:
+        return (f"CORRUPT: {100 * repl / total:.0f}% of the bytes are UTF-8 "
+                f"replacement characters. This file was saved through a TEXT "
+                f"decode (e.g. writing response.text instead of "
+                f"response.content), which destroys the compressed streams "
+                f"irreversibly. Re-download it in binary mode.")
+    if b"/Image" in raw[:200000] or b"/DCTDecode" in raw[:200000]:
+        return "no text layer: page content is a scanned image, needs OCR"
+    return "no text layer could be extracted (unusual or damaged PDF structure)"
+
+
+def detect_pdf_columns(page, min_words=30, gutter_tol=2.0, max_crossing=0.06):
+    """1 or 2, from whether words straddle the vertical centre line.
+
+    A two-column page has a gutter: almost no word crosses the middle. Geometry
+    is used rather than guesswork because choosing the layout by 'which gave
+    longer text' picked the interleaved version on a length tie-break."""
+    try:
+        words = page.extract_words() or []
+    except Exception:
+        return 1
+    if len(words) < min_words:
+        return 1
+    centre = page.width / 2.0
+    crossing = sum(1 for w in words
+                   if w["x0"] < centre - gutter_tol and w["x1"] > centre + gutter_tol)
+    left = sum(1 for w in words if w["x1"] <= centre)
+    right = sum(1 for w in words if w["x0"] >= centre)
+    n = len(words)
+    if (crossing / n) < max_crossing and left > 0.15 * n and right > 0.15 * n:
+        return 2
+    return 1
+
+
+def pdf_prose_text(path, pages=3, force_columns=None):
+    """Text from the first pages, read column-by-column when the page is
+    two-column. Returns (text, layout_label)."""
+    try:
+        import pdfplumber
+    except Exception:
+        return "", "no-pdfplumber"
+    chunks, ncols = [], 1
+    try:
+        with pdfplumber.open(str(path)) as pdf:
+            seq = pdf.pages[:pages]
+            if not seq:
+                return "", "empty"
+            ncols = force_columns or detect_pdf_columns(seq[0])
+            for pg in seq:
+                if ncols == 1:
+                    chunks.append(pg.extract_text() or "")
+                    continue
+                w, h = pg.width, pg.height
+                for i in range(ncols):
+                    try:
+                        crop = pg.crop((w * i / ncols, 0, w * (i + 1) / ncols, h))
+                        chunks.append(crop.extract_text() or "")
+                    except Exception:
+                        continue
+    except Exception:
+        return "", "error"
+    return "\n".join(chunks), f"{ncols}-column"
+
+
+def _truncate_at_stop(text):
+    """Cut a collected field where a stop heading appears mid-line, which happens
+    when column cropping glues a heading onto the end of a paragraph."""
+    m = _STOP_INLINE_RX.search(text)
+    return (text[:m.start()] if m and m.start() > 40 else text).strip()
+
+
+def sections_from_text(text):
+    """description / features / applications out of flowed datasheet text."""
+    out = {"description": [], "features": [], "applications": []}
+    cur = None
+    for line in text.split("\n"):
+        stripped = line.strip()
+        heading = None
+        if stripped and len(stripped) <= 70:
+            for field, rxs in _FIELD_RX.items():
+                if any(rx.match(stripped) for rx in rxs):
+                    heading = field
+                    break
+        if heading:
+            cur = heading
+            continue
+        inline = None
+        for field, rxs in _FIELD_INLINE_RX.items():
+            for rx in rxs:
+                m = rx.match(stripped)
+                if m:
+                    inline = (field, m.group(1))
+                    break
+            if inline:
+                break
+        if inline:
+            cur = inline[0]
+            out[cur].append(inline[1])
+            continue
+        if cur and stripped and len(stripped) <= 80 \
+                and any(rx.match(stripped) for rx in _STOP_RX):
+            cur = None
+            continue
+        if cur and stripped:
+            out[cur].append(stripped)
+    return {k: _truncate_at_stop(re.sub(r"\s+", " ", " ".join(v)))[:MAX_FIELD_CHARS]
+            for k, v in out.items()}
+
+
+def sections_from_html_doc(raw):
+    """Same three fields from an HTML product page. Returns (fields, title)."""
+    txt = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+    txt = _HTML_SCRIPTISH.sub(" ", _HTML_COMMENT.sub(" ", txt))
+    got = {}
+
+    def clean(chunk):
+        x = _html_unescape(_HTML_TAG.sub(" ", chunk))
+        return re.sub(r"\s+", " ", x).strip()
+
+    # 1. id anchors -- how Marki and most modern datasheet pages are built
+    for field, ids in HTML_SECTION_IDS.items():
+        for hid in ids:
+            m = re.search(r'<h[1-6][^>]*id="%s"[^>]*>.*?</h[1-6]>(.*?)'
+                          r'(?=<h[1-6][ >])' % re.escape(hid), txt, re.S | re.I)
+            if m:
+                v = clean(m.group(1))
+                if v and v.strip().upper() not in ("N/A", "NA", "NONE", "-"):
+                    got[field] = v[:MAX_FIELD_CHARS]
+                break
+    # 2. heading text
+    for field, pats in FIELD_PATTERNS.items():
+        if got.get(field):
+            continue
+        for p in pats:
+            m = re.search(r'<h[1-6][^>]*>\s*(?:%s)\s*</h[1-6]>(.*?)(?=<h[1-6][ >])'
+                          % p, txt, re.S | re.I)
+            if m:
+                v = clean(m.group(1))
+                if v and v.strip().upper() not in ("N/A", "NA", "NONE", "-"):
+                    got[field] = v[:MAX_FIELD_CHARS]
+                    break
+    # 3. meta description as the last resort for the description only
+    if not got.get("description"):
+        m = _HTML_META_DESC.search(txt)
+        if m:
+            got["description"] = _html_unescape(m.group(1)).strip()[:MAX_FIELD_CHARS]
+    title = ""
+    mt = _HTML_TITLE.search(txt)
+    if mt:
+        title = clean(mt.group(1))
+    return got, title
+
+
+# Lines worth keeping wherever they appear in the document, because this is the
+# vocabulary that actually decides qualifiability and it frequently lives in a
+# package table or a footnote rather than in the description.
+_QUAL_LINE_RX = re.compile("|".join((
+    r"\bhermetic", r"\bkovar\b", r"\balumina\b", r"\bLTCC\b", r"\bceramic\b",
+    r"\bglass[-\s]*to[-\s]*metal\b", r"\bbare\s*die\b", r"\bthin[-\s]*film\b",
+    r"\blaser[-\s]*(?:weld|seal)", r"\bsolder[-\s]*seal", r"\bepox", r"\bplastic\b",
+    r"\bover-?mould?ed\b|\bovermolded\b", r"\bMIL-STD-\d+", r"\bMIL-PRF-\d+",
+    r"\bQML", r"\bclass\s*[HKSV]\b", r"\bJAN", r"\bscreen(?:ed|ing)\b",
+    r"\bupscreen", r"\bradiation\b", r"\brad[-\s]?hard", r"\brad[-\s]?tolerant",
+    r"\bTID\b", r"\bSEE\b", r"\bSEL\b", r"\boutgas", r"\bspace\b", r"\bsatellite\b",
+    r"\bhi-?rel\b", r"\bhigh\s*reliability\b", r"\bESCC\b", r"\bNASA\b",
+    r"\bdie\s*(?:form|attach)\b", r"\bwire\s*bond", r"\bRoHS\b",
+    r"-\s*55\s*\u00b0?\s*C", r"\+?\s*1(?:25|50)\s*\u00b0?\s*C",
+    r"\boperating\s+temperature", r"\bstorage\s+temperature", r"\breflow\b",
+    r"\bMSL\d?\b", r"\bJEDEC\b", r"\bqualif", r"\bderating\b", r"\blot\b",
+)), re.I)
+
+
+def qualification_notes(full_text, max_chars=MAX_QUAL_NOTES):
+    """Short, de-duplicated set of lines carrying qualification/construction
+    language, gathered from the whole document.
+
+    Without this, narrowing to the description would throw away exactly the
+    signal being predicted: 'MIL-STD-883 screened', 'hermetic', '-55 to +125 C'
+    routinely sit in a package table or a footnote, not in the prose."""
+    seen, kept, total = set(), [], 0
+    for line in (full_text or "").split("\n"):
+        t = line.strip()
+        if not (12 <= len(t) <= 200) or not _QUAL_LINE_RX.search(t):
+            continue
+        letters = sum(c.isalpha() for c in t)
+        if letters < 8 or letters / len(t) < 0.35:
+            continue                       # a table row that happens to match
+        key = re.sub(r"\s+", " ", t.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(t)
+        total += len(t)
+        if total >= max_chars:
+            break
+    return "\n".join(kept)
+
+
+def compose_training_text(fields, include_features=True, include_apps=True,
+                          include_qual=True):
+    """Assemble the classifier's input from the extracted fields, each labelled
+    so the model (and you, when reading the debug output) can tell them apart."""
+    parts = []
+    if fields.get("title"):
+        parts.append(f"TITLE: {fields['title']}")
+    if fields.get("description"):
+        parts.append(f"DESCRIPTION: {fields['description']}")
+    if include_features and fields.get("features"):
+        parts.append(f"FEATURES: {fields['features']}")
+    if include_apps and fields.get("applications"):
+        parts.append(f"APPLICATIONS: {fields['applications']}")
+    if include_qual and fields.get("qual_notes"):
+        parts.append(f"QUALIFICATION NOTES: {fields['qual_notes']}")
+    return "\n".join(parts).strip()
+
+
+def extract_datasheet_fields(path, text_mode="sections", pages=3,
+                             include_features=True, include_apps=True,
+                             include_qual=True):
+    """The single entry point: a local datasheet file -> labelled fields.
+
+    Returns a dict with title/description/features/applications/qual_notes, the
+    composed `text`, and a `parse` sub-dict recording how it was read and what
+    went wrong -- the diagnostics are what make `debug` useful."""
+    path = Path(path)
+    kind = sniff_datasheet_kind(path)
+    info = {"kind": kind, "ext": path.suffix.lower(), "layout": "", "note": "",
+            "raw_chars": 0, "mislabelled": False}
+    if kind == "pdf" and info["ext"] in (".htm", ".html"):
+        info["mislabelled"] = True
+        info["note"] = ("file is a PDF but named "
+                        f"'{info['ext']}' -- read as PDF anyway")
+    if kind == "html" and info["ext"] == ".pdf":
+        info["mislabelled"] = True
+        info["note"] = "file is HTML but named '.pdf' -- read as HTML anyway"
+
+    fields = {"title": "", "description": "", "features": "", "applications": "",
+              "qual_notes": "", "text": "", "parse": info}
+
+    if kind == "pdf":
+        full, layout = pdf_prose_text(path, pages=pages)
+        info["layout"] = layout
+        info["raw_chars"] = len(full)
+        if not full.strip():
+            info["note"] = _pdf_corruption_note(path)
+            return fields
+        got = sections_from_text(full)
+        # If the detected layout produced nothing, try the other one before
+        # giving up -- detection is a heuristic, the fallback costs one reparse.
+        if not any(got.values()):
+            alt_cols = 1 if layout.startswith("2") else 2
+            alt, alt_label = pdf_prose_text(path, pages=pages,
+                                            force_columns=alt_cols)
+            alt_got = sections_from_text(alt)
+            if any(alt_got.values()):
+                got, full, info["layout"] = alt_got, alt, alt_label + " (fallback)"
+        fields.update(got)
+        lead = [l.strip() for l in full.split("\n") if l.strip()][:3]
+        fields["title"] = re.sub(r"\s+", " ", " ".join(lead))[:200]
+        if include_qual:
+            fields["qual_notes"] = qualification_notes(full)
+        if not any((fields["description"], fields["features"],
+                    fields["applications"])):
+            info["note"] = ("text extracted but no description/features/"
+                            "applications heading was found")
+    elif kind == "html":
+        try:
+            raw = path.read_bytes()
+        except OSError as e:
+            info["note"] = f"unreadable: {e}"
+            return fields
+        got, title = sections_from_html_doc(raw)
+        info["raw_chars"] = len(raw)
+        info["layout"] = "html"
+        fields.update(got)
+        fields["title"] = title[:200]
+        if include_qual:
+            fields["qual_notes"] = qualification_notes(html_to_text(raw))
+        if not any((fields["description"], fields["features"],
+                    fields["applications"])):
+            info["note"] = ("no description/features/applications section found "
+                            "in the HTML (JavaScript-rendered page?)")
+    elif kind == "text":
+        try:
+            body = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            info["note"] = f"unreadable: {e}"
+            return fields
+        info["raw_chars"] = len(body)
+        info["layout"] = "plain text"
+        fields.update(sections_from_text(body))
+        if include_qual:
+            fields["qual_notes"] = qualification_notes(body)
+    else:
+        info["note"] = f"unsupported file type ({kind})"
+        return fields
+
+    if text_mode == "sections":
+        fields["text"] = compose_training_text(
+            fields, include_features=include_features,
+            include_apps=include_apps, include_qual=include_qual)
+    else:
+        # Legacy whole-document modes, kept for comparison runs.
+        if kind == "pdf":
+            try:
+                blob = path.read_bytes()
+            except OSError:
+                blob = b""
+            fields["text"] = (extract_full_text(blob) if text_mode == "full"
+                              else extract_overview(blob))
+        else:
+            fields["text"] = html_to_text(path.read_bytes())
+    return fields
+
+
+def extract_local_text(path, max_chars=FULL_TEXT_CHARS, text_mode="sections"):
+    """Backwards-compatible wrapper: just the classifier text."""
+    return extract_datasheet_fields(path, text_mode=text_mode)["text"][:max_chars]
 
 
 # --------------------------------------------- label oracles (never text!)
@@ -2817,7 +3255,7 @@ def _report_label_oracle(diag):
 
 # ------------------------------------------------------- corpus assembly
 def build_local_corpus(root=None, db_path=None, erf_html=None, vendors=None,
-                       absent_as="negative", text_mode="full",
+                       absent_as="negative", text_mode="sections",
                        drop_boilerplate=True, use_db=True, keep_pn=False,
                        min_chars=LOCAL_MIN_CHARS, verbose=True, progress=True,
                        every=25):
@@ -2872,24 +3310,19 @@ def build_local_corpus(root=None, db_path=None, erf_html=None, vendors=None,
                                       "filename"})
             continue
         try:
-            text = extract_local_text(path, text_mode=text_mode)
+            got = extract_datasheet_fields(path, text_mode=text_mode)
+            text = got.get("text", "")
         except Exception as e:                       # a bad PDF must not stop us
             errors.append({"file": rel, "vendor": vkey,
                            "problem": f"{type(e).__name__}: {e}"[:140]})
             continue
         n_chars = len(text.strip())
         if n_chars < min_chars:
-            suffix = path.suffix.lower()
-            if suffix == ".pdf":
-                hint = ("no text layer -- almost certainly a scanned image, "
-                        "needs OCR")
-            elif suffix in (".htm", ".html"):
-                hint = ("page has almost no prose -- a redirect/login stub, or "
-                        "the content is rendered by JavaScript")
-            else:
-                hint = "file holds almost no text"
+            note = (got.get("parse") or {}).get("note", "")
             errors.append({"file": rel, "vendor": vkey, "pn": pn,
-                           "problem": f"only {n_chars} char(s) of text: {hint}"})
+                           "kind": (got.get("parse") or {}).get("kind", ""),
+                           "problem": (f"only {n_chars} char(s) of usable text"
+                                       + (f": {note}" if note else ""))})
             continue
         if not keep_pn:
             text = redact_pn(text, pn)
@@ -2898,7 +3331,11 @@ def build_local_corpus(root=None, db_path=None, erf_html=None, vendors=None,
         if prev is None or len(text) > len(prev["text"]):
             best[key] = {"vendor": vkey, "pn": pn, "file": str(path),
                          "kind": path.suffix.lower().lstrip("."),
-                         "folder": folder, "text": text}
+                         "folder": folder, "text": text,
+                         "fields": {k: got.get(k, "")
+                                    for k in ("title", "description", "features",
+                                              "applications", "qual_notes")},
+                         "parse": got.get("parse", {})}
         if progress and (i % every == 0 or i == len(files)):
             rate = i / max(1e-6, time.time() - started)
             eta = (len(files) - i) / max(1e-6, rate)
@@ -2962,6 +3399,10 @@ def build_local_corpus(root=None, db_path=None, erf_html=None, vendors=None,
                "file": rec["file"], "kind": rec["kind"],
                "folder": rec["folder"], "chars": len(text),
                "text_file": str(tp), "source": "local", "in_db": in_db,
+               "fields": rec.get("fields", {}),
+               "parse": rec.get("parse", {}),
+               "has_applications": bool((rec.get("fields") or {})
+                                        .get("applications")),
                "cmos_negative": bool(label == "N"
                                      and _CMOS_NEG_RE.search(text))}
         records.append(row)
@@ -2973,6 +3414,9 @@ def build_local_corpus(root=None, db_path=None, erf_html=None, vendors=None,
         st["files"] += 1
         st[rec["kind"]] += 1
         st["chars"] += len(text)
+        for fname in ("description", "features", "applications", "qual_notes"):
+            if (rec.get("fields") or {}).get(fname):
+                st["has_" + fname] += 1
         if row["cmos_negative"]:
             st["cmos"] += 1
     for src, n in label_source.most_common():
@@ -3015,6 +3459,28 @@ def _report_local_corpus(corpus):
               f"{st.get('P', 0):>5} {st.get('N', 0):>5} {st.get('U', 0):>6} "
               f"{st.get('cmos', 0):>5} {st.get('chars', 0) // n:>10}  {kinds}")
     print(f"  {'TOTAL':<18} {c['parts']:>6} {c['P']:>5} {c['N']:>5} {c['U']:>6}")
+
+    # Which fields were actually found, per vendor. A vendor with 0 descriptions
+    # is a parsing failure, not a quiet 'no data' -- and it is invisible in the
+    # counts above because the qualification sweep alone can carry a part over
+    # the minimum length.
+    print(f"\n  FIELD COVERAGE (parts with each field populated)")
+    print(f"  {'vendor':<18} {'descr':>7} {'feat':>7} {'apps':>7} {'qual':>7}")
+    for vkey, st in sorted(corpus["per_vendor"].items(),
+                           key=lambda kv: -kv[1].get("files", 0)):
+        n = st.get("files", 0) or 1
+        def pct(k):
+            v = st.get("has_" + k, 0)
+            return f"{v}/{n}"
+        print(f"  {VENDORS[vkey]['name']:<18} {pct('description'):>7} "
+              f"{pct('features'):>7} {pct('applications'):>7} "
+              f"{pct('qual_notes'):>7}")
+    thin = [VENDORS[v]["name"] for v, st in corpus["per_vendor"].items()
+            if not st.get("has_description")]
+    if thin:
+        print(f"    ! no description parsed for any part from: "
+              f"{', '.join(sorted(thin))}")
+        print("      Run `debug` on that vendor -- its format is not being read.")
 
     if c.get("N_not_in_db"):
         print(f"\n  note: {c['N_not_in_db']} of the negatives are not in the "
@@ -3071,7 +3537,7 @@ def cmd_build(args):
         vendors=(set(args.vendors) if getattr(args, "vendors", None) else None),
         absent_as=getattr(args, "absent_as", None) or s.get("absent_as",
                                                             "negative"),
-        text_mode=getattr(args, "text_mode", None) or s.get("text_mode", "full"),
+        text_mode=getattr(args, "text_mode", None) or s.get("text_mode", "sections"),
         drop_boilerplate=not getattr(args, "keep_boilerplate", False),
         use_db=not getattr(args, "no_db", False),
         keep_pn=bool(getattr(args, "keep_pn", False)),
@@ -3094,28 +3560,32 @@ cmd_localscan = cmd_build
 
 # ------------------------------------------------------------------- debug
 def cmd_debug(args):
-    """Show exactly what is being parsed out of each vendor's datasheet format.
+    """Show exactly which fields are parsed out of each vendor's datasheet format.
 
-    The formats differ wildly -- Qorvo ships HTML product pages, Marki and MACOM
-    ship PDFs, some PDFs are scanned images with no text layer at all. When the
-    dataset comes out smaller or worse than expected, this is the command that
-    shows why, per vendor, on real files."""
+    The formats differ wildly and each fails in its own way: Marki ships HTML
+    with clean section anchors, MACOM and Skyworks ship two-column PDFs whose
+    columns interleave if read naively, and a mislabelled or text-mangled file
+    yields nothing at all. This prints the actual description / features /
+    applications / qualification notes per vendor so a bad parse is visible
+    instead of silently becoming a negative."""
     s = load_settings()
     root = discover_local_library(getattr(args, "local_dir", None)
                                   or s.get("local_ds_dir") or None)
     if not root:
         raise SystemExit("no datasheet folder found -- pass --local-dir.")
-    n_show = getattr(args, "samples", 3)
-    chars = getattr(args, "chars", 400)
+    n_show = getattr(args, "samples", 2)
+    width = getattr(args, "chars", 320)
+    text_mode = getattr(args, "text_mode", "sections")
     db_path = getattr(args, "db", None) or s.get("db")
     erf_dirs = discover_erf_dirs(
         explicit=getattr(args, "erf_html", None) or s.get("erf_html_dir") or None,
         ds_root=root)
 
-    print("=" * 62)
-    print("  DEBUG: what each vendor's files actually parse to")
-    print("=" * 62)
-    print(f"  library: {root}")
+    print("=" * 74)
+    print("  DEBUG: which fields are parsed from each vendor's datasheets")
+    print("=" * 74)
+    print(f"  library   : {root}")
+    print(f"  text mode : {text_mode}")
     files, unknown = scan_local_library(root)
     if unknown:
         print(f"  ! unrecognised folders: {', '.join(sorted(unknown))}")
@@ -3125,85 +3595,124 @@ def cmd_debug(args):
     oracle, _diag = build_label_oracle(db_path=db_path, erf_html=erf_dirs,
                                        use_db=not getattr(args, "no_db", False),
                                        verbose=True)
-
+    only = set(getattr(args, "vendors", None) or [])
     by_vendor = {}
-    for vkey, folder, path in files:
+    for vkey, _folder, path in files:
+        if only and vkey not in only:
+            continue
         by_vendor.setdefault(vkey, []).append(path)
 
-    for vkey, paths in sorted(by_vendor.items(),
-                              key=lambda kv: -len(kv[1])):
+    def show(label, value, indent="      "):
+        if not value:
+            print(f"{indent}{label:<14}: (none)")
+            return
+        flat = re.sub(r"\s+", " ", value).strip()
+        print(f"{indent}{label:<14}: {flat[:width]}"
+              + (" ..." if len(flat) > width else ""))
+
+    for vkey, paths in sorted(by_vendor.items(), key=lambda kv: -len(kv[1])):
         exts = Counter(p.suffix.lower() for p in paths)
-        print(f"\n{'=' * 62}")
+        print(f"\n{'=' * 74}")
         print(f"  {VENDORS[vkey]['name']}   {len(paths)} file(s)   "
               + ", ".join(f"{e} x{n}" for e, n in exts.most_common()))
-        print("=" * 62)
+        print("=" * 74)
 
-        # Whole-vendor health first: how many files yield usable text at all.
-        lengths, empties, no_pn = [], [], []
+        # ---- whole-vendor health, so a systematic failure is obvious ---------
+        stats = Counter()
+        lengths, problems, kinds, layouts = [], [], Counter(), Counter()
         for p in paths:
             pn = _pn_from_filename(p.stem)
             if not pn:
-                no_pn.append(p.name)
+                stats["no_pn"] += 1
             try:
-                t = extract_local_text(p, text_mode=getattr(args, "text_mode",
-                                                            "full"))
+                f = extract_datasheet_fields(p, text_mode=text_mode)
             except Exception as e:
-                empties.append(f"{p.name} ({type(e).__name__})")
+                problems.append(f"{p.name}: {type(e).__name__}")
                 continue
-            if len(t.strip()) < LOCAL_MIN_CHARS:
-                empties.append(f"{p.name} ({len(t.strip())} chars)")
+            info = f.get("parse", {})
+            kinds[info.get("kind", "?")] += 1
+            if info.get("layout"):
+                layouts[info["layout"]] += 1
+            if info.get("mislabelled"):
+                stats["mislabelled"] += 1
+            for fname in ("description", "features", "applications", "qual_notes"):
+                if f.get(fname):
+                    stats[fname] += 1
+            n = len(f.get("text", "").strip())
+            if n < LOCAL_MIN_CHARS:
+                problems.append(f"{p.name}: {n} chars"
+                                + (f" -- {info['note']}" if info.get("note") else ""))
             else:
-                lengths.append(len(t))
-        if lengths:
-            lengths.sort()
-            print(f"  text extracted: {len(lengths)}/{len(paths)} file(s)   "
-                  f"chars min {lengths[0]} / median "
-                  f"{lengths[len(lengths) // 2]} / max {lengths[-1]}")
-        else:
-            print(f"  ! NO file yielded usable text. For PDFs this usually means "
-                  f"a scanned image with no text layer (OCR needed).")
-        if empties:
-            print(f"  ! {len(empties)} file(s) below {LOCAL_MIN_CHARS} chars: "
-                  f"{', '.join(empties[:4])}"
-                  + (" ..." if len(empties) > 4 else ""))
-        if no_pn:
-            print(f"  ! {len(no_pn)} filename(s) gave no part number: "
-                  f"{', '.join(no_pn[:4])}")
+                lengths.append(n)
+        total = len(paths)
+        print(f"  real file type   : "
+              + ", ".join(f"{k} x{v}" for k, v in kinds.most_common())
+              + (f"   [{stats['mislabelled']} misnamed]"
+                 if stats["mislabelled"] else ""))
+        if layouts:
+            print(f"  layout detected  : "
+                  + ", ".join(f"{k} x{v}" for k, v in layouts.most_common()))
+        print(f"  usable text      : {len(lengths)}/{total} file(s)"
+              + (f"   chars min {min(lengths)} / median "
+                 f"{sorted(lengths)[len(lengths) // 2]} / max {max(lengths)}"
+                 if lengths else ""))
+        print(f"  fields found     : description {stats['description']}/{total}, "
+              f"features {stats['features']}/{total}, "
+              f"applications {stats['applications']}/{total}, "
+              f"qual notes {stats['qual_notes']}/{total}")
+        if stats["no_pn"]:
+            print(f"  ! {stats['no_pn']} filename(s) gave no part number")
+        if problems:
+            print(f"  ! {len(problems)} file(s) unusable:")
+            for line in problems[:4]:
+                print(f"      {line}")
+            if len(problems) > 4:
+                print(f"      ... and {len(problems) - 4} more")
 
-        # Then a few real samples, end to end.
+        # ---- real samples, end to end ---------------------------------------
         for p in paths[:n_show]:
             pn = _pn_from_filename(p.stem)
             lkey = loose_pn(pn)
             hit = oracle.get(lkey)
             try:
-                raw = extract_local_text(p, text_mode=getattr(args, "text_mode",
-                                                              "full"))
+                f = extract_datasheet_fields(p, text_mode=text_mode)
             except Exception as e:
                 print(f"\n  --- {p.name}\n      EXTRACTION FAILED: "
                       f"{type(e).__name__}: {e}")
                 continue
-            red = redact_pn(raw, pn)
+            info = f.get("parse", {})
             print(f"\n  --- {p.name}")
-            print(f"      filename -> part number : {pn!r}  (match key {lkey!r})")
-            print(f"      label                   : "
+            print(f"      {'file':<14}: real type {info.get('kind')}, "
+                  f"named {info.get('ext')}, {info.get('layout') or 'n/a'}, "
+                  f"{info.get('raw_chars', 0)} raw chars")
+            if info.get("note"):
+                print(f"      {'PARSE NOTE':<14}: {info['note']}")
+            print(f"      {'part number':<14}: {pn!r}  (match key {lkey!r})")
+            print(f"      {'label':<14}: "
                   + (f"POSITIVE via {hit[2]}" if hit
                      else "no space label found -> NEGATIVE"))
-            print(f"      chars raw/redacted      : {len(raw)} / {len(red)}")
-            hits = prior_hits(red)
+            show("TITLE", f.get("title"))
+            show("DESCRIPTION", f.get("description"))
+            show("FEATURES", f.get("features"))
+            show("APPLICATIONS", f.get("applications"))
+            show("QUAL NOTES", f.get("qual_notes"))
+            text = f.get("text", "")
+            print(f"      {'-> trained on':<14}: {len(text)} chars")
+            hits = prior_hits(text)
             if hits:
                 top = sorted(hits, key=lambda h: -abs(h[1]))[:5]
-                print("      domain terms firing     : "
+                print(f"      {'domain terms':<14}: "
                       + "; ".join(f"{w:+.2f} {why}" for why, w in top))
             else:
-                print("      domain terms firing     : none "
-                      "(no construction/qualification language seen)")
-            snippet = re.sub(r"\s+", " ", red[:chars])
-            print(f"      text starts             : {snippet}")
+                print(f"      {'domain terms':<14}: none fired -- no "
+                      f"construction/qualification language present")
 
-    print(f"\n{'=' * 62}")
-    print("  If a vendor shows 0 files with text, its format is not being read.")
-    print("  If part numbers look wrong, filenames are not matching the listings")
-    print("  -- that is what makes positives silently turn into negatives.")
+    print(f"\n{'=' * 74}")
+    print("  Reading this: 0 descriptions for a vendor means its format is not")
+    print("  being parsed. A wrong part number means the listings will not match,")
+    print("  which is what silently turns positives into negatives. A 'PARSE NOTE'")
+    print("  about replacement characters means the file was corrupted on")
+    print("  download and has to be fetched again in binary mode.")
     return 0
 
 
@@ -3651,7 +4160,7 @@ DEFAULT_SETTINGS = {
     "folds": 5,
     "target_recall": 0.90,
     "prior_weight": 1.0,
-    "text_mode": "full",
+    "text_mode": "sections",
     "harvest_dir": "",
     "ds_limit": 400,
     "review_out": "review_queue.csv",
@@ -3698,7 +4207,7 @@ def _build_ns(s):
     return _ns(local_dir=s.get("local_ds_dir") or None,
                db=s.get("db"), erf_html=s.get("erf_html_dir") or None,
                vendors=None, absent_as=s.get("absent_as", "negative"),
-               text_mode=s.get("text_mode", "full"), keep_boilerplate=False,
+               text_mode=s.get("text_mode", "sections"), keep_boilerplate=False,
                no_db=False, keep_pn=False, quiet=False,
                min_chars=LOCAL_MIN_CHARS)
 
@@ -3711,7 +4220,7 @@ def _debug_ns(s):
     return _ns(local_dir=s.get("local_ds_dir") or None,
                db=s.get("db"), erf_html=s.get("erf_html_dir") or None,
                no_db=False, samples=3, chars=400,
-               text_mode=s.get("text_mode", "full"))
+               text_mode=s.get("text_mode", "sections"))
 
 
 def _age(path):
@@ -3904,7 +4413,7 @@ SETTINGS_MENU = """
   7) target recall     {target_recall}
   8) prior weight      {prior_weight}   (0 disables domain priors)
   9) PU bags / folds   {bags} / {folds}
- 10) text mode         {text_mode}   (full = whole datasheet)
+ 10) text mode         {text_mode}   (sections = description/apps only)
  11) harvest folder    {harvest_dir}
  12) datasheet limit   {ds_limit}   (downloads per run)
  13) local datasheets  {local_ds_dir}
@@ -3959,8 +4468,10 @@ def settings_menu(s):
                 s["bags"] = int(_ask("bags", s["bags"]))
                 s["folds"] = int(_ask("folds", s["folds"]))
             elif choice == "10":
-                v = _ask("text mode (full/overview)", s.get("text_mode", "full"))
-                s["text_mode"] = v if v in ("full", "overview") else s["text_mode"]
+                v = _ask("text mode (sections/full/overview)",
+                         s.get("text_mode", "sections"))
+                s["text_mode"] = (v if v in ("sections", "full", "overview")
+                                  else s["text_mode"])
             elif choice == "11":
                 s["harvest_dir"] = _ask("folder of saved catalog pages "
                                         "(blank for none)", s.get("harvest_dir", ""))
@@ -4110,7 +4621,9 @@ def build_parser():
                        default=None,
                        help="how to treat a datasheet absent from every space "
                             "source (default negative)")
-        p.add_argument("--text-mode", choices=("full", "overview"), default=None)
+        p.add_argument("--text-mode", choices=("sections", "full", "overview"),
+                       default=None,
+                       help="sections (default) = description/features/applications\n+ qualification notes only; full = the whole datasheet")
         p.add_argument("--min-chars", type=int, default=LOCAL_MIN_CHARS,
                        help="skip files yielding less text than this")
         p.add_argument("--keep-boilerplate", action="store_true",
@@ -4138,11 +4651,13 @@ def build_parser():
     dbg.add_argument("--db", help="rfparts parts.db")
     dbg.add_argument("--erf-html", help="saved everythingRF pages")
     dbg.add_argument("--no-db", action="store_true")
+    dbg.add_argument("--vendors", nargs="*", help="only these vendor keys")
     dbg.add_argument("--samples", type=int, default=3,
                      help="files to show in full per vendor (default 3)")
     dbg.add_argument("--chars", type=int, default=400,
                      help="characters of extracted text to print")
-    dbg.add_argument("--text-mode", choices=("full", "overview"), default="full")
+    dbg.add_argument("--text-mode", choices=("sections", "full", "overview"),
+                     default="sections")
     dbg.set_defaults(func=cmd_debug)
 
     m = sub.add_parser("match", help="join everythingRF space parts to the catalog")
