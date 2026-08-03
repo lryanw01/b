@@ -154,6 +154,8 @@ DEFAULT_HF_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 # Fraction of the unlabeled pool a bag may use as negatives when U is smaller
 # than P. Keeping it below 1.0 guarantees out-of-bag rows exist to score.
 _BAG_FRACTION = 0.7
+# Highest decision threshold we will ever adopt. See threshold_for_recall.
+_MAX_THRESHOLD = 0.999
 SETTINGS_FILE = WORKDIR / "settings.json"
 
 # Default location of the Mini-Circuits catalog. EDIT THIS to your own path (or
@@ -174,6 +176,7 @@ DEFAULT_CATALOG = r"C:\Users\lane.white\Downloads\rfparts\rfparts\sources\minici
 # descriptions are far too thin to train on, so they are never used as text.
 DEFAULT_LOCAL_DS = r"C:\Users\lane.white\Downloads\rfparts\data\datasheets"
 LOCAL_JSON = WORKDIR / "local_corpus.json"
+LOCAL_ERRORS = WORKDIR / "local_problems.json"
 LOCAL_TXT = WORKDIR / "localtext"
 LOCAL_MIN_CHARS = 120       # an HTML product page carries less prose than a PDF
 
@@ -935,12 +938,18 @@ def _vstack(a, b):
 
 def threshold_for_recall(p_scores, target_recall):
     """Score cut that yields `target_recall` on held-out positives. In a PU
-    problem you cannot tune for precision, so you pick the recall you need."""
+    problem you cannot tune for precision, so you pick the recall you need.
+
+    Saturation guard: with strong domain priors on a small, well-separated set
+    every positive can land at 1.0, and a threshold of exactly 1.0 makes the
+    model useless on anything new -- a genuine 0.999 would be rejected. Cap it
+    just below the top so the operating point stays meaningful."""
     import numpy as np
     if len(p_scores) == 0:
         return 0.5
     q = max(0.0, min(1.0, 1.0 - target_recall))
-    return float(np.quantile(p_scores, q))
+    thr = float(np.quantile(p_scores, q))
+    return min(thr, _MAX_THRESHOLD)
 
 
 def top_features(featurizer, models, n=25):
@@ -1390,6 +1399,13 @@ def cmd_train(args):
     print(f"\n  decision threshold {thr:.4f}"
           + ("" if args.threshold is not None
              else f" (chosen for {args.target_recall:.0%} recall on held-out P)"))
+    if args.threshold is None and thr >= _MAX_THRESHOLD:
+        print(f"  ! scores are SATURATED: the held-out positives all sit at the "
+              f"top of the\n    range, so the threshold hit its {_MAX_THRESHOLD} "
+              f"cap. Usually this means the\n    two classes are trivially "
+              f"separable (very few parts, or the domain\n    priors dominating). "
+              f"Try --prior-weight 0.5 and more data before\n    trusting the "
+              f"scores as calibrated probabilities.")
 
     preds = []
     for d, s in zip(P, p_scores):
@@ -2556,22 +2572,62 @@ def scan_erf_html_pns(folders, verbose=True):
     return idx, n_files
 
 
-_DB_SPACE_SIGNAL_RE = re.compile(
-    r"erf-space|qorvo|aerospace|ti-space|space|qml|class[-_ ]?[ksv]\b|"
-    r"38534|38535|escc|nasa|jans", re.I)
+# Which qual_evidence signal names really mean "space / hi-rel".
+#
+# Tightened after a real run reported 10,396 space-labelled parts: the previous
+# pattern included a bare vendor name ('qorvo'), so EVERY Qorvo part in the DB
+# matched, space or not. Vendor identity is not a qualification -- only explicit
+# qualification language is.
+_DB_SPACE_SIGNAL_PATTERNS = [
+    ("everythingRF space listing", r"erf-space"),
+    ("aerospace/space catalog", r"aerospace|\bspace\b|"
+                               r"space-(?:guide|catalog|portfolio|products)"),
+    ("QML flow", r"\bqml\b|38534|38535"),
+    ("MIL class K/V/S", r"class-?level-?s\b|class-?[kv]\b"),
+    ("JAN/JANS", r"\bjans?\b"),
+    ("ESA / ESCC", r"escc|esa-qpl"),
+    ("NASA / EEE-INST", r"\bnasa\b|eee-inst"),
+]
+_DB_SPACE_SIGNAL_RX = [(label, re.compile(rx, re.I))
+                       for label, rx in _DB_SPACE_SIGNAL_PATTERNS]
+_DB_SPACE_SPEC_VALUES = ("qualified", "hi_rel", "hirel", "space_qualified")
+_DB_SPACE_VARIANTS = ("space_qualified", "space_grade")
 
 
-def load_db_space_index(db_path):
+def _db_space_reason(sp, variant, signals):
+    """Why (if at all) the DB considers this part space/hi-rel. Returns a short
+    grouping label plus the specific evidence, so a total can be audited instead
+    of merely believed."""
+    if sp in _DB_SPACE_SPEC_VALUES:
+        return f"spec space={sp}", f"specs.space={sp}"
+    if variant in _DB_SPACE_VARIANTS:
+        return f"spec space_variant={variant}", f"specs.space_variant={variant}"
+    for sig in (signals or "").split("|"):
+        sig = sig.strip()
+        if not sig:
+            continue
+        for label, rx in _DB_SPACE_SIGNAL_RX:
+            if rx.search(sig):
+                return f"evidence: {label}", sig[:60]
+    return "", ""
+
+
+def load_db_space_index(db_path, verbose=False):
     """{loose PN -> (mpn, vendor, why)} for every part the rfparts pipeline has
     already labelled space-qualified or hi-rel.
 
     Reads BOTH the specs table ('space', 'space_variant') and qual_evidence, so
-    it picks up the Qorvo aerospace catalog (qorvo_ingest writes
-    space=qualified) and the ADI space portfolio (adi_space_ingest writes QML /
-    Class S / NASA evidence) without either of them needing to be re-run."""
-    db_path = Path(db_path)
+    it picks up the Qorvo aerospace catalog (qorvo_ingest writes space=qualified)
+    and the ADI space portfolio (adi_space_ingest writes QML / Class S / NASA
+    evidence) without either of them needing to be re-run.
+
+    Returns (index, breakdown) where breakdown counts parts per reason and per
+    vendor -- a five-figure total is either real or a bug, and the only way to
+    tell from the outside is to see it broken down."""
+    db_path = Path(db_path or "")
+    breakdown = {"by_reason": Counter(), "by_vendor": Counter(), "examples": {}}
     if not db_path.is_file():
-        return {}
+        return {}, breakdown
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
@@ -2588,32 +2644,32 @@ def load_db_space_index(db_path):
     except sqlite3.Error as e:
         print(f"  ! could not read {db_path}: {e}")
         conn.close()
-        return {}
+        return {}, breakdown
     conn.close()
     out = {}
     for r in rows:
-        sp = (r["sp"] or "").strip().lower()
-        variant = (r["variant"] or "").strip().lower()
-        signals = r["signals"] or ""
-        why = ""
-        if sp in ("qualified", "hi_rel", "hirel", "space_qualified"):
-            why = f"DB space={sp}"
-        elif variant in ("space_qualified", "space_grade"):
-            why = f"DB space_variant={variant}"
-        elif signals and _DB_SPACE_SIGNAL_RE.search(signals):
-            why = "DB evidence: " + signals.split("|")[0][:40]
-        if not why:
+        reason, detail = _db_space_reason(
+            (r["sp"] or "").strip().lower(),
+            (r["variant"] or "").strip().lower(),
+            r["signals"] or "")
+        if not reason:
             continue
         key = loose_pn(r["mpn"])
-        if key and key not in out:
-            out[key] = (r["mpn"], r["vendor"] or "", why)
-    return out
+        if not key or key in out:
+            continue
+        vendor = r["vendor"] or "(blank)"
+        out[key] = (r["mpn"], vendor, reason)
+        breakdown["by_reason"][reason] += 1
+        breakdown["by_vendor"][vendor] += 1
+        breakdown["examples"].setdefault(reason, f"{r['mpn']} [{detail}]")
+    return out, breakdown
 
 
 def load_db_part_index(db_path):
     """{loose PN -> (mpn, vendor)} for EVERY part in the DB, space or not. Used
-    only to report how much of the local library the DB actually knows about."""
-    db_path = Path(db_path)
+    to report how much of the local library the DB actually knows about -- a
+    datasheet the DB has never seen is weak evidence of anything."""
+    db_path = Path(db_path or "")
     if not db_path.is_file():
         return {}
     conn = sqlite3.connect(str(db_path))
@@ -2632,56 +2688,167 @@ def load_db_part_index(db_path):
     return idx
 
 
-def build_label_oracle(db_path=None, erf_html=None, use_db=True, verbose=True):
-    """{loose PN -> (mpn, vendor, why)} of everything known to be space.
+def discover_erf_dirs(explicit=None, ds_root=None):
+    """Find the saved everythingRF space pages without being told where they are.
 
-    Union of the saved everythingRF listings and the rfparts DB. Deliberately a
-    union: the ERF pages cover the vendors you saved, the DB covers Qorvo and
-    ADI, and neither alone labels the whole local library."""
+    This exists because of a real failure: with no folder configured the scan was
+    silently skipped, the label set collapsed to DB-only, and the report still
+    printed a comparison against an everythingRF set that had never been loaded.
+    Auto-discovery plus explicit reporting is the fix."""
+    out = []
+
+    def add(p):
+        p = Path(p).expanduser()
+        if p.is_dir() and p not in out:
+            out.append(p)
+
+    if explicit:
+        for e in ([explicit] if isinstance(explicit, (str, Path)) else explicit):
+            if e:
+                add(e)
+    env = os.environ.get("RFPARTS_EVERYTHINGRF", "").strip()
+    if env:
+        add(env)
+    # The pipeline's own layout: <repo>/Sources/EverythingRFSpaceQual, with the
+    # datasheet library at <repo>/data/datasheets -- so walk up from there.
+    roots = []
+    if ds_root:
+        p = Path(ds_root)
+        roots += [p, p.parent, p.parent.parent, p.parent.parent.parent]
+    roots += [Path.home() / "Downloads" / "rfparts",
+              Path.home() / "Downloads" / "rfparts" / "rfparts"]
+    for base in roots:
+        try:
+            if not base.is_dir():
+                continue
+        except OSError:
+            continue
+        for sub in ("Sources", "sources", "."):
+            d = base / sub
+            if not d.is_dir():
+                continue
+            for cand in sorted(d.glob("EverythingRF*")):
+                if cand.is_dir():
+                    add(cand)
+            for cand in sorted(d.glob("everythingrf*")):
+                if cand.is_dir():
+                    add(cand)
+    return out
+
+
+def build_label_oracle(db_path=None, erf_html=None, use_db=True, verbose=True):
+    """{loose PN -> (mpn, vendor, why)} of everything known to be space, plus a
+    diagnostics dict.
+
+    A union on purpose: the everythingRF pages cover the vendors whose listings
+    you saved, the DB covers the space catalogs your pipeline ingested (Qorvo
+    aerospace, ADI space portfolio, TI space guide), and neither alone labels the
+    whole local library."""
     pos = {}
-    erf_files = 0
+    diag = {"erf_dirs": [str(Path(p)) for p in (erf_html or [])],
+            "erf_files": 0, "erf_pns": 0, "db_pns": 0, "db_only": 0,
+            "overlap": 0, "db_breakdown": None, "erf_configured": bool(erf_html)}
     if erf_html:
-        idx, erf_files = scan_erf_html_pns(erf_html, verbose=verbose)
+        idx, erf_files = scan_erf_html_pns(erf_html, verbose=False)
+        diag["erf_files"] = erf_files
+        diag["erf_pns"] = len(idx)
         for key, (mpn, vendor) in idx.items():
             pos[key] = (mpn, vendor, "everythingRF saved listing")
     if use_db and db_path:
-        db_idx = load_db_space_index(db_path)
+        db_idx, breakdown = load_db_space_index(db_path, verbose=verbose)
+        diag["db_pns"] = len(db_idx)
+        diag["db_breakdown"] = breakdown
         added = 0
         for key, val in db_idx.items():
             if key not in pos:
                 pos[key] = val
                 added += 1
-        if verbose and db_idx:
-            print(f"  rfparts DB space-labelled parts {len(db_idx)} "
-                  f"({added} not already in the everythingRF set)")
-    return pos, erf_files
+        diag["db_only"] = added
+        diag["overlap"] = len(db_idx) - added
+    if verbose:
+        _report_label_oracle(diag)
+    return pos, diag
+
+
+def _report_label_oracle(diag):
+    """Say exactly which oracles ran and how they relate. No implied comparisons
+    against a source that was never loaded."""
+    print("\n  LABEL SOURCES")
+    if not diag["erf_configured"]:
+        print("    everythingRF pages   NOT CONFIGURED  <- nothing was scanned")
+        print("      Every positive below therefore comes from the DB alone. To")
+        print("      use your saved listings, pass --erf-html <folder> (or set it")
+        print("      in Settings); `build` also auto-discovers EverythingRF* dirs.")
+    elif not diag["erf_files"]:
+        print(f"    everythingRF pages   0 files found in "
+              f"{', '.join(diag['erf_dirs']) or '(none)'}")
+        print("      ! the folder exists but holds no .htm/.html pages")
+    else:
+        print(f"    everythingRF pages   {diag['erf_files']} file(s) -> "
+              f"{diag['erf_pns']} part number(s)")
+    if diag["db_pns"]:
+        print(f"    rfparts DB           {diag['db_pns']} space-labelled part(s)")
+        if diag["erf_configured"] and diag["erf_pns"]:
+            print(f"      in both sources    {diag['overlap']}")
+            print(f"      DB only            {diag['db_only']}")
+            if diag["overlap"] == 0:
+                print("      ! ZERO overlap. Since your everythingRF ingest writes")
+                print("        those same parts into the DB, expect a large overlap.")
+                print("        Zero usually means the DB was built from different")
+                print("        pages than the ones just scanned, or part numbers")
+                print("        are formatted differently between the two.")
+        bd = diag.get("db_breakdown") or {}
+        by_reason = bd.get("by_reason") or {}
+        if by_reason:
+            print("      why the DB calls them space:")
+            for reason, n in Counter(by_reason).most_common(8):
+                eg = (bd.get("examples") or {}).get(reason, "")
+                print(f"        {n:>7}  {reason:<32} e.g. {eg}")
+        by_vendor = bd.get("by_vendor") or {}
+        if by_vendor:
+            top = ", ".join(f"{v} ({n})"
+                            for v, n in Counter(by_vendor).most_common(6))
+            print(f"      top vendors: {top}")
+    elif diag["db_pns"] == 0:
+        print("    rfparts DB           0 space-labelled parts")
+    total = diag["erf_pns"] + diag["db_only"]
+    print(f"    ORACLE TOTAL         {total} part number(s) known to be space")
 
 
 # ------------------------------------------------------- corpus assembly
 def build_local_corpus(root=None, db_path=None, erf_html=None, vendors=None,
                        absent_as="negative", text_mode="full",
                        drop_boilerplate=True, use_db=True, keep_pn=False,
-                       min_chars=LOCAL_MIN_CHARS, verbose=True):
-    """Turn the local datasheet folders into a labelled training corpus."""
+                       min_chars=LOCAL_MIN_CHARS, verbose=True, progress=True,
+                       every=25):
+    """Turn the local datasheet folders into a labelled training corpus.
+
+    Prints progress as it goes and collects every failure rather than letting a
+    file vanish silently: 'my dataset is smaller than my folder' is otherwise
+    impossible to diagnose."""
     root = discover_local_library(root)
     if not root:
         raise SystemExit(
             "could not find your datasheet folder.\n"
             f"Looked for {DEFAULT_LOCAL_DS} and the usual variants.\n"
             "Pass --local-dir <folder> (or set it in Settings).")
-    if verbose:
-        print(f"local datasheet library: {root}")
+    print(f"\n  DATASHEET LIBRARY    {root}")
     files, unknown = scan_local_library(root, vendors=vendors)
     if not files:
         raise SystemExit(
             f"no .pdf/.htm/.html files under {root}\n"
             "Expected per-vendor subfolders, e.g. Qorvo/, Skyworks/, MACOM/.")
-    if unknown and verbose:
-        print("  ! folders skipped (vendor not recognised): "
-              + ", ".join(sorted(unknown)[:8]))
+    by_vendor_files = Counter(v for v, _f, _p in files)
+    print(f"    {len(files)} file(s) in {len(by_vendor_files)} vendor folder(s): "
+          + ", ".join(f"{VENDORS[v]['name']} ({n})"
+                      for v, n in by_vendor_files.most_common()))
+    if unknown:
+        print(f"    ! skipped, vendor folder not recognised: "
+              + ", ".join(f"{k} ({v} file(s))" for k, v in unknown.most_common(8)))
 
-    oracle, erf_files = build_label_oracle(db_path=db_path, erf_html=erf_html,
-                                           use_db=use_db, verbose=verbose)
+    erf_dirs = discover_erf_dirs(explicit=erf_html, ds_root=root)
+    oracle, diag = build_label_oracle(db_path=db_path, erf_html=erf_dirs,
+                                      use_db=use_db, verbose=verbose)
     if not oracle:
         raise SystemExit(
             "no space labels available, so every datasheet would be a negative.\n"
@@ -2691,15 +2858,38 @@ def build_local_corpus(root=None, db_path=None, erf_html=None, vendors=None,
 
     # ---- extract text once per (vendor, part); keep the richest file ----------
     LOCAL_TXT.mkdir(parents=True, exist_ok=True)
+    print(f"\n  READING DATASHEETS   ({text_mode} text, "
+          f"min {min_chars} chars to keep)")
     best = {}
-    empty = Counter()
-    for vkey, folder, path in files:
+    errors = []
+    started = time.time()
+    for i, (vkey, folder, path) in enumerate(files, 1):
+        rel = str(path.relative_to(root))
         pn = _pn_from_filename(path.stem)
         if not pn:
+            errors.append({"file": rel, "vendor": vkey,
+                           "problem": "no part number could be read from the "
+                                      "filename"})
             continue
-        text = extract_local_text(path, text_mode=text_mode)
-        if len(text.strip()) < min_chars:
-            empty[vkey] += 1
+        try:
+            text = extract_local_text(path, text_mode=text_mode)
+        except Exception as e:                       # a bad PDF must not stop us
+            errors.append({"file": rel, "vendor": vkey,
+                           "problem": f"{type(e).__name__}: {e}"[:140]})
+            continue
+        n_chars = len(text.strip())
+        if n_chars < min_chars:
+            suffix = path.suffix.lower()
+            if suffix == ".pdf":
+                hint = ("no text layer -- almost certainly a scanned image, "
+                        "needs OCR")
+            elif suffix in (".htm", ".html"):
+                hint = ("page has almost no prose -- a redirect/login stub, or "
+                        "the content is rendered by JavaScript")
+            else:
+                hint = "file holds almost no text"
+            errors.append({"file": rel, "vendor": vkey, "pn": pn,
+                           "problem": f"only {n_chars} char(s) of text: {hint}"})
             continue
         if not keep_pn:
             text = redact_pn(text, pn)
@@ -2709,61 +2899,75 @@ def build_local_corpus(root=None, db_path=None, erf_html=None, vendors=None,
             best[key] = {"vendor": vkey, "pn": pn, "file": str(path),
                          "kind": path.suffix.lower().lstrip("."),
                          "folder": folder, "text": text}
+        if progress and (i % every == 0 or i == len(files)):
+            rate = i / max(1e-6, time.time() - started)
+            eta = (len(files) - i) / max(1e-6, rate)
+            print(f"    [{i:>6}/{len(files)}] {len(best)} part(s) kept, "
+                  f"{len(errors)} problem(s)"
+                  + (f", eta {eta:.0f}s" if i < len(files) else ""), flush=True)
 
     if not best:
         raise SystemExit(
             f"found {len(files)} file(s) but none yielded at least {min_chars} "
-            f"characters of text.\nScanned-image PDFs need OCR; try "
-            f"--min-chars 40 to see what is there.")
+            f"characters of text.\nRun `debug` to see what is being parsed, or "
+            f"try --min-chars 40.")
 
     # ---- strip per-vendor template chrome ------------------------------------
     boiler = {}
     if drop_boilerplate:
+        print("\n  REMOVING TEMPLATE CHROME")
         by_vendor = {}
         for rec in best.values():
             by_vendor.setdefault(rec["vendor"], []).append(rec)
-        for vkey, recs in by_vendor.items():
+        for vkey, recs in sorted(by_vendor.items()):
             lines = _learn_boilerplate([r["text"] for r in recs])
             if not lines:
+                print(f"    {VENDORS[vkey]['name']:<18} nothing repeated on "
+                      f">=85% of {len(recs)} page(s)")
                 continue
             boiler[vkey] = sorted(lines)
             for r in recs:
                 r["text"] = _drop_lines(r["text"], lines)
-            if verbose:
-                print(f"  {VENDORS[vkey]['name']}: dropped "
-                      f"{len(lines)} boilerplate line(s) common to "
-                      f"{len(recs)} page(s)")
+            print(f"    {VENDORS[vkey]['name']:<18} dropped {len(lines)} line(s) "
+                  f"common to {len(recs)} page(s)")
 
     # ---- label, cache text, build records ------------------------------------
+    print("\n  LABELLING")
     records = []
     counts = Counter()
     per_vendor = {}
-    thin = Counter()
+    label_source = Counter()
     for (vkey, lkey), rec in sorted(best.items()):
         text = rec["text"]
         if len(text.strip()) < min_chars:
-            thin[vkey] += 1
+            errors.append({"file": rec["file"], "vendor": vkey, "pn": rec["pn"],
+                           "problem": "text fell below the minimum after "
+                                      "template removal"})
             continue
         hit = oracle.get(lkey)
         if hit:
             label, why = "P", hit[2]
+            label_source[hit[2]] += 1
         else:
             label = "N" if absent_as == "negative" else "U"
-            why = ("absent from everythingRF space listings and DB space labels"
+            why = ("absent from every space source"
                    if label == "N" else "not labelled space by any source")
+            label_source["absent -> " + label] += 1
         tp = _local_text_path(vkey, rec["pn"])
         tp.parent.mkdir(parents=True, exist_ok=True)
         tp.write_text(text, encoding="utf-8")
+        in_db = bool(db_all.get(lkey))
         row = {"vendor": vkey, "vendor_name": VENDORS[vkey]["name"],
                "pn": rec["pn"], "label": label, "label_why": why,
                "file": rec["file"], "kind": rec["kind"],
                "folder": rec["folder"], "chars": len(text),
-               "text_file": str(tp), "source": "local",
-               "in_db": bool(db_all.get(lkey)),
+               "text_file": str(tp), "source": "local", "in_db": in_db,
                "cmos_negative": bool(label == "N"
                                      and _CMOS_NEG_RE.search(text))}
         records.append(row)
         counts[label] += 1
+        if label == "N" and not in_db:
+            counts["N_not_in_db"] += 1
         st = per_vendor.setdefault(vkey, Counter())
         st[label] += 1
         st["files"] += 1
@@ -2771,32 +2975,35 @@ def build_local_corpus(root=None, db_path=None, erf_html=None, vendors=None,
         st["chars"] += len(text)
         if row["cmos_negative"]:
             st["cmos"] += 1
+    for src, n in label_source.most_common():
+        print(f"    {n:>7}  {src}")
 
     corpus = {
         "root": str(root),
         "built": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "absent_as": absent_as,
         "text_mode": text_mode,
-        "erf_pages": erf_files,
+        "oracle": diag,
         "oracle_size": len(oracle),
         "boilerplate": boiler,
         "records": records,
+        "errors": errors,
         "counts": {"P": counts["P"], "N": counts["N"], "U": counts["U"],
                    "files_seen": len(files), "parts": len(records),
-                   "no_text": sum(empty.values()) + sum(thin.values())},
+                   "problems": len(errors),
+                   "N_not_in_db": counts["N_not_in_db"]},
         "per_vendor": {k: dict(v) for k, v in per_vendor.items()},
     }
     if verbose:
-        _report_local_corpus(corpus, empty)
+        _report_local_corpus(corpus)
     return corpus
 
 
-def _report_local_corpus(corpus, empty=None):
+def _report_local_corpus(corpus):
     c = corpus["counts"]
-    print(f"\n  {c['files_seen']} file(s) on disk -> {c['parts']} part(s) with "
-          f"usable text"
-          + (f"  ({c['no_text']} skipped: too little text)"
-             if c["no_text"] else ""))
+    print(f"\n  DATASET")
+    print(f"    {c['files_seen']} file(s) on disk -> {c['parts']} labelled part(s)"
+          + (f", {c['problems']} problem(s)" if c["problems"] else ""))
     print(f"\n  {'vendor':<18} {'parts':>6} {'pos':>5} {'neg':>5} {'unlab':>6} "
           f"{'cmos':>5} {'avg chars':>10}  kinds")
     for vkey, st in sorted(corpus["per_vendor"].items(),
@@ -2807,21 +3014,34 @@ def _report_local_corpus(corpus, empty=None):
         print(f"  {VENDORS[vkey]['name']:<18} {st.get('files', 0):>6} "
               f"{st.get('P', 0):>5} {st.get('N', 0):>5} {st.get('U', 0):>6} "
               f"{st.get('cmos', 0):>5} {st.get('chars', 0) // n:>10}  {kinds}")
-    print(f"  {'TOTAL':<18} {c['parts']:>6} {c['P']:>5} {c['N']:>5} "
-          f"{c['U']:>6}")
+    print(f"  {'TOTAL':<18} {c['parts']:>6} {c['P']:>5} {c['N']:>5} {c['U']:>6}")
+
+    if c.get("N_not_in_db"):
+        print(f"\n  note: {c['N_not_in_db']} of the negatives are not in the "
+              f"rfparts DB at all,")
+        print("    so 'absent from every space source' is weaker evidence for "
+              "them --")
+        print("    the DB never had a chance to label them either way.")
     # A vendor with no positives is usually missing label coverage, not a vendor
     # with no space parts. Say so loudly: it silently poisons the negative set.
     blind = [VENDORS[v]["name"] for v, st in corpus["per_vendor"].items()
              if not st.get("P")]
     if blind:
-        print(f"\n  ! no positives at all for: {', '.join(sorted(blind))}")
-        print("    Every datasheet from those vendors became a NEGATIVE. If you "
-              "expect\n    some to be space parts, your label sources do not "
-              "cover that vendor --\n    add its everythingRF pages, or re-run "
-              "the vendor's ingest so the DB\n    carries a space signal.")
+        print(f"\n  ! NO POSITIVES for: {', '.join(sorted(blind))}")
+        print("    Every datasheet from those vendors became a NEGATIVE. If you")
+        print("    expect some to be space parts, your label sources do not cover")
+        print("    that vendor -- add its everythingRF pages, or re-run that")
+        print("    vendor's ingest so the DB carries a space signal.")
     if corpus["counts"]["P"] < 10:
         print(f"\n  ! only {corpus['counts']['P']} positive(s). Expect very "
               f"noisy estimates.")
+    if corpus["errors"]:
+        print(f"\n  PROBLEMS ({len(corpus['errors'])}) -- first few:")
+        for e in corpus["errors"][:8]:
+            print(f"    {e.get('file', '?')[:58]:<58} {e['problem']}")
+        if len(corpus["errors"]) > 8:
+            print(f"    ... and {len(corpus['errors']) - 8} more "
+                  f"(full list in {LOCAL_ERRORS})")
 
 
 def load_local_texts(corpus, mask="none", min_chars=LOCAL_MIN_CHARS):
@@ -2837,25 +3057,153 @@ def load_local_texts(corpus, mask="none", min_chars=LOCAL_MIN_CHARS):
     return kept, skipped
 
 
-def cmd_localscan(args):
-    """Build the labelled training corpus from datasheets already on disk."""
+def cmd_build(args):
+    """Build the labelled dataset from every datasheet available locally."""
     s = load_settings()
-    erf = getattr(args, "erf_html", None) or s.get("erf_html_dir") or None
+    print("=" * 62)
+    print("  BUILD DATASET")
+    print("=" * 62)
     corpus = build_local_corpus(
         root=getattr(args, "local_dir", None) or s.get("local_ds_dir") or None,
         db_path=getattr(args, "db", None) or s.get("db"),
-        erf_html=[erf] if erf else None,
+        erf_html=(getattr(args, "erf_html", None)
+                  or s.get("erf_html_dir") or None),
         vendors=(set(args.vendors) if getattr(args, "vendors", None) else None),
-        absent_as=getattr(args, "absent_as", "negative"),
-        text_mode=getattr(args, "text_mode", "full"),
+        absent_as=getattr(args, "absent_as", None) or s.get("absent_as",
+                                                            "negative"),
+        text_mode=getattr(args, "text_mode", None) or s.get("text_mode", "full"),
         drop_boilerplate=not getattr(args, "keep_boilerplate", False),
         use_db=not getattr(args, "no_db", False),
         keep_pn=bool(getattr(args, "keep_pn", False)),
-        min_chars=getattr(args, "min_chars", LOCAL_MIN_CHARS))
+        min_chars=getattr(args, "min_chars", LOCAL_MIN_CHARS),
+        progress=not getattr(args, "quiet", False))
     _save(LOCAL_JSON, corpus)
-    print(f"\n  saved corpus -> {LOCAL_JSON}")
-    print(f"  cached text  -> {LOCAL_TXT}")
-    print("\n  Next: `train` (the local corpus is picked up automatically).")
+    if corpus["errors"]:
+        _save(LOCAL_ERRORS, corpus["errors"])
+    print(f"\n  saved dataset -> {LOCAL_JSON}")
+    print(f"  cached text   -> {LOCAL_TXT}")
+    if corpus["errors"]:
+        print(f"  problem list  -> {LOCAL_ERRORS}")
+    print("\n  Next: TRAIN (menu option 2).")
+    return 0
+
+
+# `local-scan` was the original name; keep it working.
+cmd_localscan = cmd_build
+
+
+# ------------------------------------------------------------------- debug
+def cmd_debug(args):
+    """Show exactly what is being parsed out of each vendor's datasheet format.
+
+    The formats differ wildly -- Qorvo ships HTML product pages, Marki and MACOM
+    ship PDFs, some PDFs are scanned images with no text layer at all. When the
+    dataset comes out smaller or worse than expected, this is the command that
+    shows why, per vendor, on real files."""
+    s = load_settings()
+    root = discover_local_library(getattr(args, "local_dir", None)
+                                  or s.get("local_ds_dir") or None)
+    if not root:
+        raise SystemExit("no datasheet folder found -- pass --local-dir.")
+    n_show = getattr(args, "samples", 3)
+    chars = getattr(args, "chars", 400)
+    db_path = getattr(args, "db", None) or s.get("db")
+    erf_dirs = discover_erf_dirs(
+        explicit=getattr(args, "erf_html", None) or s.get("erf_html_dir") or None,
+        ds_root=root)
+
+    print("=" * 62)
+    print("  DEBUG: what each vendor's files actually parse to")
+    print("=" * 62)
+    print(f"  library: {root}")
+    files, unknown = scan_local_library(root)
+    if unknown:
+        print(f"  ! unrecognised folders: {', '.join(sorted(unknown))}")
+    if not files:
+        raise SystemExit("no datasheet files found.")
+
+    oracle, _diag = build_label_oracle(db_path=db_path, erf_html=erf_dirs,
+                                       use_db=not getattr(args, "no_db", False),
+                                       verbose=True)
+
+    by_vendor = {}
+    for vkey, folder, path in files:
+        by_vendor.setdefault(vkey, []).append(path)
+
+    for vkey, paths in sorted(by_vendor.items(),
+                              key=lambda kv: -len(kv[1])):
+        exts = Counter(p.suffix.lower() for p in paths)
+        print(f"\n{'=' * 62}")
+        print(f"  {VENDORS[vkey]['name']}   {len(paths)} file(s)   "
+              + ", ".join(f"{e} x{n}" for e, n in exts.most_common()))
+        print("=" * 62)
+
+        # Whole-vendor health first: how many files yield usable text at all.
+        lengths, empties, no_pn = [], [], []
+        for p in paths:
+            pn = _pn_from_filename(p.stem)
+            if not pn:
+                no_pn.append(p.name)
+            try:
+                t = extract_local_text(p, text_mode=getattr(args, "text_mode",
+                                                            "full"))
+            except Exception as e:
+                empties.append(f"{p.name} ({type(e).__name__})")
+                continue
+            if len(t.strip()) < LOCAL_MIN_CHARS:
+                empties.append(f"{p.name} ({len(t.strip())} chars)")
+            else:
+                lengths.append(len(t))
+        if lengths:
+            lengths.sort()
+            print(f"  text extracted: {len(lengths)}/{len(paths)} file(s)   "
+                  f"chars min {lengths[0]} / median "
+                  f"{lengths[len(lengths) // 2]} / max {lengths[-1]}")
+        else:
+            print(f"  ! NO file yielded usable text. For PDFs this usually means "
+                  f"a scanned image with no text layer (OCR needed).")
+        if empties:
+            print(f"  ! {len(empties)} file(s) below {LOCAL_MIN_CHARS} chars: "
+                  f"{', '.join(empties[:4])}"
+                  + (" ..." if len(empties) > 4 else ""))
+        if no_pn:
+            print(f"  ! {len(no_pn)} filename(s) gave no part number: "
+                  f"{', '.join(no_pn[:4])}")
+
+        # Then a few real samples, end to end.
+        for p in paths[:n_show]:
+            pn = _pn_from_filename(p.stem)
+            lkey = loose_pn(pn)
+            hit = oracle.get(lkey)
+            try:
+                raw = extract_local_text(p, text_mode=getattr(args, "text_mode",
+                                                              "full"))
+            except Exception as e:
+                print(f"\n  --- {p.name}\n      EXTRACTION FAILED: "
+                      f"{type(e).__name__}: {e}")
+                continue
+            red = redact_pn(raw, pn)
+            print(f"\n  --- {p.name}")
+            print(f"      filename -> part number : {pn!r}  (match key {lkey!r})")
+            print(f"      label                   : "
+                  + (f"POSITIVE via {hit[2]}" if hit
+                     else "no space label found -> NEGATIVE"))
+            print(f"      chars raw/redacted      : {len(raw)} / {len(red)}")
+            hits = prior_hits(red)
+            if hits:
+                top = sorted(hits, key=lambda h: -abs(h[1]))[:5]
+                print("      domain terms firing     : "
+                      + "; ".join(f"{w:+.2f} {why}" for why, w in top))
+            else:
+                print("      domain terms firing     : none "
+                      "(no construction/qualification language seen)")
+            snippet = re.sub(r"\s+", " ", red[:chars])
+            print(f"      text starts             : {snippet}")
+
+    print(f"\n{'=' * 62}")
+    print("  If a vendor shows 0 files with text, its format is not being read.")
+    print("  If part numbers look wrong, filenames are not matching the listings")
+    print("  -- that is what makes positives silently turn into negatives.")
     return 0
 
 
@@ -3034,7 +3382,7 @@ def build_datasheet_targets(catalog_path=None, db_path=None, harvest_dir=None,
     # qorvo_ingest and adi_space_ingest write space=qualified / QML evidence of
     # their own. Without this, a Qorvo aerospace part filed to general/ instead
     # of space/, which then misleads anything reading the library layout.
-    db_space = load_db_space_index(db_path) if db_path else {}
+    db_space = (load_db_space_index(db_path)[0] if db_path else {})
     targets, skipped_vendors = {}, Counter()
 
     def space_of(loose_key):
@@ -3346,12 +3694,24 @@ def _train_ns(s):
                neg_weight_cmos=s.get("neg_weight_cmos", 3.0))
 
 
-def _localscan_ns(s):
+def _build_ns(s):
     return _ns(local_dir=s.get("local_ds_dir") or None,
                db=s.get("db"), erf_html=s.get("erf_html_dir") or None,
                vendors=None, absent_as=s.get("absent_as", "negative"),
                text_mode=s.get("text_mode", "full"), keep_boilerplate=False,
-               no_db=False, keep_pn=False, min_chars=LOCAL_MIN_CHARS)
+               no_db=False, keep_pn=False, quiet=False,
+               min_chars=LOCAL_MIN_CHARS)
+
+
+# the original name, kept so older scripts and `runall` keep working
+_localscan_ns = _build_ns
+
+
+def _debug_ns(s):
+    return _ns(local_dir=s.get("local_ds_dir") or None,
+               db=s.get("db"), erf_html=s.get("erf_html_dir") or None,
+               no_db=False, samples=3, chars=400,
+               text_mode=s.get("text_mode", "full"))
 
 
 def _age(path):
@@ -3373,7 +3733,7 @@ def step_evidence():
     corpus = _load(LOCAL_JSON, None)
     if corpus:
         c = corpus.get("counts", {})
-        ev["LOCAL-SCAN"] = (f"{c.get('parts', 0)} local datasheet(s): "
+        ev["BUILD"] = (f"{c.get('parts', 0)} local datasheet(s): "
                             f"{c.get('P', 0)} P / {c.get('N', 0)} N / "
                             f"{c.get('U', 0)} U, {_age(LOCAL_JSON)}")
     match = _load(MATCH_JSON, None)
@@ -3441,7 +3801,7 @@ def cmd_runall(args):
     steps = []
     if local_root:
         # Preferred path: real datasheet prose already on disk, no network.
-        steps.append(("LOCAL-SCAN", lambda: cmd_localscan(_localscan_ns(s))))
+        steps.append(("BUILD", lambda: cmd_build(_build_ns(s))))
     if have_catalog and not s.get("local_only", True):
         steps += [
             ("MATCH", lambda: cmd_match(_ns(catalog=s["catalog"], db=s["db"],
@@ -3505,26 +3865,32 @@ MENU = """
 ==============================================================
   spacequal - is this RF part space-qualifiable?
 ==============================================================
-  dataset : {ds}
-  local   : {local}
-  cache   : {n_txt} datasheet text file(s)
+  dataset : {local}
   model   : {model}
-  catalog : {catalog}
 --------------------------------------------------------------
-  L) SCAN LOCAL DATASHEETS     <- train on files you already have (offline)
-  1) Build datasheet LIBRARY   (multi-vendor, rotates hosts)
-  2) Run everything            (local-scan -> train -> review)
-  3) Match catalog to everythingRF space parts
-  4) Fetch Mini-Circuits datasheets  (verbose progress)
-  5) Train classifier
-  6) Evaluate (PU metrics)
-  7) Export review queue
-  8) Score a paragraph of text  <- the everyday tool
-  9) Settings
-  s) Offline selftest (no network or catalog needed)
-  c) Clear cache / reset
+  1) BUILD DATASET     scan every local datasheet and label it
+  2) TRAIN             fit the classifier on that dataset
+  3) SCORE A PARAGRAPH run the model on some text
+  4) DEBUG PARSING     what is read from each vendor's format
+--------------------------------------------------------------
+  5) Settings
+  6) Advanced          (eval, review, downloads, Mini-Circuits, selftest)
   0) Quit
 --------------------------------------------------------------"""
+
+ADVANCED_MENU = """
+  Advanced
+  --------
+  1) Evaluate (PU metrics on the last training run)
+  2) Export review queue                {review_out}
+  3) Build datasheet LIBRARY            (downloads, rotates hosts)
+  4) Mini-Circuits: match catalog to everythingRF
+  5) Mini-Circuits: fetch datasheets
+  6) Run whole pipeline                 (build -> train -> review)
+  7) Offline selftest, local path
+  8) Offline selftest, Mini-Circuits PU path
+  9) Clear cache / reset
+  0) back"""
 
 SETTINGS_MENU = """
   Settings
@@ -3626,53 +3992,84 @@ def settings_menu(s):
             print("  ! not a number, unchanged")
 
 
-def menu():
-    s = load_settings()
+def advanced_menu(s):
     while True:
-        ds, n_txt, model, local = _status_line()
-        print(MENU.format(ds=ds, n_txt=n_txt, model=model, local=local,
-                          catalog=s["catalog"]))
+        print(ADVANCED_MENU.format(review_out=s.get("review_out",
+                                                    "review_queue.csv")))
         try:
-            choice = input("  choice> ").strip()
+            choice = input("  choice> ").strip().lower()
         except EOFError:
-            return 0
+            return
         try:
-            if choice in ("0", "q", "quit", "exit"):
-                return 0
-            elif choice.lower() == "l":
-                cmd_localscan(_localscan_ns(s))
+            if choice in ("0", "", "q", "b", "back"):
+                return
             elif choice == "1":
+                cmd_eval(_ns(min_confidence=0.0, reviewed=None))
+            elif choice == "2":
+                cmd_review(_ns(out=s["review_out"], limit=0))
+            elif choice == "3":
                 cmd_datasheets(_ns(
                     catalog=s["catalog"], db=s["db"],
                     harvest=(s.get("harvest_dir") or None),
                     limit=s.get("ds_limit", 400), rate=s["rate"],
                     space_only=False, refetch=False, ignore_robots=False,
                     from_db=True, allow_html=True))
-            elif choice == "2":
-                cmd_runall(_ns(catalog=s["catalog"], force=False, resume=False))
-            elif choice == "3":
-                cmd_match(_ns(catalog=s["catalog"], db=s["db"], positives=None))
             elif choice == "4":
-                cmd_fetch(_fetch_ns(s))
+                cmd_match(_ns(catalog=s["catalog"], db=s["db"], positives=None))
             elif choice == "5":
-                cmd_train(_train_ns(s))
+                cmd_fetch(_fetch_ns(s))
             elif choice == "6":
-                cmd_eval(_ns(min_confidence=0.0, reviewed=None))
+                cmd_runall(_ns(catalog=s["catalog"], force=False, resume=False))
             elif choice == "7":
-                cmd_review(_ns(out=s["review_out"], limit=0))
+                cmd_selftest(_ns(backend=s["backend"], hf_model=s["hf_model"],
+                                 positives=45, unlabeled=1500, hidden=6,
+                                 negatives=66, bags=8, folds=5,
+                                 target_recall=s["target_recall"], seed=0,
+                                 local=True,
+                                 neg_weight_cmos=s.get("neg_weight_cmos", 3.0)))
             elif choice == "8":
-                interactive_score()
-            elif choice == "9":
-                settings_menu(s)
-            elif choice.lower() == "s":
                 cmd_selftest(_ns(backend=s["backend"], hf_model=s["hf_model"],
                                  positives=60, unlabeled=1500, hidden=45,
-                                 bags=10, folds=5,
+                                 negatives=60, bags=10, folds=5,
                                  target_recall=s["target_recall"], seed=0,
-                                 local=False, negatives=60,
+                                 local=False,
                                  neg_weight_cmos=s.get("neg_weight_cmos", 3.0)))
-            elif choice.lower() == "c":
+            elif choice == "9":
                 clear_menu()
+            else:
+                print("  ? unknown choice")
+        except SystemExit as e:
+            print(f"\n  ! {e}")
+        except KeyboardInterrupt:
+            print("\n  (interrupted; cached progress is kept)")
+        input("\n  press Enter to continue ")
+
+
+def menu():
+    s = load_settings()
+    while True:
+        _ds, _n_txt, model, local = _status_line()
+        print(MENU.format(model=model, local=local))
+        try:
+            choice = input("  choice> ").strip().lower()
+        except EOFError:
+            return 0
+        try:
+            if choice in ("0", "q", "quit", "exit"):
+                return 0
+            elif choice == "1":
+                cmd_build(_build_ns(s))
+            elif choice == "2":
+                cmd_train(_train_ns(s))
+            elif choice == "3":
+                interactive_score()
+            elif choice == "4":
+                cmd_debug(_debug_ns(s))
+            elif choice == "5":
+                settings_menu(s)
+                s = load_settings()
+            elif choice == "6":
+                advanced_menu(s)
             else:
                 print("  ? unknown choice")
         except SystemExit as e:                 # keep the menu alive on errors
@@ -3700,32 +4097,53 @@ def build_parser():
     mn = sub.add_parser("menu", help="interactive menu (also the default)")
     mn.set_defaults(func=lambda a: menu())
 
-    ls = sub.add_parser("local-scan",
-                        help="build the training corpus from datasheets you "
-                             "already have on disk (offline)")
-    ls.add_argument("--local-dir", help=f"default: {DEFAULT_LOCAL_DS}")
-    ls.add_argument("--db", help="rfparts parts.db (Qorvo/ADI space labels)")
-    ls.add_argument("--erf-html",
-                    help="folder of saved everythingRF space pages, used ONLY "
-                         "as the positive-label oracle")
-    ls.add_argument("--vendors", nargs="*",
-                    help="restrict to these vendor keys, e.g. qorvo marki")
-    ls.add_argument("--absent-as", choices=("negative", "unlabeled"),
-                    default="negative",
-                    help="how to treat a datasheet absent from every space "
-                         "source (default negative)")
-    ls.add_argument("--text-mode", choices=("full", "overview"), default="full")
-    ls.add_argument("--min-chars", type=int, default=LOCAL_MIN_CHARS,
-                    help="skip files yielding less text than this")
-    ls.add_argument("--keep-boilerplate", action="store_true",
-                    help="do NOT strip per-vendor nav/footer chrome")
-    ls.add_argument("--keep-pn", action="store_true",
-                    help="keep the part number in the training text (default is "
-                         "to redact it, so the model cannot memorise PN "
-                         "prefixes that correlate with the label)")
-    ls.add_argument("--no-db", action="store_true",
-                    help="ignore the rfparts DB; label from --erf-html only")
-    ls.set_defaults(func=cmd_localscan)
+    def add_build_args(p):
+        p.add_argument("--local-dir", help=f"default: {DEFAULT_LOCAL_DS}")
+        p.add_argument("--db", help="rfparts parts.db (space catalog labels)")
+        p.add_argument("--erf-html",
+                       help="folder of saved everythingRF space pages, used ONLY "
+                            "as the positive-label oracle. Auto-discovered when "
+                            "omitted.")
+        p.add_argument("--vendors", nargs="*",
+                       help="restrict to these vendor keys, e.g. qorvo marki")
+        p.add_argument("--absent-as", choices=("negative", "unlabeled"),
+                       default=None,
+                       help="how to treat a datasheet absent from every space "
+                            "source (default negative)")
+        p.add_argument("--text-mode", choices=("full", "overview"), default=None)
+        p.add_argument("--min-chars", type=int, default=LOCAL_MIN_CHARS,
+                       help="skip files yielding less text than this")
+        p.add_argument("--keep-boilerplate", action="store_true",
+                       help="do NOT strip per-vendor nav/footer chrome")
+        p.add_argument("--keep-pn", action="store_true",
+                       help="keep the part number in the training text (default "
+                            "is to redact it, so the model cannot memorise PN "
+                            "prefixes that correlate with the label)")
+        p.add_argument("--no-db", action="store_true",
+                       help="ignore the rfparts DB; label from --erf-html only")
+        p.add_argument("--quiet", action="store_true",
+                       help="suppress per-batch progress lines")
+        p.set_defaults(func=cmd_build)
+
+    b = sub.add_parser("build",
+                       help="scan every local datasheet and build the labelled "
+                            "dataset (offline)")
+    add_build_args(b)
+    add_build_args(sub.add_parser("local-scan", help="alias for `build`"))
+
+    dbg = sub.add_parser("debug",
+                         help="show what is parsed out of each vendor's "
+                              "datasheet format")
+    dbg.add_argument("--local-dir", help=f"default: {DEFAULT_LOCAL_DS}")
+    dbg.add_argument("--db", help="rfparts parts.db")
+    dbg.add_argument("--erf-html", help="saved everythingRF pages")
+    dbg.add_argument("--no-db", action="store_true")
+    dbg.add_argument("--samples", type=int, default=3,
+                     help="files to show in full per vendor (default 3)")
+    dbg.add_argument("--chars", type=int, default=400,
+                     help="characters of extracted text to print")
+    dbg.add_argument("--text-mode", choices=("full", "overview"), default="full")
+    dbg.set_defaults(func=cmd_debug)
 
     m = sub.add_parser("match", help="join everythingRF space parts to the catalog")
     m.add_argument("--catalog", required=True, help="minicircuits_products_full.json")
