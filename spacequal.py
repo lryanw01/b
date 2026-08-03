@@ -1,17 +1,66 @@
-"""spacequal — predict whether a Mini-Circuits part is SPACE-QUALIFIABLE from its
-datasheet blurb, using a locally-trained classifier. No API keys, no paid calls.
+"""spacequal — predict whether an RF part is SPACE-QUALIFIABLE from its datasheet
+text, using a locally-trained classifier. No API keys, no paid calls.
 
 STANDALONE. Nothing here imports rfparts; it only *reads* the rfparts SQLite DB
 (or a JSON export). Nothing is written back to that DB.
 
-    pipeline:  match -> fetch -> train -> eval -> review
-               (selftest runs the whole thing on synthetic data, offline)
+    LOCAL pipeline (preferred, fully offline -- trains on datasheets you have):
+               local-scan -> train -> eval -> review
+
+    python spacequal.py local-scan --local-dir "...\\data\\datasheets" \\
+                                   --db "...\\Data\\parts.db" \\
+                                   --erf-html "...\\Sources\\EverythingRFSpaceQual"
+    python spacequal.py train --local-only --target-recall 0.9
+    python spacequal.py review --out review_queue.csv
+
+    Mini-Circuits pipeline (downloads its own PDFs):
+               match -> fetch -> train -> eval -> review
+               (selftest runs either one on synthetic data, offline)
 
     python spacequal.py match --catalog minicircuits_products_full.json
     python spacequal.py fetch --limit 600
-    python spacequal.py train --backend tfidf --target-recall 0.9
-    python spacequal.py eval
-    python spacequal.py review --out review_queue.csv
+    python spacequal.py selftest --local        # offline check of the local path
+
+TRAINING ON DATASHEETS YOU ALREADY HAVE
+---------------------------------------
+`local-scan` reads a per-vendor datasheet folder:
+
+    <root>/Qorvo/*.html            HTML product pages are read too, not just PDFs
+    <root>/Marki-Microwave/*.pdf
+    <root>/Skyworks/*.pdf
+    <root>/MACOM/*.pdf
+
+and labels each part WITHOUT looking at its text:
+
+    positive   the part appears in your saved everythingRF space listings,
+               and/or the rfparts DB already marks it space qualified / hi-rel
+               (which covers the Qorvo aerospace catalog and the ADI space
+               portfolio, since those ingests write a space signal).
+    negative   a datasheet you hold that appears in NONE of those sources.
+
+everythingRF is used ONLY as that label oracle -- its one-line descriptions are
+far too thin to train on and are never used as text.
+
+Absence is not proof: a part can be qualifiable and simply unlisted, which is
+the whole premise of the PU machinery below. `--absent-as negative` (the default)
+takes that trade deliberately, because real negatives are what make precision
+measurable at all; `--absent-as unlabeled` puts them back in the U pool and
+keeps the more conservative PU-only statistics. Either way, a FLAGGED negative
+is a candidate to check, not an error -- it is exactly what you are hunting for.
+
+Three things are done to stop the model learning shortcuts instead of
+engineering, each added after it actually happened during testing:
+
+  * per-vendor boilerplate (nav bars, cookie notices, footers) is stripped, or
+    the model learns 'this is a Qorvo page' -- and vendor correlates with label
+  * the part number is redacted from the text, or char n-grams memorise the
+    family prefix ('QPA...') that correlates with the label
+  * lines carrying engineering vocabulary are never treated as boilerplate,
+    however often a vendor repeats them
+
+CMOS driver/logic parts are pushed down twice over: the domain-prior table has
+stacking penalties for driver/translator/logic language, and those negatives get
+a heavier training weight (--neg-weight-cmos, default 3.0).
 
 TWO BACKENDS
 ------------
@@ -82,6 +131,7 @@ import urllib.parse
 import urllib.request
 import urllib.robotparser
 from collections import Counter
+from html import unescape as _html_unescape
 from pathlib import Path
 
 # ---------------------------------------------------------------- configuration
@@ -110,6 +160,23 @@ SETTINGS_FILE = WORKDIR / "settings.json"
 # change it in the menu under Settings) so the pipeline runs with no arguments.
 DEFAULT_CATALOG = r"C:\Users\lane.white\Downloads\rfparts\rfparts\sources\minicircuits_products_full.json"
 
+# ---------------------------------------------------- LOCAL datasheet library
+# Datasheets you ALREADY have on disk, in per-vendor subfolders:
+#
+#     <root>/Qorvo/*.html          (Qorvo product pages -- HTML, no PDF)
+#     <root>/Marki-Microwave/*.pdf
+#     <root>/Skyworks/*.pdf
+#     <root>/MACOM/*.pdf
+#
+# This is the preferred training corpus: it is REAL datasheet prose, which is
+# what predicts qualifiability. everythingRF is used only as a LABEL ORACLE (a
+# part appearing in your saved space listings is a positive) -- its one-line
+# descriptions are far too thin to train on, so they are never used as text.
+DEFAULT_LOCAL_DS = r"C:\Users\lane.white\Downloads\rfparts\data\datasheets"
+LOCAL_JSON = WORKDIR / "local_corpus.json"
+LOCAL_TXT = WORKDIR / "localtext"
+LOCAL_MIN_CHARS = 120       # an HTML product page carries less prose than a PDF
+
 # ------------------------------------------------------------- domain priors
 # Hand-written engineering knowledge, applied on top of the learned model as an
 # additive nudge in LOG-ODDS space. Kept deliberately separate from the trained
@@ -126,6 +193,23 @@ DEFAULT_CATALOG = r"C:\Users\lane.white\Downloads\rfparts\rfparts\sources\minici
 # point this tool at a different vendor, revisit that line first.
 DOMAIN_PRIOR = [
     # --- penalties -----------------------------------------------------------
+    # CMOS is deliberately split into several terms, strongest first, because a
+    # bare "\bCMOS\b" treated a rad-hard CMOS RF switch and a commercial logic
+    # driver identically. These stack (each fires at most once), so a genuine
+    # CMOS *driver* sheet accumulates a much heavier penalty than a part that
+    # merely mentions a CMOS control interface -- which is the intent.
+    (r"\bCMOS\s*(?:driver|drivers|logic|buffer|inverter|translator|receiver)\b",
+     -1.40, "CMOS driver/logic device, not a flight RF part"),
+    (r"\b(?:level|logic|voltage)\s*(?:translator|shifter)\b", -1.20,
+     "level/logic translator"),
+    (r"\b(?:gate|line|clock|LED|motor|display|relay)\s*driver\b", -1.10,
+     "driver IC, not an RF component"),
+    (r"\bdriver\s*(?:IC|array)\b|\boctal\s*(?:driver|buffer)\b", -1.00,
+     "driver IC / octal buffer"),
+    (r"\bLVCMOS\b|\bLVTTL\b|\bTTL\b|\bHCMOS\b", -0.70,
+     "CMOS/TTL logic family interface"),
+    (r"\b(?:NAND|NOR|XOR)\s*gate\b|\bflip-?flop\b|\bshift\s*register\b"
+     r"|\bmultiplexer\s*logic\b", -0.90, "digital logic function"),
     (r"\bCMOS\b", -0.80, "CMOS: commercial silicon logic/control in this catalog"),
     (r"\bepox(?:y|ies|ied)\b", -0.90, "epoxy encapsulation is not a space package"),
     (r"\bover-?mould?ed\b|\bovermolded\b", -0.70, "overmolded plastic body"),
@@ -166,6 +250,25 @@ DOMAIN_PRIOR = [
      +0.60, "military temperature range"),
 ]
 _DOMAIN_PRIOR_RX = [(re.compile(rx, re.I), w, why) for rx, w, why in DOMAIN_PRIOR]
+
+# Negatives matching this get a HEAVIER sample weight during training (see
+# --neg-weight-cmos). The domain prior above nudges the score at inference time;
+# this makes the fitted model itself pay more attention to getting these wrong,
+# which is what actually pushes CMOS driver/logic parts down the ranking.
+_CMOS_NEG_RE = re.compile("|".join((
+    r"\bCMOS\s*(?:driver|drivers|logic|buffer|inverter|translator|receiver)\b",
+    r"\b(?:level|logic|voltage)\s*(?:translator|shifter)\b",
+    r"\b(?:gate|line|clock|LED|motor|display|relay)\s*driver\b",
+    r"\bdriver\s*(?:IC|array)\b", r"\boctal\s*(?:driver|buffer)\b",
+    r"\bLVCMOS\b", r"\bLVTTL\b", r"\bHCMOS\b",
+    r"\b(?:NAND|NOR|XOR)\s*gate\b", r"\bflip-?flop\b", r"\bshift\s*register\b",
+)), re.I)
+
+
+def neg_sample_weight(text, cmos_weight=3.0) -> float:
+    """Training weight for a labelled negative. CMOS driver/logic language is the
+    failure mode worth spending model capacity on, so it counts several times."""
+    return float(cmos_weight) if _CMOS_NEG_RE.search(text or "") else 1.0
 
 
 def prior_hits(text):
@@ -510,6 +613,101 @@ def extract_text(pdf_bytes, mode="full"):
             else extract_overview(pdf_bytes))
 
 
+# ------------------------------------------------------ HTML datasheet reader
+# Qorvo's saved sheets are HTML product pages, not PDFs, so the PDF extractors
+# above cannot see them at all. Pure stdlib on purpose: no bs4/lxml dependency.
+_HTML_SCRIPTISH = re.compile(
+    r"(?is)<(script|style|noscript|svg|template|iframe)\b.*?</\1\s*>")
+_HTML_COMMENT = re.compile(r"(?s)<!--.*?-->")
+_HTML_META_DESC = re.compile(
+    r"""(?is)<meta[^>]+?name\s*=\s*["']description["'][^>]*?"""
+    r"""content\s*=\s*["'](.*?)["']""")
+_HTML_TITLE = re.compile(r"(?is)<title[^>]*>(.*?)</title>")
+_HTML_HEAD = re.compile(r"(?is)<head\b.*?</head\s*>")
+# BOTH opening and closing block tags become newlines. Closing tags alone are not
+# enough: '<title>X</title>...<nav><ul><li>Home | Products' has no closing tag
+# until after 'Home | Products', so the title, the meta description and the first
+# nav item all landed on ONE line. That line then contained the part number,
+# making it unique per page, so the boilerplate detector could never see the nav
+# chrome repeating and it survived into the training text.
+_HTML_BLOCK = re.compile(
+    r"(?i)</?(?:p|div|li|tr|h[1-6]|section|article|td|th|table|ul|ol|dd|dt|dl"
+    r"|nav|footer|header|aside|main|form|option|label|blockquote|pre)\b[^>]*>"
+    r"|<br\s*/?>")
+_HTML_TAG = re.compile(r"(?s)<[^>]+>")
+
+
+def html_to_text(raw, max_chars=FULL_TEXT_CHARS) -> str:
+    """Readable prose from a saved HTML datasheet / product page.
+
+    <title> and the meta description are pulled out first and put at the top:
+    on a vendor product page those two fields hold the product summary ('GaAs
+    MMIC power amplifier, hermetic, space qualified'), which is exactly the
+    construction language the classifier needs, and they would otherwise be
+    thrown away with the rest of <head>."""
+    txt = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+    head = []
+    mt = _HTML_TITLE.search(txt)
+    if mt:
+        head.append(_html_unescape(_HTML_TAG.sub(" ", mt.group(1))).strip())
+    md = _HTML_META_DESC.search(txt)
+    if md:
+        head.append(_html_unescape(md.group(1)).strip())
+    body = _HTML_COMMENT.sub(" ", txt)
+    body = _HTML_SCRIPTISH.sub(" ", body)
+    body = _HTML_HEAD.sub("\n", body)        # title/description already captured
+    body = _HTML_BLOCK.sub("\n", body)
+    body = _HTML_TAG.sub(" ", body)
+    body = _html_unescape(body)
+    body = re.sub(r"[ \t\xa0\u200b]+", " ", body)
+    lead = "\n".join(h for h in head if h)
+    return _strip_tables((lead + "\n" + body) if lead else body, max_chars)
+
+
+def _has_engineering_signal(line) -> bool:
+    """True if a line carries construction/qualification vocabulary.
+
+    Such a line is NEVER treated as boilerplate, however often it repeats. Site
+    chrome does not say 'hermetic', 'epoxy overmolded' or 'MIL-PRF-38534'; real
+    product prose does, and vendors legitimately reuse the same sentence across
+    a whole product family."""
+    return bool(_SPACE_WORDS.search(line) or _HIREL_WORDS.search(line)
+                or prior_hits(line))
+
+
+def _learn_boilerplate(texts, frac=0.85, min_docs=4, max_len=200) -> set:
+    """Lines that appear on MOST pages from one vendor: nav bars, cookie
+    notices, footers, 'Add to cart'.
+
+    This matters more than it sounds. Every Qorvo page shares a template, so
+    without this the most common tokens in the corpus are site chrome. TF-IDF
+    down-weights terms common to ALL documents, but here the chrome is common
+    only within a vendor -- so it survives, and the model happily learns
+    'this is a Qorvo page' instead of 'this part is hermetic'. Since vendor
+    correlates with label, that is leakage dressed up as signal.
+
+    Two guards keep it from eating real content, both added after it did exactly
+    that in testing: the repetition bar is deliberately high (a line must appear
+    on ~85% of a vendor's pages), and any line containing engineering vocabulary
+    is exempt no matter how often it repeats."""
+    if len(texts) < min_docs:
+        return set()
+    cnt = Counter()
+    for t in texts:
+        for ln in {l.strip() for l in t.split("\n") if l.strip()}:
+            if len(ln) <= max_len and not _has_engineering_signal(ln):
+                cnt[ln] += 1
+    need = max(3, int(round(frac * len(texts))))
+    return {ln for ln, c in cnt.items() if c >= need}
+
+
+def _drop_lines(text, boiler) -> str:
+    if not boiler:
+        return text
+    kept = [l for l in text.split("\n") if l.strip() not in boiler]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
+
+
 # space / hi-rel vocabulary, for the masking experiment described in the docstring
 _SPACE_WORDS = re.compile(
     r"\b(space|spaceflight|space-?qualified|satellite|orbit(al)?|LEO|GEO|MEO|"
@@ -596,69 +794,125 @@ def make_classifier(seed=0):
 
 
 # ------------------------------------------------------------- PU bag training
-def train_pu(Xp, Xu, n_bags=15, folds=5, seed=0, verbose=True):
-    """PU bagging with an outer CV over P.
+def train_pu(Xp, Xu, n_bags=15, folds=5, seed=0, verbose=True,
+             Xn=None, wn=None):
+    """PU bagging with an outer CV over P -- and, when you have them, REAL
+    labelled negatives N.
 
-    Returns (p_scores, u_scores, bagged_models). Each bag samples unlabeled rows,
-    treats them as negative, and fits a model. P scores come only from folds where
-    that positive was held out, so recall is honest. U scores are averaged
-    out-of-bag (a U row is scored only by bags that did NOT use it as a negative),
-    which keeps its score from being pushed down by its own training label.
+    Returns (p_scores, u_scores, n_scores, bagged_models).
+
+    Two regimes, one code path:
+
+      * N is empty (the original Mini-Circuits case): classic PU bagging. Each
+        bag calls a random subset of U negative, and U rows are scored
+        out-of-bag so a row's own training label cannot push its score down.
+
+      * N is non-empty (the local datasheet corpus, where a part absent from
+        every space source is treated as a negative): the labelled negatives go
+        into every bag as real negatives, and are ALSO held out fold by fold.
+        That is what makes precision measurable instead of merely assumed --
+        with no negatives at all, precision is not identifiable from PU data.
+
+    `wn` gives per-negative sample weights, which is how CMOS driver/logic
+    negatives are made to count several times over (see neg_sample_weight).
     """
     import numpy as np
     from sklearn.model_selection import KFold
 
-    n_p, n_u = Xp.shape[0], Xu.shape[0]
+    n_p = Xp.shape[0]
+    n_u = Xu.shape[0] if Xu is not None else 0
+    n_n = Xn.shape[0] if Xn is not None else 0
     rng = np.random.default_rng(seed)
     p_scores = np.zeros(n_p)
+    n_scores = np.zeros(n_n)
     u_sum = np.zeros(n_u)
     u_cnt = np.zeros(n_u)
+    if n_n and wn is None:
+        wn = np.ones(n_n)
+    wn = np.asarray(wn, dtype=float) if n_n else np.zeros(0)
 
-    folds = max(2, min(folds, n_p))              # cannot have more folds than P
-    splitter = KFold(n_splits=folds, shuffle=True, random_state=seed)
-    for fold, (tr, te) in enumerate(splitter.split(np.arange(n_p)), 1):
-        fold_scores = np.zeros(len(te))
-        for b in range(n_bags):
-            # Classic PU bagging draws |P| negatives from U. When U is smaller
-            # than P that would consume the ENTIRE pool: every bag would be
-            # identical (so bagging does nothing) and no rows would be left
-            # out-of-bag to score, which used to crash with an empty array.
-            # Always hold part of U back.
-            neg_size = min(len(tr), n_u)
+    if n_u == 0 and n_n == 0:
+        raise SystemExit("train_pu: no negatives and no unlabeled pool")
+
+    # Folds must divide BOTH P and N, since both are held out.
+    folds = max(2, min(folds, n_p, n_n if n_n else folds))
+    p_split = list(KFold(n_splits=folds, shuffle=True,
+                         random_state=seed).split(np.arange(n_p)))
+    if n_n:
+        n_split = list(KFold(n_splits=folds, shuffle=True,
+                             random_state=seed + 7).split(np.arange(n_n)))
+    else:
+        empty = np.array([], dtype=int)
+        n_split = [(empty, empty)] * folds
+
+    def _bag_fit(ptr, ntr, bag_seed, draw_u=True):
+        """One bagged model. Returns (clf, u_indices_used_as_negative)."""
+        blocks = [Xp[ptr]]
+        ys = [np.ones(len(ptr))]
+        ws = [np.ones(len(ptr))]
+        if n_n and len(ntr):
+            if n_u:
+                idx = ntr                      # use every labelled negative
+            else:
+                # No unlabeled pool, so bag diversity has to come from
+                # bootstrapping the negatives instead.
+                idx = rng.choice(ntr, size=len(ntr), replace=True)
+            blocks.append(Xn[idx])
+            ys.append(np.zeros(len(idx)))
+            ws.append(wn[idx])
+        sel = None
+        if n_u and draw_u:
+            want = max(1, len(ptr) - (len(ntr) if n_n else 0))
+            neg_size = min(want, n_u)
             if neg_size >= n_u:
                 neg_size = max(1, int(round(_BAG_FRACTION * n_u)))
-            neg = rng.choice(n_u, size=neg_size, replace=False)
-            X = _vstack(Xp[tr], Xu[neg])
-            y = np.r_[np.ones(len(tr)), np.zeros(len(neg))]
-            clf = make_classifier(seed=seed + b)
-            clf.fit(X, y)
-            fold_scores += clf.predict_proba(Xp[te])[:, 1]
-            oob = np.ones(n_u, dtype=bool)
-            oob[neg] = False
-            if oob.any():
-                u_sum[oob] += clf.predict_proba(Xu[oob])[:, 1]
-                u_cnt[oob] += 1
-        p_scores[te] = fold_scores / n_bags
-        if verbose:
-            print(f"    fold {fold}/{folds}: held-out P mean score "
-                  f"{p_scores[te].mean():.3f}")
+            sel = rng.choice(n_u, size=neg_size, replace=False)
+            blocks.append(Xu[sel])
+            ys.append(np.zeros(len(sel)))
+            ws.append(np.ones(len(sel)))
+        X = blocks[0]
+        for extra in blocks[1:]:
+            X = _vstack(X, extra)
+        y = np.concatenate(ys)
+        w = np.concatenate(ws)
+        clf = make_classifier(seed=bag_seed)
+        clf.fit(X, y, sample_weight=w)
+        return clf, sel
 
-    # final ensemble on ALL positives, for scoring new parts later
+    for fold, ((ptr, pte), (ntr, nte)) in enumerate(zip(p_split, n_split), 1):
+        pf = np.zeros(len(pte))
+        nf = np.zeros(len(nte))
+        for b in range(n_bags):
+            clf, sel = _bag_fit(ptr, ntr, seed + b)
+            pf += clf.predict_proba(Xp[pte])[:, 1]
+            if len(nte):
+                nf += clf.predict_proba(Xn[nte])[:, 1]
+            if sel is not None:
+                oob = np.ones(n_u, dtype=bool)
+                oob[sel] = False
+                if oob.any():
+                    u_sum[oob] += clf.predict_proba(Xu[oob])[:, 1]
+                    u_cnt[oob] += 1
+        p_scores[pte] = pf / n_bags
+        if len(nte):
+            n_scores[nte] = nf / n_bags
+        if verbose:
+            extra = (f", held-out N mean {n_scores[nte].mean():.3f}"
+                     if len(nte) else "")
+            print(f"    fold {fold}/{folds}: held-out P mean score "
+                  f"{p_scores[pte].mean():.3f}{extra}")
+
+    # final ensemble on ALL positives (and all negatives), for scoring new parts
+    all_p = np.arange(n_p)
+    all_n = np.arange(n_n)
     models = []
     for b in range(n_bags):
-        neg_size = min(n_p, n_u)
-        if neg_size >= n_u:
-            neg_size = max(1, int(round(_BAG_FRACTION * n_u)))
-        neg = rng.choice(n_u, size=neg_size, replace=False)
-        X = _vstack(Xp, Xu[neg])
-        y = np.r_[np.ones(n_p), np.zeros(len(neg))]
-        clf = make_classifier(seed=1000 + seed + b)
-        clf.fit(X, y)
+        clf, _sel = _bag_fit(all_p, all_n, 1000 + seed + b)
         models.append(clf)
 
     u_scores = np.divide(u_sum, np.maximum(u_cnt, 1))
     never = u_cnt == 0
-    if never.any():
+    if n_u and never.any():
         # A row that landed in every bag's negative sample has no out-of-bag
         # score. Score it with the final ensemble rather than leaving it at 0,
         # which would silently exclude it from the candidate queue.
@@ -667,7 +921,7 @@ def train_pu(Xp, Xu, n_bags=15, folds=5, seed=0, verbose=True):
         if verbose:
             print(f"    {int(never.sum())} unlabeled row(s) had no out-of-bag "
                   f"score; scored with the full ensemble instead")
-    return p_scores, u_scores, models
+    return p_scores, u_scores, n_scores, models
 
 
 def _vstack(a, b):
@@ -708,11 +962,17 @@ def top_features(featurizer, models, n=25):
 
 # ----------------------------------------------------------------- PU metrics
 def pu_metrics(preds) -> dict:
-    """PU-aware scoring. A flagged unlabeled part is never called an error."""
+    """PU-aware scoring. A flagged unlabeled part is never called an error.
+
+    When labelled negatives (label 'N') are present, held-out precision and a
+    false-positive rate are also reported -- those ARE measurements, unlike the
+    precision scenarios below, which are only assumptions."""
     P = [p for p in preds if p["label"] == "P"]
     U = [p for p in preds if p["label"] == "U"]
+    N = [p for p in preds if p["label"] == "N"]
     flag_p = sum(1 for p in P if p["qualifiable"])
     flag_u = sum(1 for p in U if p["qualifiable"])
+    flag_n = sum(1 for p in N if p["qualifiable"])
     n = len(P) + len(U)
     recall = flag_p / len(P) if P else 0.0
     flag_rate_u = flag_u / len(U) if U else 0.0
@@ -721,13 +981,20 @@ def pu_metrics(preds) -> dict:
     # needs no negatives. Use it to compare backends/prompts, not as an accuracy.
     pu_score = (recall ** 2 / pr_flag) if pr_flag else 0.0
     sanity = [p for p in U if p.get("sanity_negative")]
+    cmos_n = [p for p in N if p.get("cmos_negative")]
     return {"n_positives": len(P), "n_unlabeled": len(U),
             "flagged_positives": flag_p, "flagged_unlabeled": flag_u,
             "recall_on_P": recall, "flag_rate_on_U": flag_rate_u,
             "p_flag": pr_flag, "pu_score": pu_score,
             "missed_positives": len(P) - flag_p,
             "sanity_negatives": len(sanity),
-            "sanity_flagged": sum(1 for p in sanity if p["qualifiable"])}
+            "sanity_flagged": sum(1 for p in sanity if p["qualifiable"]),
+            "n_negatives": len(N), "flagged_negatives": flag_n,
+            "fpr_on_N": (flag_n / len(N)) if N else 0.0,
+            "precision_labeled": ((flag_p / (flag_p + flag_n))
+                                  if (flag_p + flag_n) else 0.0),
+            "cmos_negatives": len(cmos_n),
+            "cmos_flagged": sum(1 for p in cmos_n if p["qualifiable"])}
 
 
 def precision_sensitivity(m, priors=(0.01, 0.02, 0.03, 0.05, 0.10, 0.20)) -> list:
@@ -1007,15 +1274,57 @@ def _build_featurizer(args):
 
 
 def cmd_train(args):
-    match = _load(MATCH_JSON, None)
-    if not match:
-        raise SystemExit("run `match` first")
-    items = _work_items(match)
-    data, skipped = load_texts(items, mask=args.mask)
-    P = [d for d in data if d["label"] == "P"]
-    U = [d for d in data if d["label"] == "U"]
-    print(f"training data: {len(P)} positives, {len(U)} unlabeled "
-          f"({skipped} parts skipped for missing datasheet text)")
+    mask = getattr(args, "mask", "none")
+    local_only = bool(getattr(args, "local_only", False))
+    use_local = bool(getattr(args, "local", True))
+    cmos_w = float(getattr(args, "neg_weight_cmos", 3.0))
+
+    P, U, N = [], [], []
+    skipped = 0
+
+    # ---- local datasheet corpus (Qorvo HTML, Marki/Skyworks/MACOM PDFs) ------
+    corpus = _load(LOCAL_JSON, None) if use_local else None
+    if corpus:
+        loc, loc_skipped = load_local_texts(corpus, mask=mask)
+        skipped += loc_skipped
+        P += [d for d in loc if d["label"] == "P"]
+        N += [d for d in loc if d["label"] == "N"]
+        U += [d for d in loc if d["label"] == "U"]
+        by_v = Counter(f"{d['vendor_name']}/{d['label']}" for d in loc)
+        print(f"local corpus ({corpus.get('root', '?')}):")
+        print(f"  {len(loc)} part(s) with text  "
+              f"[{sum(1 for d in loc if d['label'] == 'P')} P, "
+              f"{sum(1 for d in loc if d['label'] == 'N')} N, "
+              f"{sum(1 for d in loc if d['label'] == 'U')} U]"
+              + (f"   {loc_skipped} skipped (thin text)" if loc_skipped else ""))
+        for k in sorted(by_v):
+            print(f"    {k:<34} {by_v[k]}")
+    elif use_local and not local_only:
+        print("(no local corpus yet -- run `local-scan` to train on the "
+              "datasheets you already have)")
+
+    # ---- the original Mini-Circuits match (still supported) -----------------
+    match = _load(MATCH_JSON, None) if not local_only else None
+    if match:
+        items = _work_items(match)
+        data, mc_skipped = load_texts(items, mask=mask)
+        skipped += mc_skipped
+        P += [d for d in data if d["label"] == "P"]
+        U += [d for d in data if d["label"] == "U"]
+        print(f"Mini-Circuits match: {sum(1 for d in data if d['label'] == 'P')} "
+              f"P, {sum(1 for d in data if d['label'] == 'U')} U")
+    if not corpus and not match:
+        raise SystemExit(
+            "no training data.\n"
+            "Either run `local-scan` (trains on datasheets already on disk -- "
+            "no network),\nor run `match` + `fetch` for the Mini-Circuits path.")
+
+    print(f"\ntraining data: {len(P)} positives, {len(N)} labelled negatives, "
+          f"{len(U)} unlabeled ({skipped} skipped for missing/thin text)")
+    if N:
+        n_cmos = sum(1 for d in N if _CMOS_NEG_RE.search(d["text"]))
+        print(f"  of the negatives, {n_cmos} match CMOS driver/logic language "
+              f"and are weighted x{cmos_w:g}")
     if len(P) < 5:
         raise SystemExit(
             f"only {len(P)} positives have datasheet text -- run `fetch` "
@@ -1030,40 +1339,51 @@ def cmd_train(args):
               f"estimates unstable.\n"
               f"    Fetch more parts (the queue interleaves P and U, so just run "
               f"fetch again).")
-    if not U:
-        n_u_total = sum(1 for i in items if i["label"] == "U")
+    if not U and not N:
         raise SystemExit(
-            f"no unlabeled parts have datasheet text yet "
-            f"({len(P)} positives do, out of {n_u_total} unlabeled in the queue).\n"
-            f"The fetch queue puts all positives first, so a short or interrupted\n"
-            f"fetch ends up positives-only and cannot train (PU learning needs an\n"
-            f"unlabeled pool to sample negatives from).\n"
-            f"Run `fetch` again -- already-cached parts are skipped for free, so it\n"
-            f"carries on from where it stopped -- until a few hundred U have text.")
+            f"{len(P)} positives have text, but there are no negatives and no\n"
+            f"unlabeled pool, so there is nothing to separate them from.\n"
+            f"Either run `local-scan` (parts absent from your space sources become\n"
+            f"labelled negatives), or run `fetch` again until a few hundred\n"
+            f"unlabeled Mini-Circuits parts have datasheet text.")
+    if N and len(N) < 5:
+        print(f"  ! only {len(N)} labelled negative(s); the held-out precision "
+              f"figure will be very rough.")
 
     featurizer, tag = _build_featurizer(args)
-    texts = [d["text"] for d in P] + [d["text"] for d in U]
+    texts = ([d["text"] for d in P] + [d["text"] for d in N]
+             + [d["text"] for d in U])
     print(f"  featurizing with {tag} ...")
     X = featurizer.fit_transform(texts)
-    Xp, Xu = X[: len(P)], X[len(P):]
+    Xp = X[: len(P)]
+    Xn = X[len(P): len(P) + len(N)] if N else None
+    Xu = X[len(P) + len(N):]
+    wn = None
+    if N:
+        import numpy as _np
+        wn = _np.array([neg_sample_weight(d["text"], cmos_w) for d in N])
     try:
         print(f"  feature matrix: {X.shape[0]} x {X.shape[1]}")
     except Exception:
         pass
 
-    print(f"  PU bagging: {args.bags} bags x {args.folds} folds")
-    p_scores, u_scores, models = train_pu(Xp, Xu, n_bags=args.bags,
-                                          folds=args.folds, seed=args.seed)
+    print(f"  PU bagging: {args.bags} bags x {args.folds} folds"
+          + (f"  (+{len(N)} labelled negatives in every bag)" if N else ""))
+    p_scores, u_scores, n_scores, models = train_pu(
+        Xp, Xu, n_bags=args.bags, folds=args.folds, seed=args.seed,
+        Xn=Xn, wn=wn)
     # Domain priors are applied BEFORE the threshold is chosen, so the reported
     # recall and flag rate describe the blended system you will actually run.
     pw = 0.0 if args.no_prior else args.prior_weight
     if pw:
         p_scores = [blend_prior(s, d["text"], pw) for s, d in zip(p_scores, P)]
         u_scores = [blend_prior(s, d["text"], pw) for s, d in zip(u_scores, U)]
+        n_scores = [blend_prior(s, d["text"], pw) for s, d in zip(n_scores, N)]
         print(f"  domain priors blended in at weight {pw} "
               f"({len(DOMAIN_PRIOR)} terms)")
     else:
         p_scores, u_scores = list(p_scores), list(u_scores)
+        n_scores = list(n_scores)
         print("  domain priors disabled")
     thr = (args.threshold if args.threshold is not None
            else threshold_for_recall(p_scores, args.target_recall))
@@ -1073,6 +1393,8 @@ def cmd_train(args):
 
     preds = []
     for d, s in zip(P, p_scores):
+        preds.append(_pred_row(d, float(s), thr, tag, args.mask))
+    for d, s in zip(N, n_scores):
         preds.append(_pred_row(d, float(s), thr, tag, args.mask))
     for d, s in zip(U, u_scores):
         preds.append(_pred_row(d, float(s), thr, tag, args.mask))
@@ -1100,7 +1422,11 @@ def cmd_train(args):
                      "threshold": thr, "backend": tag, "mask": args.mask,
                      "prior_weight": pw,
                      "trained": time.strftime("%Y-%m-%d %H:%M"),
-                     "n_positives": len(P), "n_unlabeled": len(U)},
+                     "n_positives": len(P), "n_unlabeled": len(U),
+                     "n_negatives": len(N), "neg_weight_cmos": cmos_w,
+                     "boilerplate": (corpus or {}).get("boilerplate", {}),
+                     "vendors": sorted({d.get("vendor_name", "")
+                                        for d in P + N + U if d.get("vendor_name")})},
                     MODEL_FILE)
         print(f"\n  saved model -> {MODEL_FILE}")
     except Exception as e:
@@ -1112,9 +1438,14 @@ def cmd_train(args):
 def _pred_row(d, score, thr, tag, mask):
     return {"pn": d["pn"], "label": d["label"],
             "sanity_negative": d.get("sanity_negative", False),
+            "cmos_negative": d.get("cmos_negative", False),
             "category_mc": d.get("category_mc", ""),
             "datasheet_url": d.get("datasheet_url", ""),
             "variant": d.get("variant", ""),
+            "vendor": d.get("vendor_name") or d.get("vendor", ""),
+            "source": d.get("source", ""),
+            "label_why": d.get("label_why", ""),
+            "local_file": d.get("file", ""),
             "score": round(score, 5), "confidence": round(score, 5),
             "qualifiable": bool(score >= thr),
             "threshold": round(thr, 5), "model": tag, "mask": mask}
@@ -1229,10 +1560,28 @@ def cmd_eval(args):
           f"   ({m['flagged_positives']}/{m['n_positives']})   [held out]")
     print(f"    missed known space parts   {m['missed_positives']}"
           f"   <- real errors")
-    print(f"\n  flag rate on U               {m['flag_rate_on_U']:.1%}"
-          f"   ({m['flagged_unlabeled']}/{m['n_unlabeled']})")
-    print("    NOT an error rate: U is unlabeled, so a flag here is a")
-    print("    candidate to review, and some are genuinely qualifiable.")
+    if m["n_unlabeled"]:
+        print(f"\n  flag rate on U               {m['flag_rate_on_U']:.1%}"
+              f"   ({m['flagged_unlabeled']}/{m['n_unlabeled']})")
+        print("    NOT an error rate: U is unlabeled, so a flag here is a")
+        print("    candidate to review, and some are genuinely qualifiable.")
+    if m["n_negatives"]:
+        print(f"\n  LABELLED NEGATIVES (N)       {m['n_negatives']}"
+              f"   [datasheets you hold that appear in no space source]")
+        print(f"    flagged                    {m['flagged_negatives']} "
+              f"({m['fpr_on_N']:.1%})")
+        print(f"    PRECISION on labelled data {m['precision_labeled']:.1%}"
+              f"   ({m['flagged_positives']}/"
+              f"{m['flagged_positives'] + m['flagged_negatives']})   [held out]")
+        print("    Measured, not assumed -- but read it as a LOWER bound: a")
+        print("    flagged negative may be a genuinely qualifiable part that is")
+        print("    simply not listed, which is exactly what you are hunting for.")
+        if m["cmos_negatives"]:
+            rate = m["cmos_flagged"] / m["cmos_negatives"]
+            print(f"\n    CMOS driver/logic negatives {m['cmos_negatives']}"
+                  f"  (up-weighted in training)")
+            print(f"      still flagged            {m['cmos_flagged']} ({rate:.1%})"
+                  f"   <- want near zero")
     print(f"\n  PU score (recall^2/P(flag))   {m['pu_score']:.3f}"
           f"   <- compare backends with this")
     if m["sanity_negatives"]:
@@ -1241,16 +1590,22 @@ def cmd_eval(args):
               f"{m['sanity_negatives']}")
         print(f"    flagged                    {m['sanity_flagged']} ({rate:.1%})"
               f"   <- want LOW; heuristic set, not ground truth")
-    print("\n  Precision on U cannot be measured from PU data. Scenarios:")
-    print("    assumed prevalence | qualifiable in U | est. precision | est. finds")
-    for row in precision_sensitivity(m):
-        print(f"      {row['assumed_prevalence']:>14.0%} | "
-              f"{row['assumed_qualifiable_in_U']:>16} | "
-              f"{row['est_precision_on_U']:>14.1%} | {row['est_true_finds']:>10}")
+    if m["n_unlabeled"]:
+        print("\n  Precision on U cannot be measured from PU data. Scenarios:")
+        print("    assumed prevalence | qualifiable in U | est. precision | est. finds")
+        for row in precision_sensitivity(m):
+            print(f"      {row['assumed_prevalence']:>14.0%} | "
+                  f"{row['assumed_qualifiable_in_U']:>16} | "
+                  f"{row['est_precision_on_U']:>14.1%} | {row['est_true_finds']:>10}")
     if getattr(args, "reviewed", None):
         _report_reviewed(args.reviewed, m)
-    print("\n  Next: `review` to export the ranked candidate queue, label a")
-    print("  sample, then `eval --reviewed labelled.csv` for real precision.")
+    if m["n_unlabeled"]:
+        print("\n  Next: `review` to export the ranked candidate queue, label a")
+        print("  sample, then `eval --reviewed labelled.csv` for real precision.")
+    else:
+        print("\n  Next: `review` exports the flagged negatives -- parts you hold "
+              "whose\n  datasheets read like space parts but which appear in no "
+              "space source.\n  Those are the candidates worth checking by hand.")
     return 0
 
 
@@ -1280,17 +1635,24 @@ def cmd_review(args):
     preds = _load(PRED_JSON, [])
     if not preds:
         raise SystemExit("no predictions yet -- run `train`")
-    queue = sorted([p for p in preds if p["label"] == "U" and p["qualifiable"]],
+    # Flagged N belongs in the queue too. Under --absent-as negative a part is a
+    # negative only because it is absent from your space listings, so a flagged
+    # one is precisely the candidate this tool exists to surface -- dropping it
+    # would hide the discoveries.
+    queue = sorted([p for p in preds
+                    if p["label"] in ("U", "N") and p["qualifiable"]],
                    key=lambda p: -p["score"])
     if args.limit:
         queue = queue[: args.limit]
     out = Path(args.out)
     with out.open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
-        w.writerow(["pn", "score", "category", "datasheet_url", "verdict"])
+        w.writerow(["pn", "label", "vendor", "score", "category",
+                    "datasheet_url", "local_file", "verdict"])
         for p in queue:
-            w.writerow([p["pn"], f"{p['score']:.4f}", p.get("category_mc", ""),
-                        p.get("datasheet_url", ""), ""])
+            w.writerow([p["pn"], p["label"], p.get("vendor", ""),
+                        f"{p['score']:.4f}", p.get("category_mc", ""),
+                        p.get("datasheet_url", ""), p.get("local_file", ""), ""])
     print(f"wrote {len(queue)} candidates -> {out}")
     print("Fill the 'verdict' column with y/n, then:")
     print(f"  python {Path(sys.argv[0]).name} eval --reviewed {out}")
@@ -1338,6 +1700,8 @@ def cmd_selftest(args):
     the unlabeled pool is mostly commercial-plastic language with a known
     fraction of hidden positives, so you can check the reported recall and see
     the estimator bracket a prevalence you actually control."""
+    if getattr(args, "local", False):
+        return cmd_selftest_local(args)
     rnd = random.Random(args.seed)
     CACHE_TXT.mkdir(parents=True, exist_ok=True)
 
@@ -1371,7 +1735,11 @@ def cmd_selftest(args):
         bags=args.bags, folds=args.folds, seed=args.seed,
         target_recall=args.target_recall, threshold=None,
         show_features=12, no_features=False,
-        prior_weight=1.0, no_prior=False))
+        prior_weight=1.0, no_prior=False,
+        # This selftest is about the Mini-Circuits PU path only. Without these
+        # the run would silently absorb a real local corpus and the "ground
+        # truth" printed below would no longer be ground truth.
+        local=False, local_only=False, neg_weight_cmos=3.0))
     preds = {p["pn"]: p for p in _load(PRED_JSON, [])}
     flagged_hidden = sum(1 for i in range(hidden)
                          if preds.get(f"SYNU-{i:05d}", {}).get("qualifiable"))
@@ -1383,6 +1751,229 @@ def cmd_selftest(args):
         print(f"    TRUE precision on U         "
               f"{flagged_hidden / flagged_u:.1%}  ({flagged_hidden}/{flagged_u})")
         print( "    compare with the scenario table above at the true prevalence")
+    return rc
+
+
+# -------------------------------------------- selftest: local datasheet path
+# Builds a synthetic datasheet library on disk (HTML, per-vendor folders), a
+# synthetic set of saved everythingRF space pages, and a synthetic parts.db,
+# then runs local-scan + train against them. Entirely offline.
+#
+# It also plants HIDDEN positives: parts whose text is space-like but which are
+# deliberately left out of every label source, so they are labelled negative.
+# Recovering those is the whole point of the tool, and it is the honest way to
+# see what "precision on labelled data" really means -- a flagged negative here
+# is a success, not an error.
+_SL_CHROME = [
+    "Home | Products | Design Tools | Support | Contact Us",
+    "Copyright Example Semiconductor Inc. All rights reserved.",
+    "This site uses cookies to deliver and improve our services.",
+    "Add to cart    Request a sample    Contact sales    Where to buy",
+    "Follow us on social media for product announcements and news",
+]
+_SL_POS_TEXT = [
+    "Hermetically sealed GaAs MMIC amplifier in a kovar package with alumina "
+    "substrate and glass-to-metal seal feedthroughs. Laser welded housing. "
+    "Screened to MIL-STD-883 method 5008 with an upscreened option available. "
+    "Operating temperature -55 C to +125 C. Available as bare die for chip and "
+    "wire assembly. QML Class K flow supported under MIL-PRF-38534.",
+    "Thin film ceramic hybrid mixer built on alumina with a hermetic solder "
+    "sealed lid. Kovar body, glass bead feedthrough. MIL-PRF-38534 Class K "
+    "screening and radiation lot acceptance testing offered. Temperature range "
+    "-55 C to +125 C. Bare die and MMIC die options for hybrid integration.",
+    "GaN power amplifier die on a ceramic carrier, hermetic package option, "
+    "MIL-STD-883 screened. Thin film matching network on alumina. Glass to "
+    "metal sealed connectors, laser welded seam. QML V product flow available "
+    "for high reliability and space programs. -55 C to +150 C rated.",
+]
+_SL_NEG_TEXT = [
+    "Low cost overmolded plastic package amplifier for commercial wireless "
+    "infrastructure. Epoxy encapsulated body on an organic laminate substrate. "
+    "Operating temperature 0 to 70 C. RoHS compliant tape and reel packaging. "
+    "An evaluation board is available for quick prototyping and bench testing.",
+    "Plastic QFN packaged front end module with epoxy overmold for handset "
+    "applications. Commercial temperature range 0 to 70 C. Electrolytic "
+    "bypass capacitors recommended on the supply rail. Demo board and kit "
+    "available. Consumer grade, high volume, no screening options offered.",
+    "Surface mount plastic SOT package attenuator for consumer set top boxes. "
+    "Overmolded epoxy body, laminate substrate, commercial 0 to 70 C rating. "
+    "Test board and evaluation kit sold separately. Not recommended for high "
+    "reliability or extended temperature applications.",
+]
+_SL_CMOS_TEXT = [
+    "Octal CMOS driver and level translator in a plastic package for logic "
+    "interface applications. LVCMOS and LVTTL compatible inputs. Contains "
+    "shift register and flip-flop stages. Commercial 0 to 70 C temperature "
+    "range, epoxy overmolded body, evaluation board available.",
+    "CMOS logic buffer and gate driver array with a plastic body. LVCMOS "
+    "compatible, TTL threshold inputs, NAND gate and inverter stages on chip. "
+    "Voltage level shifter function included. Commercial temperature range, "
+    "overmolded epoxy, low cost high volume consumer part.",
+    "Line driver / clock driver IC with CMOS logic outputs, HCMOS compatible. "
+    "Plastic package, epoxy encapsulation, 0 to 70 C commercial rating. "
+    "Contains a shift register, multiplexer logic and flip-flop stages. "
+    "Demo board and driver IC evaluation kit available.",
+]
+
+
+def _sl_page(vendor, pn, body, rnd):
+    """A vendor product page: real template chrome around the product prose."""
+    chrome_top = "\n".join(f"<li>{c}</li>" for c in _SL_CHROME[:3])
+    chrome_bot = "\n".join(f"<p>{c}</p>" for c in _SL_CHROME[3:])
+    filler = " ".join(rnd.sample(_FILLER.split(), 10))
+    return (
+        f"<!DOCTYPE html><html><head>"
+        f"<title>{vendor} {pn} Product Page</title>"
+        f"<meta name=\"description\" content=\"{vendor} {pn} RF component\">"
+        f"<style>.x{{color:red}}</style><script>var a=1;</script>"
+        f"</head><body><nav><ul>{chrome_top}</ul></nav>"
+        f"<h1>{pn}</h1><div class=\"desc\"><p>{body}</p><p>{filler}</p></div>"
+        f"<table><tr><td>1.0</td><td>2.5</td><td>3.7</td></tr></table>"
+        f"<footer>{chrome_bot}</footer></body></html>")
+
+
+def _sl_erf_page(rows):
+    """A saved everythingRF space listing page, in the shape the real ones take."""
+    boxes = []
+    for pn, vendor in rows:
+        boxes.append(
+            f"<div class=\"product-box\">"
+            f"<h3 class=\"prod-title\"><a dname=\"{pn}\">{vendor} - {pn}</a></h3>"
+            f"<a class=\"manuName\" manu-name=\"{vendor}\">{vendor}</a>"
+            f"<span class=\"nodeName\">Space Qualified RF Amplifier</span>"
+            f"</div>")
+    return ("<html><head><title>Space Qualified RF Amplifiers</title></head>"
+            "<body><h1>Space Qualified RF Amplifiers</h1>"
+            + "".join(boxes) + "</body></html>")
+
+
+def _sl_make_db(path, space_rows, plain_rows):
+    """A minimal parts.db with the columns the label oracle reads."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        path.unlink()
+    conn = sqlite3.connect(str(path))
+    conn.executescript("""
+        CREATE TABLE parts(id INTEGER PRIMARY KEY, mpn TEXT, mpn_norm TEXT,
+            vendor TEXT, category TEXT DEFAULT '', subcategory TEXT DEFAULT '',
+            product_url TEXT DEFAULT '', description TEXT DEFAULT '');
+        CREATE TABLE specs(part_id INT, key TEXT, value_text TEXT);
+        CREATE TABLE qual_evidence(part_id INT, signal TEXT, weight REAL,
+            source_url TEXT DEFAULT '', snippet TEXT DEFAULT '');
+        CREATE TABLE documents(sha256 TEXT, url TEXT, part_id INT);
+    """)
+    pid = 0
+    for pn, vendor in space_rows:
+        pid += 1
+        conn.execute("INSERT INTO parts(id, mpn, mpn_norm, vendor) VALUES(?,?,?,?)",
+                     (pid, pn, norm_pn(pn), vendor))
+        conn.execute("INSERT INTO specs VALUES(?,?,?)", (pid, "space", "qualified"))
+        conn.execute("INSERT INTO qual_evidence VALUES(?,?,?,?,?)",
+                     (pid, "qorvo-aerospace-brochure", 7.0, "", "synthetic"))
+    for pn, vendor in plain_rows:
+        pid += 1
+        conn.execute("INSERT INTO parts(id, mpn, mpn_norm, vendor) VALUES(?,?,?,?)",
+                     (pid, pn, norm_pn(pn), vendor))
+    conn.commit()
+    conn.close()
+
+
+def cmd_selftest_local(args):
+    """End-to-end check of the LOCAL datasheet path, offline."""
+    rnd = random.Random(getattr(args, "seed", 0))
+    base = WORKDIR / "selftest_local"
+    ds_root = base / "datasheets"
+    erf_dir = base / "everythingRF"
+    db_path = base / "parts.db"
+    for d in (ds_root, erf_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
+    n_pos = max(12, getattr(args, "positives", 40))
+    n_neg = max(12, getattr(args, "negatives", 60))
+    hidden = max(1, getattr(args, "hidden", 6))
+
+    # ---- lay out the synthetic library -------------------------------------
+    vendors = ["qorvo", "skyworks", "macom"]
+    listed, hidden_pns, neg_pns, cmos_pns = [], [], [], []
+    for i in range(n_pos):
+        vkey = vendors[i % len(vendors)]
+        vname = VENDORS[vkey]["name"]
+        pn = f"SPQ{i:04d}"
+        body = _SL_POS_TEXT[i % len(_SL_POS_TEXT)]
+        d = ds_root / VENDORS[vkey]["slug"]
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{pn}_datasheet.html").write_text(_sl_page(vname, pn, body, rnd),
+                                                encoding="utf-8")
+        # the last `hidden` positives are left out of every label source
+        (hidden_pns if i >= n_pos - hidden else listed).append((pn, vname))
+    for i in range(n_neg):
+        vkey = vendors[i % len(vendors)]
+        vname = VENDORS[vkey]["name"]
+        pn = f"CMR{i:04d}"
+        is_cmos = (i % 3 == 0)
+        body = (_SL_CMOS_TEXT[i % len(_SL_CMOS_TEXT)] if is_cmos
+                else _SL_NEG_TEXT[i % len(_SL_NEG_TEXT)])
+        d = ds_root / VENDORS[vkey]["slug"]
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{pn}_datasheet.html").write_text(_sl_page(vname, pn, body, rnd),
+                                                encoding="utf-8")
+        neg_pns.append((pn, vname))
+        if is_cmos:
+            cmos_pns.append(pn)
+
+    # ---- label sources: ERF pages for most, the DB for a Qorvo slice --------
+    db_space = [r for r in listed if r[1] == "Qorvo"][: max(1, len(listed) // 6)]
+    erf_rows = [r for r in listed if r not in db_space]
+    (erf_dir / "space_amplifiers_1.html").write_text(_sl_erf_page(erf_rows),
+                                                     encoding="utf-8")
+    _sl_make_db(db_path, db_space, neg_pns[:10])
+
+    print(f"synthetic local library: {ds_root}")
+    print(f"  {n_pos} space-like part(s): {len(erf_rows)} listed on everythingRF, "
+          f"{len(db_space)} labelled only in the DB, {hidden} HIDDEN")
+    print(f"  {n_neg} commercial part(s), {len(cmos_pns)} of them CMOS "
+          f"driver/logic")
+    print(f"  everythingRF pages -> {erf_dir}")
+    print(f"  synthetic DB       -> {db_path}\n")
+
+    corpus = build_local_corpus(
+        root=ds_root, db_path=db_path, erf_html=[erf_dir],
+        absent_as="negative", text_mode="full", drop_boilerplate=True,
+        use_db=True, min_chars=LOCAL_MIN_CHARS, verbose=True)
+    _save(LOCAL_JSON, corpus)
+
+    # Boilerplate must actually have been removed, or the model can separate
+    # vendors instead of parts.
+    leaked = [c for c in _SL_CHROME
+              if any(c in Path(r["text_file"]).read_text(encoding="utf-8")
+                     for r in corpus["records"][:20])]
+    print(f"\n  boilerplate check: "
+          + ("all template lines removed" if not leaked
+             else f"! {len(leaked)} chrome line(s) survived: {leaked[:2]}"))
+
+    rc = cmd_train(argparse.Namespace(
+        backend=getattr(args, "backend", "tfidf"),
+        hf_model=getattr(args, "hf_model", DEFAULT_HF_MODEL), mask="none",
+        bags=getattr(args, "bags", 10), folds=getattr(args, "folds", 5),
+        seed=getattr(args, "seed", 0),
+        target_recall=getattr(args, "target_recall", 0.90), threshold=None,
+        show_features=12, no_features=False, prior_weight=1.0, no_prior=False,
+        local=True, local_only=True,
+        neg_weight_cmos=getattr(args, "neg_weight_cmos", 3.0)))
+
+    preds = {p["pn"]: p for p in _load(PRED_JSON, [])}
+    hid = [pn for pn, _v in hidden_pns]
+    got_hidden = sum(1 for pn in hid if preds.get(pn, {}).get("qualifiable"))
+    cmos_flagged = sum(1 for pn in cmos_pns if preds.get(pn, {}).get("qualifiable"))
+    print("\n  SELFTEST ground truth (known only because this data is synthetic)")
+    print(f"    hidden positives recovered   {got_hidden}/{len(hid)}"
+          f"   <- these were labelled NEGATIVE, so each one counted against")
+    print(f"                                     the measured precision while "
+          f"actually being a win")
+    print(f"    CMOS negatives flagged       {cmos_flagged}/{len(cmos_pns)}"
+          f"   <- want 0; they are weighted "
+          f"x{getattr(args, 'neg_weight_cmos', 3.0):g}")
+    print(f"\n  Synthetic tree left at {base} (delete it whenever you like).")
     return rc
 
 
@@ -1734,6 +2325,540 @@ def _pn_from_filename(stem):
     return s[:60]
 
 
+# ============================================================================
+#  LOCAL DATASHEET CORPUS  --  train on the datasheets you already have
+# ============================================================================
+#  Why this exists
+#  ---------------
+#  The original pipeline could only learn from Mini-Circuits PDFs it downloaded
+#  itself. Everything else you hold locally -- Qorvo HTML product pages, Marki /
+#  Skyworks / MACOM PDFs -- was invisible to training even though it is better
+#  data: real datasheet prose, already on disk, no network needed.
+#
+#  Labels come from sources that KNOW, never from the datasheet text:
+#
+#    positive  the part appears in your saved everythingRF space listings,
+#              and/or the rfparts DB already marks it space qualified / hi-rel
+#              (that covers the Qorvo aerospace catalog and the ADI space
+#              portfolio, since your ingests write a space signal for those).
+#    negative  a datasheet you hold whose part appears in NONE of those.
+#
+#  Read that second rule carefully: absence is not proof. A part can be
+#  qualifiable and simply unlisted -- that is the entire premise of the PU
+#  machinery in this file. Treating absence as a hard negative is a deliberate
+#  trade (--absent-as negative, the default because it is what makes precision
+#  measurable at all); --absent-as unlabeled puts them back in the U pool and
+#  keeps the original, more conservative statistics.
+_LOCAL_VENDOR_HINTS = {
+    "marki-microwave": "marki", "marki_microwave": "marki",
+    "markimicrowave": "marki", "marki": "marki",
+    "analog-devices": "adi", "analog_devices": "adi", "analogdevices": "adi",
+    "mini-circuits": "minicircuits", "minicircuits": "minicircuits",
+    "mini_circuits": "minicircuits",
+    "ti": "ti", "texas-instruments": "ti", "texasinstruments": "ti",
+}
+
+# Folders that group the library by qualification rather than by vendor; their
+# CHILDREN are the vendor folders. The tool's own download library uses these.
+_LOCAL_GROUP_DIRS = {"space", "general", "qualified", "grade", "unknown"}
+
+_DS_EXT = {".html", ".htm", ".pdf", ".txt"}
+
+
+def vendor_key_for_folder(name):
+    """Map a datasheet folder name ('Marki-Microwave', 'MACOM') to a vendor key."""
+    raw = str(name or "").strip()
+    if not raw:
+        return None
+    flat = re.sub(r"[^a-z0-9]", "", raw.lower())
+    hit = _LOCAL_VENDOR_HINTS.get(raw.lower().replace(" ", "-")) \
+        or _LOCAL_VENDOR_HINTS.get(flat)
+    if hit and hit in VENDORS:
+        return hit
+    key = vendor_key_for(raw)
+    if key:
+        return key
+    for vk, cfg in VENDORS.items():
+        if flat in (vk, re.sub(r"[^a-z0-9]", "", cfg["slug"].lower()),
+                    re.sub(r"[^a-z0-9]", "", cfg["name"].lower())):
+            return vk
+    return None
+
+
+def discover_local_library(root=None):
+    """Locate the folder holding your saved datasheets.
+
+    Tolerant of how the path actually appears on disk: 'data' vs 'Data',
+    'datasheets' vs the mis-spelling 'datasheeets' -- a wrong guess here reads
+    as 'you have no datasheets', which is a maddening thing to debug."""
+    probes = []
+    if root:
+        probes.append(Path(root).expanduser())
+    probes += [
+        Path(DEFAULT_LOCAL_DS).expanduser(),
+        Path.home() / "Downloads" / "rfparts" / "data" / "datasheets",
+        Path.home() / "Downloads" / "rfparts" / "Data" / "datasheets",
+        Path.home() / "Downloads" / "rfparts" / "rfparts" / "data" / "datasheets",
+        DS_ROOT,
+    ]
+    for p in probes:
+        if p.is_dir():
+            return p
+    # Nothing matched exactly: glob for any 'datashe...' folder next to the
+    # places we looked (this is what catches 'datasheeets').
+    bases = []
+    for p in probes:
+        for cand in (p.parent, p.parent.parent):
+            if cand.is_dir() and cand not in bases:
+                bases.append(cand)
+    for base in bases:
+        for cand in sorted(base.glob("datashe*")):
+            if cand.is_dir():
+                return cand
+        for mid in sorted(base.glob("[Dd]ata")):
+            for cand in sorted(mid.glob("datashe*")):
+                if cand.is_dir():
+                    return cand
+    return None
+
+
+def scan_local_library(root, vendors=None):
+    """Every datasheet file on disk as (vendor_key, folder_label, path).
+
+    Handles both layouts: <root>/<Vendor>/... and <root>/{space,general}/<Vendor>/...
+    """
+    root = Path(root)
+    found, unknown = [], Counter()
+
+    def walk_vendor_dir(d, label):
+        vkey = vendor_key_for_folder(d.name)
+        if not vkey:
+            unknown[d.name] += 1
+            return
+        if vendors and vkey not in vendors:
+            return
+        for f in sorted(d.rglob("*")):
+            if f.is_file() and f.suffix.lower() in _DS_EXT:
+                found.append((vkey, label or d.name, f))
+
+    for sub in sorted(p for p in root.iterdir() if p.is_dir()):
+        if sub.name.lower() in _LOCAL_GROUP_DIRS:
+            for inner in sorted(p for p in sub.iterdir() if p.is_dir()):
+                walk_vendor_dir(inner, f"{sub.name}/{inner.name}")
+        else:
+            walk_vendor_dir(sub, sub.name)
+    return found, unknown
+
+
+def redact_pn(text, pn) -> str:
+    """Replace the part number itself with a placeholder.
+
+    The selftest caught this: with positives named SPQ#### and negatives CMR####,
+    the top char n-grams were 'pq00', 'q004', ' spq0' -- the model had learned the
+    part-number prefix, not the engineering. Real catalogues have exactly this
+    structure (a vendor's space line often shares a prefix), so a model that
+    memorises prefixes scores beautifully in cross-validation and then fails on
+    the unlisted parts you actually want to find.
+
+    Note the trade-off: grade information encoded in a suffix ('-QV', 'X+', '-EP')
+    is redacted along with the rest. Use --keep-pn if you would rather keep it."""
+    if not pn:
+        return text
+    out = text
+    seen = set()
+    for v in sorted({str(pn), norm_pn(pn), norm_pn(pn).replace("+", "")},
+                    key=len, reverse=True):
+        if len(v) >= 4 and v.lower() not in seen:
+            seen.add(v.lower())
+            out = re.sub(re.escape(v), " PARTNO ", out, flags=re.I)
+    # Also catch the PN written with different separators ('QPA-2263' vs 'QPA2263').
+    core = re.sub(r"[^A-Za-z0-9]", "", str(pn))
+    if 5 <= len(core) <= 20:
+        pat = r"[\W_]{0,2}".join(re.escape(c) for c in core)
+        out = re.sub(pat, " PARTNO ", out, flags=re.I)
+    return out
+
+
+def _local_text_path(vendor_key, pn):
+    slug = VENDORS[vendor_key]["slug"] if vendor_key in VENDORS else "Other"
+    safe = re.sub(r"[^A-Za-z0-9._+-]", "_", norm_pn(pn)) or "part"
+    return LOCAL_TXT / slug / f"{safe}.txt"
+
+
+def extract_local_text(path, max_chars=FULL_TEXT_CHARS, text_mode="full"):
+    """Classifier text from a local file, PDF or HTML."""
+    path = Path(path)
+    suffix = path.suffix.lower()
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return ""
+    if suffix == ".pdf":
+        return (extract_full_text(raw, max_chars) if text_mode == "full"
+                else extract_overview(raw))
+    if suffix in (".html", ".htm"):
+        return html_to_text(raw, max_chars)
+    return _strip_tables(raw.decode("utf-8", "replace"), max_chars)
+
+
+# --------------------------------------------- label oracles (never text!)
+_ERF_DNAME = re.compile(r"""(?is)\bdname\s*=\s*["']([^"']+)["']""")
+_ERF_MANU = re.compile(r"""(?is)\bmanu-name\s*=\s*["']([^"']+)["']""")
+_ERF_TITLE_A = re.compile(
+    r"""(?is)<h3[^>]*prod-title[^>]*>\s*<a[^>]*>(.*?)</a>""")
+
+
+def scan_erf_html_pns(folders, verbose=True):
+    """{loose PN -> (mpn, vendor)} for every part in your saved everythingRF
+    pages.
+
+    Those saved pages ARE the space-qualified listings, so appearing in them is
+    the positive label. Parsed straight from the HTML so this works whether or
+    not the rfparts DB has been rebuilt lately."""
+    if isinstance(folders, (str, Path)):
+        folders = [folders]
+    idx, n_files, n_boxes = {}, 0, 0
+    for folder in folders or []:
+        folder = Path(folder)
+        if not folder.is_dir():
+            continue
+        pages = sorted(list(folder.rglob("*.html")) + list(folder.rglob("*.htm")))
+        for f in pages:
+            n_files += 1
+            try:
+                txt = f.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            chunks = re.split(r"(?i)product-box", txt)
+            for ch in (chunks[1:] if len(chunks) > 1 else chunks):
+                pn = ""
+                m = _ERF_DNAME.search(ch)
+                if m:
+                    pn = _html_unescape(m.group(1)).strip()
+                if not pn:
+                    mt = _ERF_TITLE_A.search(ch)
+                    if mt:
+                        label = _html_unescape(
+                            re.sub(r"(?s)<[^>]+>", " ", mt.group(1))).strip()
+                        # listings render as 'Vendor - MPN'
+                        pn = label.split(" - ")[-1].strip() if " - " in label else ""
+                if not pn:
+                    continue
+                n_boxes += 1
+                mv = _ERF_MANU.search(ch)
+                vendor = _html_unescape(mv.group(1)).strip() if mv else ""
+                key = loose_pn(pn)
+                if key and key not in idx:
+                    idx[key] = (pn, vendor)
+    if verbose:
+        print(f"  everythingRF pages scanned {n_files}; "
+              f"{len(idx)} distinct space part number(s) found")
+    return idx, n_files
+
+
+_DB_SPACE_SIGNAL_RE = re.compile(
+    r"erf-space|qorvo|aerospace|ti-space|space|qml|class[-_ ]?[ksv]\b|"
+    r"38534|38535|escc|nasa|jans", re.I)
+
+
+def load_db_space_index(db_path):
+    """{loose PN -> (mpn, vendor, why)} for every part the rfparts pipeline has
+    already labelled space-qualified or hi-rel.
+
+    Reads BOTH the specs table ('space', 'space_variant') and qual_evidence, so
+    it picks up the Qorvo aerospace catalog (qorvo_ingest writes
+    space=qualified) and the ADI space portfolio (adi_space_ingest writes QML /
+    Class S / NASA evidence) without either of them needing to be re-run."""
+    db_path = Path(db_path)
+    if not db_path.is_file():
+        return {}
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute("""
+            SELECT p.mpn, p.vendor,
+                   (SELECT value_text FROM specs s WHERE s.part_id = p.id
+                      AND s.key = 'space' LIMIT 1)          AS sp,
+                   (SELECT value_text FROM specs s WHERE s.part_id = p.id
+                      AND s.key = 'space_variant' LIMIT 1)  AS variant,
+                   (SELECT group_concat(q.signal, '|') FROM qual_evidence q
+                      WHERE q.part_id = p.id)               AS signals
+            FROM parts p
+        """).fetchall()
+    except sqlite3.Error as e:
+        print(f"  ! could not read {db_path}: {e}")
+        conn.close()
+        return {}
+    conn.close()
+    out = {}
+    for r in rows:
+        sp = (r["sp"] or "").strip().lower()
+        variant = (r["variant"] or "").strip().lower()
+        signals = r["signals"] or ""
+        why = ""
+        if sp in ("qualified", "hi_rel", "hirel", "space_qualified"):
+            why = f"DB space={sp}"
+        elif variant in ("space_qualified", "space_grade"):
+            why = f"DB space_variant={variant}"
+        elif signals and _DB_SPACE_SIGNAL_RE.search(signals):
+            why = "DB evidence: " + signals.split("|")[0][:40]
+        if not why:
+            continue
+        key = loose_pn(r["mpn"])
+        if key and key not in out:
+            out[key] = (r["mpn"], r["vendor"] or "", why)
+    return out
+
+
+def load_db_part_index(db_path):
+    """{loose PN -> (mpn, vendor)} for EVERY part in the DB, space or not. Used
+    only to report how much of the local library the DB actually knows about."""
+    db_path = Path(db_path)
+    if not db_path.is_file():
+        return {}
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute("SELECT mpn, vendor FROM parts").fetchall()
+    except sqlite3.Error:
+        conn.close()
+        return {}
+    conn.close()
+    idx = {}
+    for r in rows:
+        key = loose_pn(r["mpn"])
+        if key and key not in idx:
+            idx[key] = (r["mpn"], r["vendor"] or "")
+    return idx
+
+
+def build_label_oracle(db_path=None, erf_html=None, use_db=True, verbose=True):
+    """{loose PN -> (mpn, vendor, why)} of everything known to be space.
+
+    Union of the saved everythingRF listings and the rfparts DB. Deliberately a
+    union: the ERF pages cover the vendors you saved, the DB covers Qorvo and
+    ADI, and neither alone labels the whole local library."""
+    pos = {}
+    erf_files = 0
+    if erf_html:
+        idx, erf_files = scan_erf_html_pns(erf_html, verbose=verbose)
+        for key, (mpn, vendor) in idx.items():
+            pos[key] = (mpn, vendor, "everythingRF saved listing")
+    if use_db and db_path:
+        db_idx = load_db_space_index(db_path)
+        added = 0
+        for key, val in db_idx.items():
+            if key not in pos:
+                pos[key] = val
+                added += 1
+        if verbose and db_idx:
+            print(f"  rfparts DB space-labelled parts {len(db_idx)} "
+                  f"({added} not already in the everythingRF set)")
+    return pos, erf_files
+
+
+# ------------------------------------------------------- corpus assembly
+def build_local_corpus(root=None, db_path=None, erf_html=None, vendors=None,
+                       absent_as="negative", text_mode="full",
+                       drop_boilerplate=True, use_db=True, keep_pn=False,
+                       min_chars=LOCAL_MIN_CHARS, verbose=True):
+    """Turn the local datasheet folders into a labelled training corpus."""
+    root = discover_local_library(root)
+    if not root:
+        raise SystemExit(
+            "could not find your datasheet folder.\n"
+            f"Looked for {DEFAULT_LOCAL_DS} and the usual variants.\n"
+            "Pass --local-dir <folder> (or set it in Settings).")
+    if verbose:
+        print(f"local datasheet library: {root}")
+    files, unknown = scan_local_library(root, vendors=vendors)
+    if not files:
+        raise SystemExit(
+            f"no .pdf/.htm/.html files under {root}\n"
+            "Expected per-vendor subfolders, e.g. Qorvo/, Skyworks/, MACOM/.")
+    if unknown and verbose:
+        print("  ! folders skipped (vendor not recognised): "
+              + ", ".join(sorted(unknown)[:8]))
+
+    oracle, erf_files = build_label_oracle(db_path=db_path, erf_html=erf_html,
+                                           use_db=use_db, verbose=verbose)
+    if not oracle:
+        raise SystemExit(
+            "no space labels available, so every datasheet would be a negative.\n"
+            "Give --erf-html <folder of saved everythingRF pages> and/or --db "
+            "<parts.db>.")
+    db_all = load_db_part_index(db_path) if (use_db and db_path) else {}
+
+    # ---- extract text once per (vendor, part); keep the richest file ----------
+    LOCAL_TXT.mkdir(parents=True, exist_ok=True)
+    best = {}
+    empty = Counter()
+    for vkey, folder, path in files:
+        pn = _pn_from_filename(path.stem)
+        if not pn:
+            continue
+        text = extract_local_text(path, text_mode=text_mode)
+        if len(text.strip()) < min_chars:
+            empty[vkey] += 1
+            continue
+        if not keep_pn:
+            text = redact_pn(text, pn)
+        key = (vkey, loose_pn(pn))
+        prev = best.get(key)
+        if prev is None or len(text) > len(prev["text"]):
+            best[key] = {"vendor": vkey, "pn": pn, "file": str(path),
+                         "kind": path.suffix.lower().lstrip("."),
+                         "folder": folder, "text": text}
+
+    if not best:
+        raise SystemExit(
+            f"found {len(files)} file(s) but none yielded at least {min_chars} "
+            f"characters of text.\nScanned-image PDFs need OCR; try "
+            f"--min-chars 40 to see what is there.")
+
+    # ---- strip per-vendor template chrome ------------------------------------
+    boiler = {}
+    if drop_boilerplate:
+        by_vendor = {}
+        for rec in best.values():
+            by_vendor.setdefault(rec["vendor"], []).append(rec)
+        for vkey, recs in by_vendor.items():
+            lines = _learn_boilerplate([r["text"] for r in recs])
+            if not lines:
+                continue
+            boiler[vkey] = sorted(lines)
+            for r in recs:
+                r["text"] = _drop_lines(r["text"], lines)
+            if verbose:
+                print(f"  {VENDORS[vkey]['name']}: dropped "
+                      f"{len(lines)} boilerplate line(s) common to "
+                      f"{len(recs)} page(s)")
+
+    # ---- label, cache text, build records ------------------------------------
+    records = []
+    counts = Counter()
+    per_vendor = {}
+    thin = Counter()
+    for (vkey, lkey), rec in sorted(best.items()):
+        text = rec["text"]
+        if len(text.strip()) < min_chars:
+            thin[vkey] += 1
+            continue
+        hit = oracle.get(lkey)
+        if hit:
+            label, why = "P", hit[2]
+        else:
+            label = "N" if absent_as == "negative" else "U"
+            why = ("absent from everythingRF space listings and DB space labels"
+                   if label == "N" else "not labelled space by any source")
+        tp = _local_text_path(vkey, rec["pn"])
+        tp.parent.mkdir(parents=True, exist_ok=True)
+        tp.write_text(text, encoding="utf-8")
+        row = {"vendor": vkey, "vendor_name": VENDORS[vkey]["name"],
+               "pn": rec["pn"], "label": label, "label_why": why,
+               "file": rec["file"], "kind": rec["kind"],
+               "folder": rec["folder"], "chars": len(text),
+               "text_file": str(tp), "source": "local",
+               "in_db": bool(db_all.get(lkey)),
+               "cmos_negative": bool(label == "N"
+                                     and _CMOS_NEG_RE.search(text))}
+        records.append(row)
+        counts[label] += 1
+        st = per_vendor.setdefault(vkey, Counter())
+        st[label] += 1
+        st["files"] += 1
+        st[rec["kind"]] += 1
+        st["chars"] += len(text)
+        if row["cmos_negative"]:
+            st["cmos"] += 1
+
+    corpus = {
+        "root": str(root),
+        "built": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "absent_as": absent_as,
+        "text_mode": text_mode,
+        "erf_pages": erf_files,
+        "oracle_size": len(oracle),
+        "boilerplate": boiler,
+        "records": records,
+        "counts": {"P": counts["P"], "N": counts["N"], "U": counts["U"],
+                   "files_seen": len(files), "parts": len(records),
+                   "no_text": sum(empty.values()) + sum(thin.values())},
+        "per_vendor": {k: dict(v) for k, v in per_vendor.items()},
+    }
+    if verbose:
+        _report_local_corpus(corpus, empty)
+    return corpus
+
+
+def _report_local_corpus(corpus, empty=None):
+    c = corpus["counts"]
+    print(f"\n  {c['files_seen']} file(s) on disk -> {c['parts']} part(s) with "
+          f"usable text"
+          + (f"  ({c['no_text']} skipped: too little text)"
+             if c["no_text"] else ""))
+    print(f"\n  {'vendor':<18} {'parts':>6} {'pos':>5} {'neg':>5} {'unlab':>6} "
+          f"{'cmos':>5} {'avg chars':>10}  kinds")
+    for vkey, st in sorted(corpus["per_vendor"].items(),
+                           key=lambda kv: -kv[1].get("files", 0)):
+        n = st.get("files", 0) or 1
+        kinds = ", ".join(f"{k}:{st[k]}" for k in ("pdf", "html", "htm", "txt")
+                          if st.get(k))
+        print(f"  {VENDORS[vkey]['name']:<18} {st.get('files', 0):>6} "
+              f"{st.get('P', 0):>5} {st.get('N', 0):>5} {st.get('U', 0):>6} "
+              f"{st.get('cmos', 0):>5} {st.get('chars', 0) // n:>10}  {kinds}")
+    print(f"  {'TOTAL':<18} {c['parts']:>6} {c['P']:>5} {c['N']:>5} "
+          f"{c['U']:>6}")
+    # A vendor with no positives is usually missing label coverage, not a vendor
+    # with no space parts. Say so loudly: it silently poisons the negative set.
+    blind = [VENDORS[v]["name"] for v, st in corpus["per_vendor"].items()
+             if not st.get("P")]
+    if blind:
+        print(f"\n  ! no positives at all for: {', '.join(sorted(blind))}")
+        print("    Every datasheet from those vendors became a NEGATIVE. If you "
+              "expect\n    some to be space parts, your label sources do not "
+              "cover that vendor --\n    add its everythingRF pages, or re-run "
+              "the vendor's ingest so the DB\n    carries a space signal.")
+    if corpus["counts"]["P"] < 10:
+        print(f"\n  ! only {corpus['counts']['P']} positive(s). Expect very "
+              f"noisy estimates.")
+
+
+def load_local_texts(corpus, mask="none", min_chars=LOCAL_MIN_CHARS):
+    """Attach the cached text to each corpus record."""
+    kept, skipped = [], 0
+    for r in corpus.get("records", []):
+        p = Path(r.get("text_file", ""))
+        txt = p.read_text(encoding="utf-8", errors="replace") if p.is_file() else ""
+        if len(txt.strip()) < min_chars:
+            skipped += 1
+            continue
+        kept.append({**r, "text": mask_text(txt, mask)})
+    return kept, skipped
+
+
+def cmd_localscan(args):
+    """Build the labelled training corpus from datasheets already on disk."""
+    s = load_settings()
+    erf = getattr(args, "erf_html", None) or s.get("erf_html_dir") or None
+    corpus = build_local_corpus(
+        root=getattr(args, "local_dir", None) or s.get("local_ds_dir") or None,
+        db_path=getattr(args, "db", None) or s.get("db"),
+        erf_html=[erf] if erf else None,
+        vendors=(set(args.vendors) if getattr(args, "vendors", None) else None),
+        absent_as=getattr(args, "absent_as", "negative"),
+        text_mode=getattr(args, "text_mode", "full"),
+        drop_boilerplate=not getattr(args, "keep_boilerplate", False),
+        use_db=not getattr(args, "no_db", False),
+        keep_pn=bool(getattr(args, "keep_pn", False)),
+        min_chars=getattr(args, "min_chars", LOCAL_MIN_CHARS))
+    _save(LOCAL_JSON, corpus)
+    print(f"\n  saved corpus -> {LOCAL_JSON}")
+    print(f"  cached text  -> {LOCAL_TXT}")
+    print("\n  Next: `train` (the local corpus is picked up automatically).")
+    return 0
+
+
 _PDF_HREF = re.compile(r"""href\s*=\s*["']([^"']+?\.pdf[^"']*)["']""", re.I)
 
 
@@ -1859,8 +2984,43 @@ def _looks_like_pdf(blob):
     return bool(blob) and blob[:5] == b"%PDF-"
 
 
+def load_db_datasheet_urls(db_path):
+    """(vendor_name, mpn, [urls]) for parts your pipeline already found a
+    datasheet URL for.
+
+    The rfparts `documents` table records the URL of every datasheet the crawler
+    parsed, so these are REAL, already-verified links rather than guesses from a
+    filename pattern -- much better download candidates than the templated URLs.
+    parts.product_url is not used here: it points at an HTML product page, not a
+    PDF, so it would just fail the PDF check."""
+    db_path = Path(db_path or "")
+    if not db_path.is_file():
+        return []
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute("""
+            SELECT p.mpn AS mpn, p.vendor AS vendor, d.url AS url
+            FROM documents d JOIN parts p ON p.id = d.part_id
+            WHERE d.url IS NOT NULL AND d.url != ''
+        """).fetchall()
+    except sqlite3.Error as e:
+        print(f"  ! could not read documents from {db_path}: {e}")
+        conn.close()
+        return []
+    conn.close()
+    merged = {}
+    for r in rows:
+        key = (r["vendor"] or "", loose_pn(r["mpn"]))
+        rec = merged.setdefault(key, {"vendor": r["vendor"] or "",
+                                      "pn": r["mpn"], "urls": []})
+        if r["url"] not in rec["urls"]:
+            rec["urls"].append(r["url"])
+    return list(merged.values())
+
+
 def build_datasheet_targets(catalog_path=None, db_path=None, harvest_dir=None,
-                            include_general=True):
+                            include_general=True, from_db_docs=False):
     """Everything worth downloading: (vendor, pn, space, urls) records.
 
     Sources, in priority order:
@@ -1870,7 +3030,19 @@ def build_datasheet_targets(catalog_path=None, db_path=None, harvest_dir=None,
       3. PDF links harvested from catalog pages you saved yourself.
     """
     space_idx = load_erf_space_index(db_path) if db_path else {}
+    # The everythingRF evidence signal is not the only space label in the DB:
+    # qorvo_ingest and adi_space_ingest write space=qualified / QML evidence of
+    # their own. Without this, a Qorvo aerospace part filed to general/ instead
+    # of space/, which then misleads anything reading the library layout.
+    db_space = load_db_space_index(db_path) if db_path else {}
     targets, skipped_vendors = {}, Counter()
+
+    def space_of(loose_key):
+        if loose_key in space_idx:
+            return space_idx[loose_key][1]
+        if loose_key in db_space:
+            return "qualified"
+        return "unknown"
 
     def add(vendor_key, pn, urls, space, source):
         key = (vendor_key, loose_pn(pn))
@@ -1909,7 +3081,7 @@ def build_datasheet_targets(catalog_path=None, db_path=None, harvest_dir=None,
                         hit["urls"].insert(0, u)
             elif include_general:
                 add("minicircuits", rec["pn"], urls,
-                    space_idx[lk][1] if lk in space_idx else "unknown", "mc-catalog")
+                    space_of(lk), "mc-catalog")
 
     # 2. harvested links
     if harvest_dir:
@@ -1917,14 +3089,32 @@ def build_datasheet_targets(catalog_path=None, db_path=None, harvest_dir=None,
         print(f"  harvested {len(rows)} PDF link(s) from {n_files} saved page(s)")
         for r in rows:
             lk = loose_pn(r["pn"])
-            space = space_idx[lk][1] if lk in space_idx else "unknown"
+            space = space_of(lk)
             if space == "unknown" and not include_general:
                 continue
             add(r["vendor"], r["pn"], [r["url"]], space, "harvest")
 
+    # 3. datasheet URLs the pipeline already discovered, straight from the DB
+    if from_db_docs and db_path:
+        db_rows = load_db_datasheet_urls(db_path)
+        n_added = 0
+        for r in db_rows:
+            vkey = vendor_key_for(r["vendor"])
+            if not vkey:
+                skipped_vendors[r["vendor"] or "(blank)"] += 1
+                continue
+            lk = loose_pn(r["pn"])
+            space = space_of(lk)
+            if space == "unknown" and not include_general:
+                continue
+            add(vkey, r["pn"], r["urls"], space, "db-documents")
+            n_added += 1
+        print(f"  {n_added} part(s) with a datasheet URL already recorded in the "
+              f"rfparts DB")
+
     if skipped_vendors:
         top = ", ".join(f"{v} ({n})" for v, n in skipped_vendors.most_common(6))
-        print(f"  note: {sum(skipped_vendors.values())} everythingRF space part(s) "
+        print(f"  note: {sum(skipped_vendors.values())} space part(s) "
               f"are from vendors this tool has no URL rule for: {top}")
     return list(targets.values())
 
@@ -1943,11 +3133,19 @@ def _rotate(targets):
     return out
 
 
-def _ds_path(vendor_key, pn, space):
+def _ds_path(vendor_key, pn, space, ext=".pdf"):
     root = DS_SPACE if space in ("qualified", "grade") else DS_GENERAL
     slug = VENDORS[vendor_key]["slug"]
     safe = re.sub(r"[^A-Za-z0-9._+-]", "_", norm_pn(pn)) or "part"
-    return root / slug / f"{safe}.pdf"
+    return root / slug / f"{safe}{ext}"
+
+
+def _looks_like_html(blob):
+    if not blob:
+        return False
+    head = blob[:2000].lstrip()[:200].lower()
+    return head.startswith(b"<!doctype html") or head.startswith(b"<html") \
+        or b"<html" in head
 
 
 def _load_manifest():
@@ -1978,7 +3176,8 @@ def cmd_datasheets(args):
     targets = build_datasheet_targets(
         catalog_path=catalog if Path(str(catalog)).is_file() else None,
         db_path=db, harvest_dir=args.harvest,
-        include_general=not args.space_only)
+        include_general=not args.space_only,
+        from_db_docs=bool(getattr(args, "from_db", False)))
     if not targets:
         raise SystemExit(
             "nothing to download.\n"
@@ -2019,15 +3218,27 @@ def cmd_datasheets(args):
         if vcfg["host"] in blocked_hosts:
             skipped_host += 1
             continue
+        allow_html = bool(getattr(args, "allow_html", False))
         path = _ds_path(t["vendor"], t["pn"], t["space"])
-        if path.exists() and not args.refetch:
+        if (path.exists() or (allow_html
+                              and path.with_suffix(".html").exists())) \
+                and not args.refetch:
             continue
         attempts += 1
         blob = err = used = None
+        ext = ".pdf"
         for url in t["urls"]:
             blob, err = fetcher.get(url)
             if blob and _looks_like_pdf(blob):
                 used = url
+                ext = ".pdf"
+                break
+            if blob and allow_html and _looks_like_html(blob):
+                # local-scan reads HTML as happily as PDF, so for vendors whose
+                # datasheet ids are opaque (Qorvo) the product page is still
+                # usable training text.
+                used = url
+                ext = ".html"
                 break
             if err and "robots" in str(err):
                 blocked_hosts.add(vcfg["host"])
@@ -2042,6 +3253,7 @@ def cmd_datasheets(args):
                   f"{'FAILED':<10} tried {len(t['urls'])} url(s)"
                   f"{'' if not err else ': ' + str(err)}", flush=True)
             continue
+        path = _ds_path(t["vendor"], t["pn"], t["space"], ext=ext)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(blob)
         rec = {"mpn": t["pn"], "vendor_key": t["vendor"],
@@ -2095,6 +3307,12 @@ DEFAULT_SETTINGS = {
     "harvest_dir": "",
     "ds_limit": 400,
     "review_out": "review_queue.csv",
+    # local datasheet corpus
+    "local_ds_dir": DEFAULT_LOCAL_DS,
+    "erf_html_dir": "",
+    "absent_as": "negative",
+    "neg_weight_cmos": 3.0,
+    "local_only": True,     # train on local datasheets alone by default
 }
 
 
@@ -2123,7 +3341,17 @@ def _train_ns(s):
                bags=s["bags"], folds=s["folds"], seed=0,
                target_recall=s["target_recall"], threshold=None,
                show_features=25, no_features=False,
-               prior_weight=s["prior_weight"], no_prior=False)
+               prior_weight=s["prior_weight"], no_prior=False,
+               local=True, local_only=s.get("local_only", True),
+               neg_weight_cmos=s.get("neg_weight_cmos", 3.0))
+
+
+def _localscan_ns(s):
+    return _ns(local_dir=s.get("local_ds_dir") or None,
+               db=s.get("db"), erf_html=s.get("erf_html_dir") or None,
+               vendors=None, absent_as=s.get("absent_as", "negative"),
+               text_mode=s.get("text_mode", "full"), keep_boilerplate=False,
+               no_db=False, keep_pn=False, min_chars=LOCAL_MIN_CHARS)
 
 
 def _age(path):
@@ -2142,6 +3370,12 @@ def _age(path):
 def step_evidence():
     """What already looks done, so a re-run can offer to skip it."""
     ev = {}
+    corpus = _load(LOCAL_JSON, None)
+    if corpus:
+        c = corpus.get("counts", {})
+        ev["LOCAL-SCAN"] = (f"{c.get('parts', 0)} local datasheet(s): "
+                            f"{c.get('P', 0)} P / {c.get('N', 0)} N / "
+                            f"{c.get('U', 0)} U, {_age(LOCAL_JSON)}")
     match = _load(MATCH_JSON, None)
     if match:
         c = match["counts"]
@@ -2190,20 +3424,31 @@ def cmd_runall(args):
     s = load_settings()
     if getattr(args, "catalog", None):
         s["catalog"] = args.catalog
-    if not Path(s["catalog"]).is_file():
+    local_root = discover_local_library(s.get("local_ds_dir") or None)
+    have_catalog = Path(str(s["catalog"])).is_file()
+    if not local_root and not have_catalog:
         raise SystemExit(
-            f"catalog not found: {s['catalog']}\n"
-            f"Set the path with `settings` in the menu, pass --catalog, or edit "
-            f"DEFAULT_CATALOG at the top of this file.")
+            f"nothing to train on.\n"
+            f"  local datasheets: not found (set 'local datasheet dir' in "
+            f"Settings)\n"
+            f"  Mini-Circuits catalog: {s['catalog']} (not found)\n"
+            f"Point one of them at real data and re-run.")
     mode = ("force" if getattr(args, "force", False)
             else "resume" if getattr(args, "resume", False) else "ask")
     ev = step_evidence()
     if ev and mode == "ask":
         print("Found existing work; you'll be asked which steps to skip.")
-    steps = [
-        ("MATCH", lambda: cmd_match(_ns(catalog=s["catalog"], db=s["db"],
-                                        positives=None))),
-        ("FETCH", lambda: cmd_fetch(_fetch_ns(s))),
+    steps = []
+    if local_root:
+        # Preferred path: real datasheet prose already on disk, no network.
+        steps.append(("LOCAL-SCAN", lambda: cmd_localscan(_localscan_ns(s))))
+    if have_catalog and not s.get("local_only", True):
+        steps += [
+            ("MATCH", lambda: cmd_match(_ns(catalog=s["catalog"], db=s["db"],
+                                            positives=None))),
+            ("FETCH", lambda: cmd_fetch(_fetch_ns(s))),
+        ]
+    steps += [
         ("TRAIN", lambda: cmd_train(_train_ns(s))),
         ("REVIEW", lambda: cmd_review(_ns(out=s["review_out"], limit=0))),
     ]
@@ -2235,6 +3480,13 @@ def _status_line():
         ds = f"{c['matched_in_catalog'] + c['url_guess']} P / {c['unlabeled']} U"
     else:
         ds = "not matched yet"
+    corpus = _load(LOCAL_JSON, None)
+    if corpus:
+        c = corpus.get("counts", {})
+        local = (f"{c.get('parts', 0)} datasheet(s): {c.get('P', 0)} P / "
+                 f"{c.get('N', 0)} N / {c.get('U', 0)} U")
+    else:
+        local = "not scanned yet  (menu option L)"
     n_txt = len(list(CACHE_TXT.glob("*.txt"))) if CACHE_TXT.exists() else 0
     model = "none"
     if MODEL_FILE.exists():
@@ -2246,7 +3498,7 @@ def _status_line():
                      f"{b.get('trained', '?')}")
         except Exception:
             model = "unreadable"
-    return ds, n_txt, model
+    return ds, n_txt, model, local
 
 
 MENU = """
@@ -2254,12 +3506,14 @@ MENU = """
   spacequal - is this RF part space-qualifiable?
 ==============================================================
   dataset : {ds}
+  local   : {local}
   cache   : {n_txt} datasheet text file(s)
   model   : {model}
   catalog : {catalog}
 --------------------------------------------------------------
+  L) SCAN LOCAL DATASHEETS     <- train on files you already have (offline)
   1) Build datasheet LIBRARY   (multi-vendor, rotates hosts)
-  2) Run everything            (match -> fetch -> train -> review)
+  2) Run everything            (local-scan -> train -> review)
   3) Match catalog to everythingRF space parts
   4) Fetch Mini-Circuits datasheets  (verbose progress)
   5) Train classifier
@@ -2287,6 +3541,11 @@ SETTINGS_MENU = """
  10) text mode         {text_mode}   (full = whole datasheet)
  11) harvest folder    {harvest_dir}
  12) datasheet limit   {ds_limit}   (downloads per run)
+ 13) local datasheets  {local_ds_dir}
+ 14) everythingRF HTML {erf_html_dir}
+ 15) absent parts are  {absent_as}   (negative | unlabeled)
+ 16) CMOS neg. weight  {neg_weight_cmos}
+ 17) local only        {local_only}   (skip the Mini-Circuits path)
   0) back"""
 
 
@@ -2342,6 +3601,27 @@ def settings_menu(s):
             elif choice == "12":
                 s["ds_limit"] = int(_ask("datasheet downloads per run",
                                          s.get("ds_limit", 400)))
+            elif choice == "13":
+                s["local_ds_dir"] = _ask("folder of saved datasheets "
+                                         "(per-vendor subfolders)",
+                                         s.get("local_ds_dir", ""))
+            elif choice == "14":
+                s["erf_html_dir"] = _ask("folder of saved everythingRF space "
+                                         "pages (label oracle)",
+                                         s.get("erf_html_dir", ""))
+            elif choice == "15":
+                v = _ask("parts absent from every space source are "
+                         "(negative/unlabeled)", s.get("absent_as", "negative"))
+                s["absent_as"] = v if v in ("negative", "unlabeled") \
+                    else s["absent_as"]
+            elif choice == "16":
+                s["neg_weight_cmos"] = float(
+                    _ask("weight for CMOS driver/logic negatives",
+                         s.get("neg_weight_cmos", 3.0)))
+            elif choice == "17":
+                v = _ask("local only (yes/no)",
+                         "yes" if s.get("local_only", True) else "no")
+                s["local_only"] = str(v).strip().lower() in ("y", "yes", "true", "1")
         except ValueError:
             print("  ! not a number, unchanged")
 
@@ -2349,8 +3629,8 @@ def settings_menu(s):
 def menu():
     s = load_settings()
     while True:
-        ds, n_txt, model = _status_line()
-        print(MENU.format(ds=ds, n_txt=n_txt, model=model,
+        ds, n_txt, model, local = _status_line()
+        print(MENU.format(ds=ds, n_txt=n_txt, model=model, local=local,
                           catalog=s["catalog"]))
         try:
             choice = input("  choice> ").strip()
@@ -2359,12 +3639,15 @@ def menu():
         try:
             if choice in ("0", "q", "quit", "exit"):
                 return 0
+            elif choice.lower() == "l":
+                cmd_localscan(_localscan_ns(s))
             elif choice == "1":
                 cmd_datasheets(_ns(
                     catalog=s["catalog"], db=s["db"],
                     harvest=(s.get("harvest_dir") or None),
                     limit=s.get("ds_limit", 400), rate=s["rate"],
-                    space_only=False, refetch=False, ignore_robots=False))
+                    space_only=False, refetch=False, ignore_robots=False,
+                    from_db=True, allow_html=True))
             elif choice == "2":
                 cmd_runall(_ns(catalog=s["catalog"], force=False, resume=False))
             elif choice == "3":
@@ -2385,7 +3668,9 @@ def menu():
                 cmd_selftest(_ns(backend=s["backend"], hf_model=s["hf_model"],
                                  positives=60, unlabeled=1500, hidden=45,
                                  bags=10, folds=5,
-                                 target_recall=s["target_recall"], seed=0))
+                                 target_recall=s["target_recall"], seed=0,
+                                 local=False, negatives=60,
+                                 neg_weight_cmos=s.get("neg_weight_cmos", 3.0)))
             elif choice.lower() == "c":
                 clear_menu()
             else:
@@ -2414,6 +3699,33 @@ def build_parser():
 
     mn = sub.add_parser("menu", help="interactive menu (also the default)")
     mn.set_defaults(func=lambda a: menu())
+
+    ls = sub.add_parser("local-scan",
+                        help="build the training corpus from datasheets you "
+                             "already have on disk (offline)")
+    ls.add_argument("--local-dir", help=f"default: {DEFAULT_LOCAL_DS}")
+    ls.add_argument("--db", help="rfparts parts.db (Qorvo/ADI space labels)")
+    ls.add_argument("--erf-html",
+                    help="folder of saved everythingRF space pages, used ONLY "
+                         "as the positive-label oracle")
+    ls.add_argument("--vendors", nargs="*",
+                    help="restrict to these vendor keys, e.g. qorvo marki")
+    ls.add_argument("--absent-as", choices=("negative", "unlabeled"),
+                    default="negative",
+                    help="how to treat a datasheet absent from every space "
+                         "source (default negative)")
+    ls.add_argument("--text-mode", choices=("full", "overview"), default="full")
+    ls.add_argument("--min-chars", type=int, default=LOCAL_MIN_CHARS,
+                    help="skip files yielding less text than this")
+    ls.add_argument("--keep-boilerplate", action="store_true",
+                    help="do NOT strip per-vendor nav/footer chrome")
+    ls.add_argument("--keep-pn", action="store_true",
+                    help="keep the part number in the training text (default is "
+                         "to redact it, so the model cannot memorise PN "
+                         "prefixes that correlate with the label)")
+    ls.add_argument("--no-db", action="store_true",
+                    help="ignore the rfparts DB; label from --erf-html only")
+    ls.set_defaults(func=cmd_localscan)
 
     m = sub.add_parser("match", help="join everythingRF space parts to the catalog")
     m.add_argument("--catalog", required=True, help="minicircuits_products_full.json")
@@ -2460,7 +3772,15 @@ def build_parser():
     t.add_argument("--no-prior", action="store_true",
                    help="train and score on the learned model alone")
     t.add_argument("--seed", type=int, default=0)
-    t.set_defaults(func=cmd_train)
+    t.add_argument("--no-local", dest="local", action="store_false",
+                   help="ignore the local datasheet corpus")
+    t.add_argument("--local-only", action="store_true",
+                   help="train ONLY on the local datasheet corpus (skip the "
+                        "Mini-Circuits match)")
+    t.add_argument("--neg-weight-cmos", type=float, default=3.0,
+                   help="sample weight for negatives whose text is CMOS "
+                        "driver/logic language (default 3.0)")
+    t.set_defaults(func=cmd_train, local=True)
 
     pr = sub.add_parser("predict", help="score new text or a cached part")
     pr.add_argument("--text", help="datasheet paragraph to score")
@@ -2493,6 +3813,12 @@ def build_parser():
                     help="only parts everythingRF lists as space qualified/grade")
     ds.add_argument("--refetch", action="store_true")
     ds.add_argument("--ignore-robots", action="store_true")
+    ds.add_argument("--from-db", action="store_true",
+                    help="also download the datasheet URLs your pipeline "
+                         "already recorded in parts.db (documents table)")
+    ds.add_argument("--allow-html", action="store_true",
+                    help="keep HTML product pages too (usable training text "
+                         "for vendors with opaque PDF ids, e.g. Qorvo)")
     ds.set_defaults(func=cmd_datasheets)
 
     cl = sub.add_parser("clear", help="delete cached downloads / derived files")
@@ -2518,6 +3844,12 @@ def build_parser():
     s.add_argument("--folds", type=int, default=5)
     s.add_argument("--target-recall", type=float, default=0.90)
     s.add_argument("--seed", type=int, default=0)
+    s.add_argument("--local", action="store_true",
+                   help="exercise the LOCAL datasheet path instead: synthetic "
+                        "HTML library + everythingRF pages + parts.db")
+    s.add_argument("--negatives", type=int, default=60,
+                   help="synthetic labelled negatives for --local")
+    s.add_argument("--neg-weight-cmos", type=float, default=3.0)
     s.set_defaults(func=cmd_selftest)
     return p
 
