@@ -1,33 +1,4 @@
-PS C:\Users\lane.white> "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" ^
-ParserError:
-Line |
-   1 |  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" ^
-     |                                                               ~
-     | Unexpected token '^' in expression or statement.
-PS C:\Users\lane.white>             --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\\rfparts-chrome"
-ParserError:
-Line |
-   1 |              --remote-debugging-port=9222 --user-data-dir="%USERPROFIL …
-     |                ~
-     | Missing expression after unary operator '--'.
-PS C:\Users\lane.white> "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" ^ --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\\rfparts-chrome"
-ParserError:
-Line |
-   1 |  … C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" ^ --remot …
-     |                                                                ~
-     | Unexpected token '^' in expression or statement.
-PS C:\Users\lane.white> "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe
-PS C:\Users\lane.white> --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\\rfparts-chrome"
-ParserError:
-Line |
-   1 |  --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\\rfparts- …
-     |    ~
-     | Missing expression after unary operator '--'.
-PS C:\Users\lane.white> "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"  --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\\rfparts-chrome"
-ParserError:
-Line |
-   1 |  … hrome\\Application\\chrome.exe"  --remote-debugging-port=9222 --user- …
-     |                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~
-     | Unexpected token 'remote-debugging-port=9222' in expression or statement.
-PS C:\Users\lane.white>
+=== Qorvo: 6 parametric table(s) -> C:\Users\lane.white\Downloads\rfparts\Sources\QorvoParametric ===
+[1/6] https://www.qorvo.com/products/amplifiers/lnas-gain-blocks/parametric-table
+    ! the parametric grid never appeared. The page may need a moment more, or its markup changed.
+    ! saved nothing useful: 0 grid rows in 1,196,179 bytes. Not writing the file.
