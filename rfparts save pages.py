@@ -1,4 +1,4 @@
-"""rfparts_save_pages.py — save listing/table pages from YOUR OWN browser.
+r"""rfparts_save_pages.py — save listing/table pages from YOUR OWN browser.
 
 One script for both sources that need a real browser:
 
@@ -18,21 +18,29 @@ WHAT THIS IS NOT
     back to you. Any clearance cookie in play is one you earned as a human in your
     own profile. Requests stay human-paced and supervised.
 
-SETUP (once)
+SETUP
     pip install playwright
 
-    Launch Chrome with a debug port and a dedicated profile:
+    That is all. The script finds Chrome and launches it itself, with a debug
+    port and a dedicated profile (~/rfparts-chrome), leaving your normal Chrome
+    windows untouched. If a session is already listening it attaches to that
+    instead.
 
-      Windows
-        "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" ^
-            --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\\rfparts-chrome"
+    Only if auto-detection misses your install:
+        python rfparts_save_pages.py --chrome "C:\Program Files\Google\Chrome\Application\chrome.exe"
 
-      macOS
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \\
-            --remote-debugging-port=9222 --user-data-dir="$HOME/rfparts-chrome"
+    Or start it yourself. In PowerShell (note: & to run a quoted path, a backtick
+    to continue a line, $env: not %VAR%):
 
-      Linux
-        google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/rfparts-chrome"
+        & "C:\Program Files\Google\Chrome\Application\chrome.exe" `
+            --remote-debugging-port=9222 `
+            --user-data-dir="$env:USERPROFILE\rfparts-chrome"
+
+    In cmd.exe it is ^ for continuation and %USERPROFILE%:
+
+        "C:\Program Files\Google\Chrome\Application\chrome.exe" ^
+            --remote-debugging-port=9222 ^
+            --user-data-dir="%USERPROFILE%\rfparts-chrome"
 
 USAGE
     python rfparts_save_pages.py --source qorvo
@@ -234,6 +242,160 @@ def erf_targets(sources_root, erf_folder, verbose=True):
     return sorted(merged.items())
 
 
+
+# ---------------------------------------------------------------- Chrome
+# Launching Chrome ourselves, rather than making you paste a command line.
+#
+# A dedicated --user-data-dir is not optional: Chrome ignores
+# --remote-debugging-port when it hands the URL to an already-running instance of
+# the same profile, so pointing at your everyday profile silently produces a
+# browser with no debug port. A separate profile directory means a separate
+# process, which is also why your normal Chrome windows are left alone.
+#
+# This is still your browser, visible, non-headless, with no stealth flags and no
+# fingerprint tampering. You still clear any human check yourself.
+CHROME_CANDIDATES = {
+    "win32": [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    ],
+    "darwin": [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    ],
+    "linux": ["google-chrome", "google-chrome-stable", "chromium",
+              "chromium-browser", "microsoft-edge"],
+}
+
+
+def find_chrome(explicit=None):
+    """Path to a Chrome/Chromium/Edge binary, or None."""
+    import shutil
+    if explicit:
+        pth = Path(os.path.expandvars(explicit))
+        return str(pth) if pth.exists() else None
+    env = os.environ.get("RFPARTS_CHROME", "").strip()
+    if env:
+        pth = Path(os.path.expandvars(env))
+        if pth.exists():
+            return str(pth)
+    for cand in CHROME_CANDIDATES.get(sys.platform, CHROME_CANDIDATES["linux"]):
+        expanded = os.path.expandvars(cand)
+        if os.path.sep in expanded or expanded.endswith(".exe"):
+            if Path(expanded).exists():
+                return expanded
+        else:
+            found = shutil.which(expanded)
+            if found:
+                return found
+    for name in ("chrome", "google-chrome", "chromium", "msedge"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def _port_open(endpoint, timeout=1.0):
+    import socket
+    parsed = urllib.parse.urlparse(endpoint)
+    host, port = parsed.hostname or "localhost", parsed.port or 9222
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def launch_chrome(endpoint, profile_dir, chrome_path=None, wait=30):
+    """Start Chrome with a debug port on a dedicated profile. Returns Popen."""
+    import subprocess
+    exe = find_chrome(chrome_path)
+    if not exe:
+        print("  ! could not find Chrome automatically.")
+        print("    Pass --chrome \"C:\\Path\\To\\chrome.exe\" or set the "
+              "RFPARTS_CHROME env var.")
+        return None
+    port = urllib.parse.urlparse(endpoint).port or 9222
+    profile = Path(os.path.expandvars(str(profile_dir))).expanduser()
+    profile.mkdir(parents=True, exist_ok=True)
+    cmd = [exe, f"--remote-debugging-port={port}",
+           f"--user-data-dir={profile}",
+           "--no-first-run", "--no-default-browser-check",
+           "about:blank"]
+    print(f"  launching {Path(exe).name} on port {port}")
+    print(f"    profile: {profile}")
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL)
+    except Exception as e:
+        print(f"  ! could not launch Chrome: {type(e).__name__}: {e}")
+        return None
+    for _ in range(int(wait * 2)):
+        if _port_open(endpoint):
+            print("    debug port is up")
+            return proc
+        time.sleep(0.5)
+    print(f"  ! Chrome started but port {port} never opened within {wait}s.")
+    return proc
+
+
+def attach(p, endpoint, profile_dir=None, chrome_path=None, allow_launch=True):
+    """Attach to Chrome, launching it first if nothing is listening."""
+    launched = None
+    if not _port_open(endpoint):
+        if not allow_launch:
+            sys.exit(f"Nothing is listening on {endpoint} and --no-launch was "
+                     f"given.")
+        print(f"  nothing on {endpoint} yet")
+        launched = launch_chrome(endpoint, profile_dir or _default_profile(),
+                                 chrome_path)
+        if not _port_open(endpoint):
+            sys.exit("Could not get a Chrome debug port. Start Chrome yourself "
+                     "with:\n  " + powershell_hint(endpoint,
+                                                    profile_dir or
+                                                    _default_profile()))
+    else:
+        print(f"  found an existing Chrome debug session on {endpoint}")
+    last = None
+    for _ in range(10):
+        try:
+            browser = p.chromium.connect_over_cdp(endpoint)
+            break
+        except Exception as e:
+            last = e
+            time.sleep(1.0)
+    else:
+        sys.exit(f"Could not attach to Chrome at {endpoint}: {last}")
+    ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+    page = ctx.pages[0] if ctx.pages else ctx.new_page()
+    return browser, page, launched
+
+
+def _default_profile():
+    return Path.home() / "rfparts-chrome"
+
+
+def powershell_hint(endpoint, profile):
+    """The correct PowerShell incantation, for when auto-launch cannot work.
+
+    Written out properly because the usual copy-paste failures are all avoidable:
+    PowerShell needs the call operator & for a quoted path, uses a backtick (not
+    ^) to continue a line, and expands $env:USERPROFILE rather than
+    %USERPROFILE%.
+    """
+    port = urllib.parse.urlparse(endpoint).port or 9222
+    exe = find_chrome() or (
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+        if sys.platform == "win32" else
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        if sys.platform == "darwin" else "google-chrome")
+    return (f'& "{exe}" --remote-debugging-port={port} '
+            f'--user-data-dir="{profile}"')
+
+
 def looks_like_challenge(html: str) -> bool:
     low = html.lower()
     return any(m in low for m in CF_MARKERS) and len(html) < 30000
@@ -245,18 +407,6 @@ def sig(html: str) -> str:
 
 def human_pause(base):
     time.sleep(base + random.uniform(0.4, 2.0))
-
-
-def attach(p, endpoint):
-    try:
-        browser = p.chromium.connect_over_cdp(endpoint)
-    except Exception as e:
-        sys.exit(f"Could not attach to Chrome at {endpoint}: {e}\n"
-                 "Launch Chrome with --remote-debugging-port=9222 first "
-                 "(see the header of this file).")
-    if not browser.contexts or not browser.contexts[0].pages:
-        sys.exit("No open tab found. Open any page in that Chrome window first.")
-    return browser, browser.contexts[0].pages[0]
 
 
 def _wait_settled(page, timeout=20000):
@@ -480,7 +630,16 @@ def main(argv=None):
                     help="limit to entries whose name contains these, e.g. "
                          "--only switches mixers")
     ap.add_argument("--next-selector", default=None)
-    ap.add_argument("--endpoint", default="http://localhost:9222")
+    ap.add_argument("--endpoint", default="http://localhost:9222",
+                    help="CDP endpoint (default http://localhost:9222)")
+    ap.add_argument("--chrome", default=None,
+                    help="path to chrome.exe if auto-detection misses it")
+    ap.add_argument("--profile", default=None,
+                    help="Chrome user-data-dir to launch with "
+                         "(default ~/rfparts-chrome)")
+    ap.add_argument("--no-launch", action="store_true",
+                    help="do not start Chrome; require a session already "
+                         "listening on --endpoint")
     ap.add_argument("--delay", type=float, default=3.0)
     ap.add_argument("--overwrite", action="store_true",
                     help="re-save pages that already exist")
@@ -508,8 +667,10 @@ def main(argv=None):
 
     print(f"\nsources root: {out_root}")
     with sync_playwright() as p:
-        browser, page = attach(p, args.endpoint)
-        print(f"attached to Chrome: {page.url[:80]}")
+        browser, page, launched = attach(
+            p, args.endpoint, profile_dir=args.profile,
+            chrome_path=args.chrome, allow_launch=not args.no_launch)
+        print(f"attached to Chrome: {page.url[:80] or 'about:blank'}")
         total = 0
         if choice in ("qorvo", "both"):
             total += save_qorvo(page, out_root, args.delay, only=args.only,
