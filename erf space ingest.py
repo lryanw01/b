@@ -56,6 +56,8 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
+from . import specmatch as _specmatch
+
 # Dual-mode import: works as `python -m pythonrfparts.erf_space_ingest` and as
 # `python pythonrfparts\erf_space_ingest.py`.
 try:
@@ -75,6 +77,15 @@ FOLDER_GLOB = "EverythingRFSpace*"          # matches Space* and SpaceQual*
 # everythingRF listing attribute label -> (spec key, kind).
 # kind: "freq" -> GHz min/max ; "num" -> numeric (range=min/max, single=typ,
 # keeps unit) ; "text" -> stored verbatim.
+# Bump this whenever the PARSING changes in a way that would extract something
+# new from the same file. Resume compares file contents, which is right for
+# detecting edited pages and wrong for detecting an improved parser: adding the
+# "Termination" mapping meant every saved switch page had a value we had never
+# read, yet resume saw the bytes were unchanged and skipped all of them. The
+# version is stored in the checkpoint, so an upgrade re-reads once, automatically,
+# instead of needing a manual Reset that nobody knows to do.
+PARSER_VERSION = 3
+
 _ATTRS = {
     "frequency": ("freq_ghz", "freq"),
     "gain": ("gain_db", "num"),
@@ -91,11 +102,27 @@ _ATTRS = {
     "directivity": ("directivity_db", "num"),
     "vswr": ("vswr", "num"),
     "impedance": ("impedance_ohm", "num"),
+    "waveguide": ("waveguide", "text"),
+    "modulation": ("modulation", "text"),
+
+    # Switch speed: everythingRF labels this a few different ways and the
+    # unit varies by technology (ns for solid-state, ms for electromechanical),
+    # so it gets its own "time_ns" kind rather than "num" -- storing the bare
+    # number would make a 2 ms relay sort as faster than a 50 ns PIN switch.
+    "switching speed": ("switching_time_ns", "time_ns"),
+    "switching time": ("switching_time_ns", "time_ns"),
+    "rise time": ("switching_time_ns", "time_ns"),
+    "rise/fall time": ("switching_time_ns", "time_ns"),
+
     "connector": ("connector", "text"),
     "configuration": ("configuration", "text"),
     "package type": ("package", "text"),
     "type": ("subtype", "text"),
     "sub-category": ("subcategory_text", "text"),
+    # everythingRF states a switch's construction under "Termination"
+    # (Absorptive / Reflective). That is the authoritative field for it, so it is
+    # preferred over anything inferred from the title or description.
+    "termination": ("switch_type", "text"),
     "industry application": ("industry_application", "text"),
     "pulsed/cw": ("pulsed_cw", "text"),
     "operating temperature": ("temp_c", "text"),
@@ -265,6 +292,49 @@ def _norm_unit(u: str) -> str:
     return u
 
 
+_TIME_NS_UNITS = {"ns": 1.0, "nsec": 1.0, "us": 1e3, "usec": 1e3,
+                  "\u00b5s": 1e3, "\u03bcs": 1e3, "ms": 1e6, "msec": 1e6,
+                  "s": 1e9, "sec": 1e9}
+_TIME_NS_RE = re.compile(
+    r"([-+]?\d+(?:\.\d+)?)\s*(ns|nsec|us|usec|\u00b5s|\u03bcs|ms|msec|s|sec)\b",
+    re.I)
+
+
+def _parse_time_ns(text, unit_hint=None):
+    """A switching-speed cell normalised to nanoseconds.
+
+    The unit is mandatory: a bare '2' could be 2 ns or 2 ms, and guessing would
+    silently collapse the exact distinction (solid-state vs. electromechanical)
+    that this spec exists to preserve."""
+    hits = _TIME_NS_RE.findall(text or "")
+    if not hits and unit_hint:
+        factor = _TIME_NS_UNITS.get(str(unit_hint).lower())
+        if factor:
+            nums = re.findall(r"[-+]?\d+(?:\.\d+)?", text or "")
+            vals = [float(n) * factor for n in nums]
+            if vals:
+                if len(vals) > 1:
+                    return {"value_min": min(vals), "value_max": max(vals),
+                            "unit": "ns"}
+                return {"value_typ": vals[0], "unit": "ns"}
+    if not hits:
+        return None
+    vals = []
+    for num, unit in hits:
+        factor = _TIME_NS_UNITS.get(unit.lower())
+        if factor is None:
+            continue
+        try:
+            vals.append(float(num) * factor)
+        except ValueError:
+            continue
+    if not vals:
+        return None
+    if len(vals) > 1:
+        return {"value_min": min(vals), "value_max": max(vals), "unit": "ns"}
+    return {"value_typ": vals[0], "unit": "ns"}
+
+
 def _parse_value(kind: str, text: str, unit_hint=None) -> dict | None:
     """everythingRF cell text -> SpecRow numeric kwargs, or None.
 
@@ -277,6 +347,8 @@ def _parse_value(kind: str, text: str, unit_hint=None) -> dict | None:
         return {"value_text": t[:200]}
     if kind == "freq":
         return _parse_freq(t, unit_hint)
+    if kind == "time_ns":
+        return _parse_time_ns(t, unit_hint)
     um = _UNIT.search(t)
     unit = _norm_unit(um.group(1)) if um else ""
     rng = _RANGE.search(t)
@@ -542,6 +614,78 @@ def _page_header(soup: BeautifulSoup) -> str:
     return ""
 
 
+def _registry_throw(*texts):
+    """registry.throw_config, imported lazily to keep this module standalone."""
+    try:
+        from .registry import throw_config
+    except Exception:
+        try:
+            from registry import throw_config          # flat layout
+        except Exception:
+            return ""
+    return throw_config(*texts)
+
+
+_LABEL_NOISE = re.compile(
+    r"\((?:[^)]*)\)|\[[^\]]*\]|,?\s*(?:max|min|typ|typical|nom|nominal|"
+    r"maximum|minimum|avg|average)\b|\s*[:\-]\s*$", re.I)
+_LABEL_UNIT = re.compile(
+    r"\s*(?:in\s+)?(?:d?bm?|db|ghz|mhz|khz|hz|ns|us|ms|ohms?|\u03a9|w|mw|dbc|"
+    r"degc|\u00b0c|c|v|ma|a|%|psec|nsec)\s*$", re.I)
+
+
+def _norm_attr_label(label):
+    """everythingRF label -> lookup key, tolerant of qualifiers and units.
+
+    The lookup was an exact dict hit on the lowercased label, so 'Switching Speed
+    (Max)', 'Isolation, dB' or 'Insertion Loss (Typical)' all missed silently and
+    the spec was dropped. Strip parentheticals, bracketed notes, max/min/typ
+    qualifiers and a trailing unit, then collapse separators."""
+    s = str(label or "").strip().rstrip(":").lower()
+    prev = None
+    while prev != s:
+        prev = s
+        s = _LABEL_NOISE.sub(" ", s).strip()
+    s = _LABEL_UNIT.sub("", s).strip()
+    s = re.sub(r"[\s/_]+", " ", s).strip(" -,")
+    return s
+
+
+# Normalised form -> the same targets, so both spellings resolve.
+_ATTRS_NORM = {}
+
+
+_LABEL_UNIT_RE = re.compile(
+    r"[(\[,]\s*(ns|nsec|us|usec|\u00b5s|\u03bcs|ms|msec|s|sec|ghz|mhz|khz|hz|"
+    r"db|dbm|dbc|w|watts?|mw|v|mv|ma|a|ohms?|deg|c|%|krad|mev|gbps|mbps)\s*[)\]]?",
+    re.I)
+
+
+def _label_unit_hint(label):
+    """The unit a vendor wrote into the column header, if any."""
+    m = _LABEL_UNIT_RE.search(str(label or ""))
+    return m.group(1).lower() if m else None
+
+
+def _attr_lookup(label):
+    """Resolve an everythingRF attribute label to (spec key, value kind).
+
+    Three passes, widening: the exact table, the locally-normalised table, then
+    the shared cross-vendor matcher. The third pass is what catches wordings
+    nobody added here -- "Package Category", "Typical Insertion Loss @ 10 GHz",
+    "Number of Throws" -- which previously resolved to nothing and were dropped
+    without a trace, indistinguishable from the vendor never publishing them."""
+    if not _ATTRS_NORM:
+        for k, v in _ATTRS.items():
+            _ATTRS_NORM.setdefault(_norm_attr_label(k), v)
+    raw = str(label or "").strip().rstrip(":").lower()
+    hit = _ATTRS.get(raw) or _ATTRS_NORM.get(_norm_attr_label(label))
+    if hit:
+        return hit
+    key, kind = _specmatch.resolve(label)
+    return (key, kind) if key else None
+
+
 def parse_page(html: str, folder_name: str):
     """Yield one dict per part on a saved everythingRF listing page."""
     soup = BeautifulSoup(html, "html.parser")
@@ -580,13 +724,17 @@ def parse_page(html: str, folder_name: str):
             if not value:
                 continue
             attrs[label] = value
-            mapped = _ATTRS.get(label)
+            mapped = _attr_lookup(label)
             if not mapped:
                 continue
             key, kind = mapped
             if kind == "freq":
                 continue          # frequency handled centrally below (synonyms)
-            parsed = _parse_value(kind, value)
+            # Vendors put the unit in the column header as often as in the cell
+            # ("Switching Time, us" with a bare "2"). Without the hint the
+            # unit-strict time parser correctly refused the value and the spec
+            # was lost, so pass whatever unit the label carries.
+            parsed = _parse_value(kind, value, _label_unit_hint(label))
             if parsed:
                 rows.append(SpecRow(key=key, method="aggregator", confidence=0.75,
                                     source_url=url,
@@ -597,16 +745,44 @@ def parse_page(html: str, folder_name: str):
                 # so the value was effectively invisible. The missing-spec audit
                 # flagged this on its first run. Derive dBm alongside it.
                 if key in ("power_w", "power_avg_w"):
-                    watts = parsed.get("value_typ") or parsed.get("value_max") \
+                    # Only convert when the cell really is in watts. everythingRF
+                    # quotes output power EITHER in watts ("3.16 W") or already in
+                    # dBm ("35 dBm"); the unit was previously ignored, so a dBm
+                    # cell was stored as that many WATTS and then "converted",
+                    # turning 35 dBm into 45.4 dBm. If it is already dBm, keep the
+                    # number as-is under the dBm key and store no watts figure.
+                    unit = str(parsed.get("unit") or "").strip().lower()
+                    val = parsed.get("value_typ") or parsed.get("value_max") \
                         or parsed.get("value_min")
-                    if watts and watts > 0:
+                    dbm_key = "psat_dbm" if key == "power_w" else "power_avg_dbm"
+                    if unit in ("dbm",):
+                        rows.pop()          # drop the mis-keyed watts row
+                        if val is not None:
+                            rows.append(SpecRow(
+                                key=dbm_key, value_typ=float(val), unit="dBm",
+                                method="aggregator", confidence=0.75,
+                                source_url=url,
+                                snippet=f"{label}: {value}"[:150]))
+                    elif val and val > 0 and unit in ("w", "watt", "watts", ""):
                         import math
-                        dbm = round(10.0 * math.log10(float(watts) * 1000.0), 1)
+                        watts = float(val)
+                        if unit == "" and watts > 100:
+                            # A bare number that large is not watts for an RF
+                            # part; refuse rather than invent a 50 dBm part.
+                            pass
+                        else:
+                            dbm = round(10.0 * math.log10(watts * 1000.0), 1)
+                            rows.append(SpecRow(
+                                key=dbm_key, value_typ=dbm, unit="dBm",
+                                method="derived", confidence=0.7, source_url=url,
+                                snippet=f"derived from {label}: {value}"[:150]))
+                    elif val and unit in ("mw",):
+                        import math
+                        dbm = round(10.0 * math.log10(float(val)), 1)
+                        rows.pop()
                         rows.append(SpecRow(
-                            key="psat_dbm" if key == "power_w"
-                            else "power_avg_dbm",
-                            value_typ=dbm, unit="dBm", method="derived",
-                            confidence=0.7, source_url=url,
+                            key=dbm_key, value_typ=dbm, unit="dBm",
+                            method="derived", confidence=0.7, source_url=url,
                             snippet=f"derived from {label}: {value}"[:150]))
 
         # Frequency, resolved across label variants (Frequency / Tunable
@@ -622,6 +798,15 @@ def parse_page(html: str, folder_name: str):
             subcategory = _filter_subcategory(node_text, attrs.get("type", ""),
                                               attrs.get("sub-category", ""),
                                               description, title)
+        elif category == "switch":
+            # Subcategory for a switch is its construction type, so the
+            # Absorptive/Reflective dropdown filters on it. Termination is the
+            # field that states it; the prose is only a fallback.
+            subcategory = _specmatch.parse_switch_type(
+                " ".join([attrs.get("termination", "") or "",
+                          attrs.get("type", "") or "",
+                          attrs.get("configuration", "") or "",
+                          node_text or "", title or "", description or ""])) or ""
         else:
             subcategory = ""
         mount = _mount_type(attrs.get("configuration", ""), attrs.get("package type", ""))
@@ -637,6 +822,40 @@ def parse_page(html: str, folder_name: str):
 
         variant, reason = classify_space(
             attrs.get("grade", ""), node_text, header, folder_name)
+
+        # Pole/throw arrangement. everythingRF states it in the Configuration
+        # attribute; when that is absent or vague, fall back to the title and
+        # description, which is where every vendor writes it.
+        tc = _registry_throw(attrs.get("configuration", ""), title, description)
+        if tc:
+            rows.append(SpecRow(key="throw_config", value_text=tc,
+                                method="aggregator", confidence=0.8,
+                                source_url=url,
+                                snippet=(attrs.get("configuration") or title)[:150]))
+
+        # Construction type: absorptive vs reflective. Independent of the throw
+        # count -- an SP4T is one or the other -- so it gets its own key rather
+        # than being folded into the configuration string.
+        term_attr = attrs.get("termination", "") or ""
+        stype = _specmatch.parse_switch_type(term_attr)
+        if stype:
+            # Stated outright in the Termination column: trust it like any other
+            # listing attribute.
+            rows.append(SpecRow(key="switch_type", value_text=stype,
+                                method="aggregator", confidence=0.8,
+                                source_url=url,
+                                snippet=f"Termination: {term_attr}"[:150]))
+        else:
+            stype = _specmatch.parse_switch_type(
+                " ".join([attrs.get("configuration", "") or "", title or "",
+                          description or "", attrs.get("type", "") or ""]))
+            if stype:
+                # Inferred from prose, so it is recorded lower than a stated
+                # attribute and loses to one if both ever appear.
+                rows.append(SpecRow(key="switch_type", value_text=stype,
+                                    method="aggregator", confidence=0.65,
+                                    source_url=url,
+                                    snippet="construction type from listing text"))
 
         yield {
             "mpn": mpn, "vendor": vendor or "everythingrf", "url": url,
@@ -726,12 +945,41 @@ def _resume_state_path(parent: Path, glob: str) -> Path:
     runs. Separators are normalised too, so a trailing slash cannot matter."""
     import hashlib
     import os
-    raw = str(parent.resolve())
-    # os.path.normcase lowercases and converts / to \ on Windows; no-op on POSIX
-    norm = os.path.normcase(os.path.normpath(raw))
-    key = hashlib.sha1(f"{norm}|{glob.strip().lower()}".encode("utf-8")
-                       ).hexdigest()[:16]
-    return CACHE_DIR / f"everythingrf_{key}.json"
+
+    def _norm(pth):
+        # os.path.normcase lowercases and converts / to \ on Windows; no-op on POSIX
+        return os.path.normcase(os.path.normpath(str(pth)))
+
+    # Key on the resolved SET OF FOLDERS this selection actually covers, not on
+    # the parent+glob strings. rebuild() rewrites the pair depending on which
+    # folder was picked -- choosing <Sources> yields glob "EverythingRFSpace*"
+    # while choosing <Sources>\EverythingRFSpaceQual yields glob
+    # "EverythingRFSpaceQual" -- and those produced two different checkpoints for
+    # identical work, so resume depended on which folder the dialog happened to
+    # remember. The folder set is the same either way.
+    try:
+        folders = sorted(_norm(p.resolve()) for p in parent.glob(glob)
+                         if p.is_dir())
+    except OSError:
+        folders = []
+    payload = "|".join(folders) if folders else \
+        f"{_norm(parent.resolve())}|{glob.strip().lower()}"
+    key = hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
+    path = CACHE_DIR / f"everythingrf_{key}.json"
+    if not path.exists():
+        # Adopt a checkpoint written under the OLD parent+glob key so switching
+        # to folder-set keying does not throw away work already done.
+        legacy = hashlib.sha1(
+            f"{_norm(parent.resolve())}|{glob.strip().lower()}".encode("utf-8")
+        ).hexdigest()[:16]
+        legacy_path = CACHE_DIR / f"everythingrf_{legacy}.json"
+        if legacy_path.exists() and legacy_path != path:
+            try:
+                CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(legacy_path.read_bytes())
+            except OSError:
+                return legacy_path
+    return path
 
 
 def _source_manifest(parent: Path, glob: str) -> dict[str, int]:
@@ -753,10 +1001,30 @@ def _source_manifest(parent: Path, glob: str) -> dict[str, int]:
         for pattern in ("*.html", "*.htm"):
             for page in folder.rglob(pattern):
                 try:
-                    manifest[str(page.relative_to(parent))] = page.stat().st_size
+                    # as_posix(): the checkpoint records relative paths, and a
+                    # Windows run writes "A\\B\\p.html" while a POSIX run writes
+                    # "A/B/p.html". Keying on the raw string made the whole
+                    # checkpoint unreadable across separators, silently re-parsing
+                    # everything. One canonical form removes that class of bug.
+                    manifest[page.relative_to(parent).as_posix()] = \
+                        page.stat().st_size
                 except OSError:
                     continue
     return manifest
+
+
+def _count_source_files(parent: Path, glob: str) -> int:
+    """How many HTML files the selection actually contains, so a resumed run can
+    tell 'all done' from 'stopped partway'."""
+    n = 0
+    try:
+        for folder in sorted(parent.glob(glob)):
+            if folder.is_dir():
+                n += sum(1 for _ in folder.rglob("*.html"))
+                n += sum(1 for _ in folder.rglob("*.htm"))
+    except OSError:
+        return 0
+    return n
 
 
 def _page_signature(page: Path) -> dict:
@@ -831,6 +1099,14 @@ def ingest(parent: Path, glob: str, dry_run: bool, verbose: bool,
     state_path = _resume_state_path(parent, glob)
     state = _load_resume_state(state_path) if resume and not dry_run else {}
     completed = state.setdefault("completed", {})
+    if completed and any("\\" in k for k in completed):
+        # An existing checkpoint written on Windows uses backslash keys. Fold them
+        # to the canonical form so prior work is honoured instead of discarded.
+        state["completed"] = completed = {k.replace("\\", "/"): v
+                                         for k, v in completed.items()}
+    man = state.get("manifest")
+    if man and any("\\" in k for k in man):
+        state["manifest"] = {k.replace("\\", "/"): v for k, v in man.items()}
 
     # Say out loud what the resume decision is and why. "It parses everythingRF
     # every time" is impossible to diagnose from the outside: the checkpoint is
@@ -861,13 +1137,19 @@ def ingest(parent: Path, glob: str, dry_run: bool, verbose: bool,
         else {}
 
     # Fast path: nothing on disk has changed since the last CLEAN run, so there
-    # is genuinely nothing to do. This replaces the old sticky `source_complete`
+    # is genuinely nothing to do. This replaces a sticky `source_complete`
     # boolean, which could not distinguish "all done" from "the user just added
     # a new folder" -- that flag either re-parsed the whole tree or silently
     # ignored the new source. Manifest equality is exact: add, remove, or resize
     # any file and this comparison fails, so a resumed run always notices new
     # sources yet never re-reads pages that have not changed.
-    if resume and not dry_run and current_manifest \
+    stale_parser = (state.get("parser_version") or 0) != PARSER_VERSION
+    if stale_parser and state.get("manifest"):
+        emit(f"PARSER UPGRADED | checkpoint was written by parser version "
+             f"{state.get('parser_version') or 'unknown'}, this is "
+             f"{PARSER_VERSION} -- re-reading these pages once so newly "
+             f"supported fields are picked up")
+    if resume and not dry_run and current_manifest and not stale_parser \
             and state.get("manifest") == current_manifest:
         emit(f"SKIP completed local source | {parent} "
              f"| {len(current_manifest)} file(s) unchanged | checkpoint "
@@ -887,9 +1169,13 @@ def ingest(parent: Path, glob: str, dry_run: bool, verbose: bool,
         already = sum(1 for rel, size in current_manifest.items()
                       if isinstance(completed.get(rel), dict)
                       and completed[rel].get("size") == size)
-        emit(f"RESUME | {already}/{len(current_manifest)} local file(s) already "
-             f"committed; parsing the remaining "
-             f"{len(current_manifest) - already}")
+        if stale_parser:
+            emit(f"RESUME | re-reading all {len(current_manifest)} file(s) once "
+                 f"for the upgraded parser")
+        else:
+            emit(f"RESUME | {already}/{len(current_manifest)} local file(s) "
+                 f"already committed; parsing the remaining "
+                 f"{len(current_manifest) - already}")
 
     folders = sorted(p for p in parent.glob(glob) if p.is_dir())
     if not folders:
@@ -901,18 +1187,19 @@ def ingest(parent: Path, glob: str, dry_run: bool, verbose: bool,
         pages.extend((folder, page) for page in sorted(folder.rglob("*.htm")))
     counts = Counter()
     seen: dict[tuple[str, str], str] = {}
+    errored_rels: set[str] = set()
 
     for page_index, (folder, page) in enumerate(pages, 1):
         counts["pages_seen"] += 1
-        rel = str(page.relative_to(parent))
+        rel = page.relative_to(parent).as_posix()
 
-        # Skip an already-committed file using the size we ALREADY stat'd for the
+        # Skip an already-committed file using the size ALREADY stat'd for the
         # manifest -- no 16 kB read, no hashing. Size is a reliable "unchanged"
         # signal for saved listing pages (a re-save changes the byte count), and
-        # the strong head+tail hash is still what we STORE, so an explicit Reset
-        # remains the way to force a byte-identical re-parse.
+        # the strong head+tail hash is still what gets STORED, so an explicit
+        # Reset remains the way to force a byte-identical re-parse.
         prev = completed.get(rel)
-        if resume and isinstance(prev, dict) \
+        if resume and not stale_parser and isinstance(prev, dict) \
                 and prev.get("size") == current_manifest.get(rel):
             counts["pages_skipped"] += 1
             emit(f"SKIP unchanged file {page_index}/{len(pages)} | {page}")
@@ -923,6 +1210,10 @@ def ingest(parent: Path, glob: str, dry_run: bool, verbose: bool,
         except OSError as exc:
             counts["read_errors"] += 1
             emit(f"FILE ERROR | {page} | {exc}")
+            continue
+        if resume and not stale_parser and prev == signature:
+            counts["pages_skipped"] += 1
+            emit(f"SKIP unchanged file {page_index}/{len(pages)} | {page}")
             continue
 
         emit(f"FILE {page_index}/{len(pages)} | {page}")
@@ -935,14 +1226,16 @@ def ingest(parent: Path, glob: str, dry_run: bool, verbose: bool,
 
         page_parts = 0
         example_part = None
-        # A failure on one page must not abort the whole source: an aborted run
-        # never commits its manifest, so every future run would re-check
-        # everythingRF from scratch. Swallow the per-page error and carry on.
+        # A failure on one page must not abort the whole source: the run would
+        # then never reach the source_complete checkpoint, so every future run
+        # re-parsed everythingRF from scratch. That is exactly what the earlier
+        # NameError caused.
         try:
             page_rows = list(parse_page(html, folder.name))
         except Exception as exc:
             emit(f"PARSE FAILED | {page} | {type(exc).__name__}: {exc}")
             counts["page_errors"] = counts.get("page_errors", 0) + 1
+            errored_rels.add(rel)
             page_rows = []
         for part in page_rows:
             if not part["variant"]:
@@ -1001,7 +1294,11 @@ def ingest(parent: Path, glob: str, dry_run: bool, verbose: bool,
                  f"url={example_part['url']}")
         emit(f"FILE DONE | {page} | {page_parts} part(s) committed")
 
-        if resume and not dry_run:
+        if resume and not dry_run and rel not in errored_rels:
+            # A page that raised must NOT be recorded as completed, or the next
+            # run skips it on the size check and the failure is silently accepted
+            # as a finished file with zero parts. Leaving it unrecorded is what
+            # makes it get retried.
             completed[rel] = signature
             state["parent"] = str(parent.resolve())
             state["glob"] = glob
@@ -1010,24 +1307,46 @@ def ingest(parent: Path, glob: str, dry_run: bool, verbose: bool,
 
     stopped_early = _stopped()
     errored = counts.get("page_errors", 0) > 0
-    if resume and not dry_run and not stopped_early and not errored:
-        # Record the manifest of what was on disk THIS run. Next run compares
-        # its own fresh manifest against this one: identical -> fast-skip; any
-        # file added/removed/resized -> the comparison fails and only the
-        # difference is parsed. Only a clean run (no stop, no page errors) may
-        # write it, so an interrupted run never fools a later run into skipping
-        # the pages it never reached.
-        state["manifest"] = current_manifest
-        state["page_count"] = len(pages)
+    # ONE bad page used to withhold the completion record entirely, and the
+    # withholding was permanent: with 586 saved pages a single unparseable one
+    # meant every future run re-walked all 586 and re-read 16 kB of each to
+    # recompute a digest. That is the "it goes through every everythingRF file
+    # again" symptom, and it is not really a resume failure -- it is an
+    # all-or-nothing completion record.
+    #
+    # Record the files that DID succeed and omit the ones that failed. The
+    # manifest then differs from what is on disk, so the next run does not
+    # fast-skip -- correct, there IS work left -- but it skips every good file on
+    # a stat-only size comparison and retries only the failures.
+    if resume and not dry_run and not stopped_early:
+        # Record the exact file set that was just fully committed. The next run's
+        # cheap stat-only manifest is compared against this, so an unchanged tree
+        # fast-skips and a changed tree (new/removed/resized file) drops straight
+        # into the loop and parses ONLY what differs. The old sticky
+        # `source_complete`/`page_count` pair is deliberately dropped: a bare
+        # boolean cannot represent "done with THIS set of files", which is why
+        # adding a folder was ignored and an interrupted run re-read everything.
+        state["manifest"] = ({rel: size for rel, size in current_manifest.items()
+                              if rel not in errored_rels}
+                             if errored_rels else current_manifest)
         state["parent"] = str(parent.resolve())
         state["glob"] = glob
-        state.pop("source_complete", None)   # retire the old sticky flag
+        state["parser_version"] = PARSER_VERSION
+        state.pop("source_complete", None)
+        state.pop("page_count", None)
         _save_resume_state(state_path, state)
-        emit(f"SOURCE CHECKPOINT COMPLETE | {state_path} | "
-             f"{len(current_manifest)} file(s)")
+        if errored_rels:
+            emit(f"SOURCE CHECKPOINT PARTIAL | {state_path} "
+                 f"| {len(current_manifest) - len(errored_rels)} good file(s) "
+                 f"recorded, {len(errored_rels)} failure(s) will be retried "
+                 f"next run (the good ones will not be re-read)")
+        else:
+            emit(f"SOURCE CHECKPOINT COMPLETE | {state_path} "
+                 f"| {len(current_manifest)} file(s)")
     elif resume and not dry_run:
-        # Withholding the manifest on a partial run means the next run re-checks
-        # the remainder instead of skipping it for good; say plainly why.
+        # Marking a partial run complete would make every later run skip the
+        # remainder for good, so say plainly why the flag was withheld.
+        state.pop("manifest", None)
         why = ("stopped by request" if stopped_early
                else f"{counts.get('page_errors', 0)} page error(s)")
         emit(f"SOURCE NOT MARKED COMPLETE | {why} | it will resume from the "
@@ -1036,7 +1355,7 @@ def ingest(parent: Path, glob: str, dry_run: bool, verbose: bool,
     emit(f"RESUME SUMMARY | {len(pages)} file(s) in source, "
          f"{counts.get('pages_skipped', 0)} skipped by resume, "
          f"{counts.get('pages_parsed', 0)} parsed, "
-         f"manifest_committed={'manifest' in state}")
+         f"manifest_committed={bool(state.get('manifest'))}")
 
     counts["pages"] = counts["pages_parsed"]
     counts["resume_state"] = str(state_path)
