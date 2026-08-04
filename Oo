@@ -1,4 +1,57 @@
-=== Qorvo: 6 parametric table(s) -> C:\Users\lane.white\Downloads\rfparts\Sources\QorvoParametric ===
-[1/6] https://www.qorvo.com/products/amplifiers/lnas-gain-blocks/parametric-table
-    ! the parametric grid never appeared. The page may need a moment more, or its markup changed.
-    ! saved nothing useful: 0 grid rows in 1,196,179 bytes. Not writing the file.
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\hotfix_switch_types.py"
+1376 candidate switch part(s) in C:\Users\lane.white\Downloads\rfparts\Data\parts.db
+
+would change 478 part(s)
+     1070  throw_config already set
+     1031  no construction type stated
+      227  throw_config -> set
+      181  subcategory -> absorptive
+      163  subcategory -> reflective
+       79  no throw config stated
+        1  subcategory kept (not a legacy value)
+   construction type found in: description/specs 345
+   e.g. absorptive: ADH244S, WS808NKU, KS204, SW264K
+   e.g. reflective: MMPS022F, MSW2-1001ELGA, 2571011, TDSW050A2T
+   e.g. config: ADG201S=SPST, ADH252S=SP6T, ADH322S=SP8T, ADH607S=SPDT, ADH641S=SP4T, ADH849S=SPDT
+
+DRY RUN -- nothing written. Re-run with --apply to commit.
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\hotfix_switch_types.py" --apply
+1376 candidate switch part(s) in C:\Users\lane.white\Downloads\rfparts\Data\parts.db
+
+would change 478 part(s)
+     1070  throw_config already set
+     1031  no construction type stated
+      227  throw_config -> set
+      181  subcategory -> absorptive
+      163  subcategory -> reflective
+       79  no throw config stated
+        1  subcategory kept (not a legacy value)
+   construction type found in: description/specs 345
+   e.g. absorptive: ADH244S, WS808NKU, KS204, SW264K
+   e.g. reflective: MMPS022F, MSW2-1001ELGA, 2571011, TDSW050A2T
+   e.g. config: ADG201S=SPST, ADH252S=SP6T, ADH322S=SP8T, ADH607S=SPDT, ADH641S=SP4T, ADH849S=SPDT
+
+wrote 344 subcategory change(s) and 227 throw_config value(s)
+Search Switches in the GUI: Config is the dropdown under Category, Subcategory is now Absorptive/Reflective.
+PS C:\Users\lane.white> rfparts gui
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\lane.white\AppData\Roaming\Python\Python312\Scripts\rfparts.exe\__main__.py", line 7, in <module>
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\cli.py", line 498, in main
+    return args.func(args)
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\cli.py", line 375, in cmd_gui
+    return gui.main()
+           ^^^^^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 2961, in main
+    App(root)
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 304, in __init__
+    self._build_form()
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 457, in _build_form
+    self._on_category_change()   # initial layout (no category yet)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 737, in _on_category_change
+    if key not in CONFIG_CATEGORIES:
+                  ^^^^^^^^^^^^^^^^^
+NameError: name 'CONFIG_CATEGORIES' is not defined. Did you mean: 'GUI_CATEGORIES'?
