@@ -1,0 +1,70 @@
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\dbg_part_specs.py" HMC8038 --sources
+database: C:\Users\lane.white\Downloads\rfparts\Data\parts.db
+
+######################################################################
+#  HMC8038
+######################################################################
+
+  ==================================================================
+  HMC8038   vendor=Analog Devices   category=switch/absorptive
+  High Isolation, Silicon SPDT, Nonreflective Switch, 0.1 GHz to 6.0 GHz
+  https://www.analog.com/en/HMC8038#details
+
+  18 stored spec row(s):
+    key                         min        typ        max unit    conf  method / source
+    availability                                                  0.90  catalog / https://www.analog.com/en/HMC8038#details
+    datasheet_url                                                 0.90  catalog / https://www.analog.com/en/HMC8038#details
+    freq_ghz                      6                   100 GHz     0.90  catalog / https://www.analog.com/en/HMC8038#details
+      snippet: ADI parametric export
+    iip3_dbm                                60            dBm     0.90  catalog / https://www.analog.com/en/HMC8038#details
+    insertion_loss_db                      0.8            dB      0.90  catalog / https://www.analog.com/en/HMC8038#details
+    isolation_db                            60            dB      0.90  catalog / https://www.analog.com/en/HMC8038#details
+    lifecycle                                                     0.90  catalog / https://www.analog.com/en/HMC8038#details
+    max_rf_power_dbm                        34            dBm     0.90  catalog / https://www.analog.com/en/HMC8038#details
+    p01db_dbm                               35            dBm     0.90  catalog / https://www.analog.com/en/HMC8038#details
+    package                                                       0.90  catalog / https://www.analog.com/en/HMC8038#details
+    package_area_mm2                        16            mm2     0.90  catalog / https://www.analog.com/en/HMC8038#details
+    package_height_mm                     0.85            mm      0.90  catalog / https://www.analog.com/en/HMC8038#details
+    price_usd                             3.52            USD     0.90  catalog / https://www.analog.com/en/HMC8038#details
+    specified_at_ghz                         4            GHz     0.90  catalog / https://www.analog.com/en/HMC8038#details
+    switching_speed_ns                     150            ns      0.90  catalog / https://www.analog.com/en/HMC8038#details
+    temp_max_c                             105            C       0.90  catalog / https://www.analog.com/en/HMC8038#details
+    temp_min_c                             -40            C       0.90  catalog / https://www.analog.com/en/HMC8038#details
+    throw_config                                                  0.45  hotfix-switch-types /
+      snippet: inferred from published description text
+
+  resolved for the grid/ranker (20 key(s)):
+    availability             3743
+    datasheet_url            https://www.analog.com/media/en/technical-documentation/data-sheets/hmc8038.pdf
+    freq_ghz                 (6.0, 100.0)
+    iip3_dbm                 60.0
+    insertion_loss_db        0.8
+    isolation_db             60.0
+    lifecycle                Recommended For New Designs
+    max_rf_power_dbm         34.0
+    noise_nf_db              0.8
+    noise_nf_db_from         insertion_loss_db
+    p01db_dbm                35.0
+    package                  LFCSP
+    package_area_mm2         16.0
+    package_height_mm        0.85
+    price_usd                3.52
+    specified_at_ghz         4.0
+    switching_speed_ns       150.0
+    temp_max_c               105.0
+    temp_min_c               -40.0
+    throw_config             SPDT
+
+  frequency band 6.0 - 100.0 GHz  -> looks sane
+
+  --- raw values in the ADI workbooks ---
+    (could not import adi_parametric_ingest: No module named 'pythonrfparts')
+
+  --- raw values in the saved everythingRF pages ---
+    (could not import erf_space_ingest: No module named 'pythonrfparts')
+
+Reading this: if a stored row's source_url points at a file whose RAW
+value is right, the parser mis-scaled it. If the raw value is already
+odd, the source says so. If an old row with high confidence is winning
+over a newer correct one, the fix is to re-parse that source (bump its
+PARSER_VERSION or touch the file) so the stale row is replaced.
