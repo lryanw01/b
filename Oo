@@ -1,17 +1,152 @@
-PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\hotfix_switch_types.py" --apply
-1376 candidate switch part(s) in C:\Users\lane.white\Downloads\rfparts\Data\parts.db
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\dbg_part_specs.py" MXDB-1000WG
+database     : C:\Users\lane.white\Downloads\rfparts\Data\parts.db
+source tree  : C:\Users\lane.white\Downloads\rfparts\Sources
+source tree  : C:\Users\lane.white\Downloads\rfparts\Data\datasheets
+source tree  : C:\Users\lane.white\Downloads\rfparts\Data\vendor_cache
+source tree  : C:\Users\lane.white\Downloads\rfparts\Data
+source tree  : C:\Users\lane.white\Downloads\rfparts
 
-would change 9 part(s)
-     1297  throw_config already set
-     1022  no construction type stated
-      344  subcategory already correct
-       79  no throw config stated
-        5  subcategory -> absorptive
-        4  subcategory -> reflective
-        1  subcategory kept (not a legacy value)
-   construction type found in: description/specs 354
-   e.g. absorptive: SW-231-PIN, SW05-0311, MASW-009101, SW-313-PIN
-   e.g. reflective: YX-SP7T-8T-N-8G-Normally Open Type, YX-SP3T-6T-N-6G-High Power Normally Open Type, YX-SP3T-6T-N-12.4G-Normally Open Type, YX-SP7T-8T-N-8G-High Power Normally Open Type
+########################################################################
+#  MXDB-1000WG
+########################################################################
 
-wrote 9 subcategory change(s) and 0 throw_config value(s)
-Search Switches in the GUI: Config is the dropdown under Category, Subcategory is now Absorptive/Reflective.
+  ====================================================================
+  mxdb-1000wg   vendor=Marki Microwave   category=mixer/-
+  MXDB-1000WG is a double balanced mixer that features excellent conversion loss, great isolations
+  https://markimicrowave.com/products/waveguide/mixers/mxdb-1000wg/
+
+  11 stored spec row(s):
+    key                          min       typ       max unit   conf  method / source
+    absmax_temp_max_c                      100           °C     0.80  catalog / https://markimicrowave.com/products/wave
+    absmax_temp_min_c                      -55           °C     0.80  catalog / https://markimicrowave.com/products/wave
+    conversion_loss_db                       9           dB     0.80  catalog / https://markimicrowave.com/products/wave
+    datasheet_file                                              0.90  catalog / -
+    datasheet_url                                               0.90  catalog / https://markimicrowave.com/products/wave
+    freq_ghz                                75           GHz    0.80  catalog / https://markimicrowave.com/products/wave
+    isolation_db                            37           dB     0.80  catalog / https://markimicrowave.com/products/wave
+    nf_db                                    9           dB     0.80  catalog / https://markimicrowave.com/products/wave
+    nf_db                                  0.5                  0.45  datasheet / -
+      snippet: mined from mxdb-1000wg.html
+    package                                                     0.80  catalog / https://markimicrowave.com/products/wave
+    power_w                               1000                  0.45  datasheet / -
+      snippet: mined from mxdb-1000wg.html
+
+  1 evidence row(s):
+    vendor-catalog                     w=2.0  https://markimicrowave.com/products/wa
+
+  resolved for the grid/ranker:
+    absmax_temp_max_c          100.0
+    absmax_temp_min_c          -55.0
+    conversion_loss_db         9.0
+    datasheet_file             C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Marki-Microwave\mxdb-1000wg.html
+    datasheet_url              https://markimicrowave.com/products/waveguide/mixers/mxdb-1000wg/datasheet/
+    isolation_db               37.0
+    noise_nf_db                9.0
+    package                    WR-10
+    power_w                    1000.0
+
+  sources implied by the stored rows: Marki, local datasheet mining
+
+  --- raw data from the sources on disk ---
+  8809 text file(s) examined, 22 candidate(s)
+
+      mxdb-1000wg.html — local datasheet
+        sniffed type : html
+        text chars   : 7786
+        patterns hit : ['nf_db', 'power_w']
+          nf_db                  (0.5, '')
+          power_w                (1000.0, '')
+        text starts  :  MXDB-1000WG_WR-10 Waveguide double balanced mixer Company About Marki Microwave News and Events Leadership Corporate Compliance & Legal Quality Contact Us Newsletter Careers Tech Support Contact Us Order Now Buy from a Global Distribution Partner Contact a Sales Representative Request for Quote Request Custom Product Returns
+
+      mxdb-1200wg.html — Marki page
+        ordering options: {'MXDB1200WG': 'WR-12'}
+        inline specs    : {}
+        parsed specs:
+          absmax_temp_max_c      (100.0, '°C')
+          absmax_temp_min_c      (-55.0, '°C')
+          conversion_loss_db     (7.5, 'dB')
+          freq_ghz               (60.0, 'GHz')
+          isolation_db           (30.0, 'dB')
+          nf_db                  (7.5, 'dB')
+
+      mxdb-1500wg.html — Marki page
+        ordering options: {'MXDB1500WG': 'WR-15'}
+        inline specs    : {}
+        parsed specs:
+          absmax_temp_max_c      (100.0, '°C')
+          absmax_temp_min_c      (-55.0, '°C')
+          conversion_loss_db     (7.2, 'dB')
+          freq_ghz               (50.0, 'GHz')
+          isolation_db           (32.0, 'dB')
+          nf_db                  (7.2, 'dB')
+
+      5b86b67afe1f6fc86911.html — Marki page
+        ordering options: {}
+        inline specs    : {'isolation_db': (34.0, 'dB')}
+        parsed specs:
+          isolation_db           (34.0, 'dB')
+
+      682e39b1edf9cb20bb4b.html — Marki page
+        ordering options: {}
+        inline specs    : {'isolation_db': (34.0, 'dB')}
+        parsed specs:
+          isolation_db           (34.0, 'dB')
+
+      6ed9dbf70aa2fa881514.html — Marki page
+        ordering options: {}
+        inline specs    : {}
+        parsed specs:
+
+      ad52c348adbaa5b78048.html — Marki page
+        ordering options: {'MXDB1500WG': 'WR-15'}
+        inline specs    : {}
+        parsed specs:
+          absmax_temp_max_c      (100.0, '°C')
+          absmax_temp_min_c      (-55.0, '°C')
+          conversion_loss_db     (7.2, 'dB')
+          freq_ghz               (50.0, 'GHz')
+          isolation_db           (32.0, 'dB')
+          nf_db                  (7.2, 'dB')
+
+      cffcc7e0b2e5a2a86f93.html — Marki page
+        ordering options: {'MXDB1000WG': 'WR-10'}
+        inline specs    : {}
+        parsed specs:
+          absmax_temp_max_c      (100.0, '°C')
+          absmax_temp_min_c      (-55.0, '°C')
+          conversion_loss_db     (9.0, 'dB')
+          freq_ghz               (75.0, 'GHz')
+          isolation_db           (37.0, 'dB')
+          nf_db                  (9.0, 'dB')
+          package                ('WR-10', '')
+
+      e9d8f66a6cda5d410f14.html — Marki page
+        ordering options: {'MXDB1200WG': 'WR-12'}
+        inline specs    : {}
+        parsed specs:
+          absmax_temp_max_c      (100.0, '°C')
+          absmax_temp_min_c      (-55.0, '°C')
+          conversion_loss_db     (7.5, 'dB')
+          freq_ghz               (60.0, 'GHz')
+          isolation_db           (30.0, 'dB')
+          nf_db                  (7.5, 'dB')
+
+      datasheet_mining.json — raw context
+        ...Downloads\\rfparts\\data\\datasheets\\Marki-Microwave\\mxdb-1500wg.html|112402:1785863841", "15487": "C:\\Users\\lane.white\\Downloads\\rfparts\\data\\datasheets\\Marki-Microwave\\mxdb-1000wg.html|110513:1785863841", "15488": "C:\\Users\\lane.white\\Downloads\\rfparts\\data\\datasheets\\Marki-Microwave\\tw50-12l00wg.html|84778:1785863841", "15489": "C:\\Users\\lane.white\\Downloads\\rfparts\\data\\datasheets\\Marki-Microwave\\tw50-22h00...
+
+      parts.json — raw context
+        ...om/products/surface-mount/mixers/mt3l-0113hsm-2/", "snippet": "marki:surface-mount/mixers", "found_at": 1785863847.3476927 } ] }, { "mpn": "mxdb-1000wg", "mpn_norm": "MXDB-1000WG", "vendor": "Marki Microwave", "category": "mixer", "subcategory": "", "product_url": "https://markimicrowave.com/products/waveguide/mixers/mxdb-1000wg/", "description": "MXDB-1000WG is a double balanced...
+
+      parts.json — raw context
+        ...om/products/surface-mount/mixers/mt3l-0113hsm-2/", "snippet": "marki:surface-mount/mixers", "found_at": 1785358369.4991517 } ] }, { "mpn": "mxdb-1000wg", "mpn_norm": "MXDB-1000WG", "vendor": "Marki Microwave", "category": "mixer", "subcategory": "", "product_url": "https://markimicrowave.com/products/waveguide/mixers/mxdb-1000wg/", "description": "", "first_seen": 1785358371....
+
+How to read it: if a source's RAW value is right but the stored row
+is wrong, the parser mis-scaled it. If the raw value is already odd,
+the source says so. If an old high-confidence row beats a newer
+correct one, re-parse that source (bump PARSER_VERSION or touch the
+file). If a datasheet extracts text but hits NO patterns, the wording
+differs from PARAM_SPECS and the snippet shows what to add.
+
+
+
+mixers tend to have different specs like RF/LO hi and lo, maybe we should add support for those? Does the above debug help?
