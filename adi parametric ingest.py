@@ -73,6 +73,12 @@ _ROW_TYPE_SUB = [
 
 # Column header (lowercased, fuzzy) -> (partdb spec key, unit, how to read).
 # 'range' means the header names a min/max pair handled separately.
+# Bump when the PARSING changes so a rebuild re-reads an unchanged workbook once.
+# Without this the frequency-unit fix below could not reach parts already in the
+# database: the file has not changed, so the source checkpoint skipped it and the
+# wrong values simply stayed.
+PARSER_VERSION = 3
+
 _COL_SPECS = [
     # ---- frequency. The IF/LO variants MUST precede the generic RF ones: a
     # mixer sheet carries "Frequency Response IF min" alongside "Frequency
@@ -238,6 +244,34 @@ def freq_unit_from_header(header):
     return _FREQ_UNIT_SCALE.get((m.group(1) or "").lower())
 
 
+# The cell itself often carries the unit -- ADI's switch export writes
+# "100 MHz", "6 GHz", "4 GHz" as TEXT, with no unit in the column header at all.
+# That is the most authoritative signal available and it was being ignored: _num()
+# pulled out the bare 100, the header offered nothing, and the magnitude fallback
+# read it as 100 GHz. HMC8038 ended up with a 6-100 GHz band when its own
+# description says 0.1 GHz to 6.0 GHz.
+_CELL_FREQ_UNIT = re.compile(
+    r"(-?\d[\d,]*(?:\.\d+)?)\s*(thz|ghz|mhz|khz|hz)\b", re.I)
+_CELL_UNIT_SCALE = {"thz": 1e3, "ghz": 1.0, "mhz": 1e-3, "khz": 1e-6, "hz": 1e-9}
+
+
+def freq_from_cell(value):
+    """(number, GHz-scale) when the CELL states its own unit, else None.
+
+    Checked before the column header and before any magnitude guess, because a
+    unit written next to the number is the vendor telling you outright."""
+    if value is None:
+        return None
+    m = _CELL_FREQ_UNIT.search(str(value))
+    if not m:
+        return None
+    try:
+        n = float(m.group(1).replace(",", ""))
+    except ValueError:
+        return None
+    return n, _CELL_UNIT_SCALE[m.group(2).lower()]
+
+
 def _freq_to_ghz(v, scale=None, plausible=(1e-6, 300.0)):
     """A frequency column value in GHz.
 
@@ -256,6 +290,12 @@ def _freq_to_ghz(v, scale=None, plausible=(1e-6, 300.0)):
     rather than stored if it lands outside, because a wrong frequency silently
     poisons every band filter the part appears in.
     """
+    # 1. the cell's own unit wins over everything else
+    cell = freq_from_cell(v)
+    if cell is not None:
+        n, cscale = cell
+        g = n * cscale
+        return g if g >= 0 else None
     n = _num(v)
     if n is None:
         return None
@@ -263,7 +303,10 @@ def _freq_to_ghz(v, scale=None, plausible=(1e-6, 300.0)):
         # The header stated the unit: honour it, including values that look odd.
         # Second-guessing the file is how the original bug happened.
         g = n * scale
-        return g if g > 0 else None
+        # 0 is a legitimate lower edge: DC-coupled parts really do start at DC
+        # (HMC8038 is DC - 6 GHz). Rejecting it threw away the min of every such
+        # part and left a one-sided band.
+        return g if g >= 0 else None
     # No stated unit, so the magnitude is the only signal. Calibrated against what
     # an RF part can actually be rather than round numbers: nothing in these
     # exports operates at 450 GHz, so a bare 450 must be MHz. The GHz reading is
@@ -277,9 +320,11 @@ def _freq_to_ghz(v, scale=None, plausible=(1e-6, 300.0)):
         g = n / 1e3                 # too big to be GHz -> MHz
     else:
         g = n                       # credible as GHz
-    if g <= 0 or g < lo or g > hi:
+    if g < 0 or g > hi:
         return None
-    return g
+    if g > 0 and g < lo:
+        return None
+    return g                        # 0 == DC, kept
 
 
 def _hz_to_ghz(v):                  # kept for callers outside this module
