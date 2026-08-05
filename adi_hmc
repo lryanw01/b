@@ -58,13 +58,10 @@ database: C:\Users\lane.white\Downloads\rfparts\Data\parts.db
   frequency band 6.0 - 100.0 GHz  -> looks sane
 
   --- raw values in the ADI workbooks ---
-    (could not import adi_parametric_ingest: No module named 'pythonrfparts')
+
+    ADIParametricSearchSwitches.xlsx [Web Display] row match:
+      Frequency Response min                       raw='100 MHz'      header-unit-scale=None -> 100.0 GHz
+      Frequency Response max                       raw='6 GHz'        header-unit-scale=None -> 6.0 GHz
+      Specified at Frequency                       raw='4 GHz'        header-unit-scale=None -> 4.0 GHz
 
   --- raw values in the saved everythingRF pages ---
-    (could not import erf_space_ingest: No module named 'pythonrfparts')
-
-Reading this: if a stored row's source_url points at a file whose RAW
-value is right, the parser mis-scaled it. If the raw value is already
-odd, the source says so. If an old row with high confidence is winning
-over a newer correct one, the fix is to re-parse that source (bump its
-PARSER_VERSION or touch the file) so the stale row is replaced.
