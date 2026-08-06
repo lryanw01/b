@@ -1,220 +1,621 @@
-Datasheet headers (not all of them, but the ones I am trying to parse properly):
-RF/LO
+database: C:\Users\lane.white\Downloads\rfparts\Data\parts.db
 
-Low
+======================================================================
+  vendor   16562 value(s) across 152 distinct spelling(s)
+======================================================================
+       4182  MACOM
+       1562  Marki Microwave
+       1340  RF-Lambda
+       1194  Analog Devices
+        983  Stellant Systems
+        886  Mini Circuits
+        885  Wainwright Instruments
+        571  Qorvo
+        315  Crane Aerospace & Electronics
+        304  Teledyne Microwave Solutions
+        296  Beijing Ocean Microwave Corporation
+        278  Cinch Connectivity Solutions
+        225  SUNGSAN
+        207  MECA
+        199  Planar Monolithics (PMI)
+       3135  ... 137 more distinct value(s) in the tail
 
-[GHz]
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
+======================================================================
+  category   16562 value(s) across 28 distinct spelling(s)
+======================================================================
+       5860  amplifier
+       2365  filter
+       1899  attenuator
+       1376  switch
+       1089  mixer
+        794  divider
+        754  coupler
+        674  ic
+        428  isolator
+        244  balun
+        208  multiplier
+        181  diode
+        162  limiter
+        116  equalizer
+         55  op_amp
+        357  ... 13 more distinct value(s) in the tail
 
-RF/LO
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
-High
+======================================================================
+  package   13406 value(s) across 1389 distinct spelling(s)
+======================================================================
+       3721  Module with Connectors
+        971  Surface Mount
+        633  Die
+        622  Hermetic
+        458  Connectorized
+        405  Benchtop / Rackmount
+        323  CH
+        311  QFN
+        195  Drop-In
+        167  LFCSP
+        124  Chip
+        107  Flange Ceramic Pkg, Ceramic Flange Mount
+         91  Connectorized-SMA, Connectorized
+         81  LGA
+         81  Die, Die
+       5116  ... 1374 more distinct value(s) in the tail
 
-[GHz]
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
+======================================================================
+  space_variant   10071 value(s) across 2 distinct spelling(s)
+======================================================================
+       8446  space_grade
+       1625  space_qualified
 
-IF
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
-Low
+======================================================================
+  industry_application   9442 value(s) across 1377 distinct spelling(s)
+======================================================================
+        885  Cellular, Wireless Communication, SATCOM, Broa
+        397  Wireless Infrastructure, Military, Aerospace &
+        366  ISM
+        362  Military, Space, Commercial
+        327  Space, Military, Commercial, Aerospace & Defen
+        256  Wireless Infrastructure, Aerospace & Defense,
+        243  5G, Radio, Instrumentation, Base Station, Rese
+        212  Military, Commercial, SATCOM, Space
+        193  Wireless Infrastructure, Military, Aerospace,
+        188  Aerospace & Defense, Space
+        125  AN3009.pdf, Aerospace and Defense, ISM
+        123  Military, Space
+        123  AN3009.pdf, M513.pdf, AN215a.pdf, Aerospace an
+        112  AN3009.pdf, M513.pdf, Aerospace and Defense, I
+        107  Aerospace & Defense, Military, Commercial, Spa
+       5423  ... 1362 more distinct value(s) in the tail
 
-[GHz]
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
+======================================================================
+  mount_type   8569 value(s) across 5 distinct spelling(s)
+======================================================================
+       6578  connectorized
+       1389  smt
+        364  die
+        122  drop_in
+        116  waveguide
 
-IF
+    nothing in the top values needs folding
 
-High
+======================================================================
+  subcategory   8179 value(s) across 15 distinct spelling(s)
+======================================================================
+       2543  pa
+       2178  lna
+       1426  hpf
+        577  absorptive
+        382  reflective
+        297  bpf
+        269  driver
+        215  buffer
+        131  lpf
+         83  vga
+         25  gain_block
+         23  mixer
+         22  bsf
+          5  downconverter
+          3  tunable
 
-[GHz]
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
+======================================================================
+  subtype   7096 value(s) across 103 distinct spelling(s)
+======================================================================
+       1637  Power Amplifier
+       1577  Low Noise Amplifier
+        914  Solid State Switches
+        869  Lumped Component Filter
+        303  Chebyshev
+        238  Coaxial Isolator
+        158  Drop-In Isolator
+        137  Digital
+        114  Electro-Mechanical Relay
+        103  Electro-Mechanical Switches
+         72  Bipolar
+         69  Ceramic Filter
+         61  YIG Filter
+         57  Travelling Wave Tube Amplifier
+         52  Gain Block, Pre-Amplifier
+        735  ... 88 more distinct value(s) in the tail
 
-LO
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
-Low
+======================================================================
+  configuration   6175 value(s) across 80 distinct spelling(s)
+======================================================================
+       2411  Module with Connector
+        506  SPDT
+        350  IC/MMIC/SMT
+        347  System
+        274  2 Way
+        207  Dual Junction
+        199  SP4T
+        130  Single Diode
+        129  Solid State
+        122  Module with Connector, IC/MMIC/SMT
+        121  SPST
+        121  4 Way
+         97  Low Pass Filter
+         93  SP3T
+         91  SPST, SPDT, SP3T, SP4T, SP5T
+        977  ... 65 more distinct value(s) in the tail
 
-[dBm]
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
+======================================================================
+  pulsed_cw   3548 value(s) across 4 distinct spelling(s)
+======================================================================
+       3017  CW
+        375  CW/Pulsed     -> fold into 'both'
+        144  Pulsed
+         12  CW, Pulsed
 
-LO
+    folding the marked spellings would collapse 1 entries (375 rows) into 1 canonical value(s)
 
-High
+======================================================================
+  erf_grade   3521 value(s) across 21 distinct spelling(s)
+======================================================================
+        954  Commercial, Space, Military
+        734  Military, Space
+        528  Commercial, Military, Space
+        429  Military, Space, Commercial
+        246  Space Qualified
+        200  Military, Space Qualified
+        133  Space, Military, Commercial
+         62  Space, Military
+         54  Space
+         51  Military, Commercial, Space Qualified
+         46  Commercial, Space
+         26  Space Qualified, Military, Commercial
+         13  Space, Commercial
+         13  Space Qualified, Military
+         10  Military, Space, commercial
+         22  ... 6 more distinct value(s) in the tail
 
-[dBm]
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
-(ignore spacing, use the unit as a delimiter to differentiate cols)
+======================================================================
+  connector   2851 value(s) across 78 distinct spelling(s)
+======================================================================
+        994  SMA, SMA - Female
+        454  SMA, SMA - Male, SMA - Female
+        254  SMA
+        184  2.92 mm, 2.92 mm - Female
+        161  N Type, N Type - Male, N Type - Female
+        147  N Type, N Type - Female
+         80  2.4 mm, 2.4 mm - Female
+         54  TTL/Serial/Parallel
+         40  BNC, BNC - Male, BNC - Female
+         38  SMA, SMA - Female, SMA - Male
+         34  N Type, SMA
+         33  1.85 mm, 1.85 mm - Female
+         30  2.4 mm, 2.4 mm - Female, 2.4 mm - Male
+         25  SMP
+         24  7/16 DIN, 7/16 DIN - Male, 7/16 DIN - Female
+        299  ... 63 more distinct value(s) in the tail
 
-Here's a debug, though I dont think the parser is revealing the above cols:
-database     : C:\Users\lane.white\Downloads\rfparts\Data\parts.db
-source tree  : C:\Users\lane.white\Downloads\rfparts\Sources
-source tree  : C:\Users\lane.white\Downloads\rfparts\Data\datasheets
-source tree  : C:\Users\lane.white\Downloads\rfparts\Data\vendor_cache
-source tree  : C:\Users\lane.white\Downloads\rfparts\Data
-source tree  : C:\Users\lane.white\Downloads\rfparts
+    nothing in the top values needs folding
 
-########################################################################
-#  MXDB-1000WG
-########################################################################
+======================================================================
+  throw_config   1431 value(s) across 15 distinct spelling(s)
+======================================================================
+        605  SPDT
+        234  SP4T
+        232  SPST
+        108  SP3T
+         73  SP6T
+         61  SP8T
+         54  DPDT
+         34  SP5T
+          9  SP7T
+          7  SP9T
+          7  SP10T
+          3  SP12T
+          2  SP16T
+          1  transfer
+          1  DP12T
 
-  ====================================================================
-  mxdb-1000wg   vendor=Marki Microwave   category=mixer/-
-  MXDB-1000WG is a double balanced mixer that features excellent conversion loss, great isolations
-  https://markimicrowave.com/products/waveguide/mixers/mxdb-1000wg/
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
-  14 stored spec row(s):
-    key                          min       typ       max unit   conf  method / source
-    absmax_temp_max_c                      100           °C     0.80  catalog / https://markimicrowave.com/products/wave
-    absmax_temp_min_c                      -55           °C     0.80  catalog / https://markimicrowave.com/products/wave
-    conversion_loss_db                       9           dB     0.80  catalog / https://markimicrowave.com/products/wave
-    datasheet_file                                              0.90  catalog / -
-    datasheet_url                                               0.90  catalog / https://markimicrowave.com/products/wave
-    freq_ghz                                75           GHz    0.80  catalog / https://markimicrowave.com/products/wave
-    if_freq_ghz                              0           GHz    0.80  catalog / https://markimicrowave.com/products/wave
-    isolation_db                            37           dB     0.80  catalog / https://markimicrowave.com/products/wave
-    lo_freq_ghz                             75           GHz    0.80  catalog / https://markimicrowave.com/products/wave
-    nf_db                                    9           dB     0.80  catalog / https://markimicrowave.com/products/wave
-    nf_db                                  0.5                  0.45  datasheet / -
-      snippet: mined from mxdb-1000wg.html
-    package                                                     0.80  catalog / https://markimicrowave.com/products/wave
-    power_w                               1000                  0.45  datasheet / -
-      snippet: mined from mxdb-1000wg.html
-    rf_freq_ghz                             75           GHz    0.80  catalog / https://markimicrowave.com/products/wave
+======================================================================
+  subcategory_text   1332 value(s) across 55 distinct spelling(s)
+======================================================================
+        314  GaN Amplifier
+        221  SSPA
+        130  SSPA, Multi-Octave Amplifier
+         94  Temperature Compensated Amplifier
+         80  Linear Amplifier, Doherty Amplifier
+         63  GaN Amplifier, Pulsed Amplifer
+         62  Pulsed Amplifer
+         57  Hybrid Amplifier
+         39  SSPA, GaN Amplifier
+         37  GaN Amplifier, SSPA
+         37  Distributed Amplifier
+         27  SSPA, Pulsed Amplifer
+         27  Linear Amplifier
+         21  SSPA, Hybrid Amplifier
+         16  Cascadable Amplifier
+        107  ... 40 more distinct value(s) in the tail
 
-  1 evidence row(s):
-    vendor-catalog                     w=2.0  https://markimicrowave.com/products/wa
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
-  resolved for the grid/ranker:
-    absmax_temp_max_c          100.0
-    absmax_temp_min_c          -55.0
-    conversion_loss_db         9.0
-    datasheet_file             C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Marki-Microwave\mxdb-1000wg.html
-    datasheet_url              https://markimicrowave.com/products/waveguide/mixers/mxdb-1000wg/datasheet/
-    if_freq_ghz                (0.0, 0.0)
-    isolation_db               37.0
-    lo_freq_ghz                (75.0, 75.0)
-    noise_nf_db                9.0
-    package                    WR-10
-    power_w                    1000.0
-    rf_freq_ghz                (75.0, 75.0)
+======================================================================
+  switch_type   1010 value(s) across 2 distinct spelling(s)
+======================================================================
+        567  absorptive
+        443  reflective
 
-  sources implied by the stored rows: Marki, local datasheet mining
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
-  --- raw data from the sources on disk ---
-  7108 text file(s) examined, 24 candidate(s)
+======================================================================
+  lifecycle   885 value(s) across 6 distinct spelling(s)
+======================================================================
+        471  Recommended For New Designs
+        327  Production
+         46  Last Time Buy
+         25  Not Recommended For New Designs
+          8  Pre release
+          8  Last Time Ship
 
-      mxdb-1000wg.html — local datasheet
-        sniffed type : html
-        text chars   : 7786
-        patterns hit : ['nf_db', 'power_w']
-          nf_db                  (0.5, '')
-          power_w                (1000.0, '')
-        text starts  :  MXDB-1000WG_WR-10 Waveguide double balanced mixer Company About Marki Microwave News and Events Leadership Corporate Compliance & Legal Quality Contact Us Newsletter Careers Tech Support Contact Us Order Now Buy from a Global Distribution Partner Contact a Sales Representative Request for Quote Request Custom Product Returns
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
-      mxdb-1200wg.html — Marki page
-        ordering options: {'MXDB1200WG': 'WR-12'}
-        inline specs    : {}
-        parsed specs:
-          absmax_temp_max_c      (100.0, '°C')
-          absmax_temp_min_c      (-55.0, '°C')
-          conversion_loss_db     (7.5, 'dB')
-          if_freq_ghz            (0.0, 'GHz')
-          isolation_db           (30.0, 'dB')
-          lo_freq_ghz            (60.0, 'GHz')
-          nf_db                  (7.5, 'dB')
-          rf_freq_ghz            (60.0, 'GHz')
+======================================================================
+  device_type   852 value(s) across 46 distinct spelling(s)
+======================================================================
+        173  Low Noise Amplifier
+        113  Power Amplifier
+         91  RF Differential Amplifier
+         83  Double Balanced Mixer
+         50  Digital Step Attenuator
+         37  RF Variable Gain Amplifier
+         35  Driver Amplifier, Power Amplifier
+         31  Gain Block
+         28  Modulator
+         18  Beamformer
+         17  Demodulator
+         16  Fixed Attenuator
+         15  Voltage Variable Attenuator
+         14  Gain Block, Low Phase Noise Amplifier
+         13  Image Reject Mixer
+        118  ... 31 more distinct value(s) in the tail
 
-      mxdb-1500wg.html — Marki page
-        ordering options: {'MXDB1500WG': 'WR-15'}
-        inline specs    : {}
-        parsed specs:
-          absmax_temp_max_c      (100.0, '°C')
-          absmax_temp_min_c      (-55.0, '°C')
-          conversion_loss_db     (7.2, 'dB')
-          if_freq_ghz            (0.0, 'GHz')
-          isolation_db           (32.0, 'dB')
-          lo_freq_ghz            (50.0, 'GHz')
-          nf_db                  (7.2, 'dB')
-          rf_freq_ghz            (50.0, 'GHz')
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
-      31192f5b770dfa732fb5.html — Marki page
-        ordering options: {}
-        inline specs    : {'isolation_db': (34.0, 'dB')}
-        parsed specs:
-          isolation_db           (34.0, 'dB')
+======================================================================
+  technology   615 value(s) across 14 distinct spelling(s)
+======================================================================
+        478  Pin Diode
+         38  pHEMT
+         30  GaAs
+         30  ED02AH
+         11  D01PH
+          7  MMIC
+          7  D007IH
+          4  MESFET
+          4  D01MH
+          2  MMIC, MESFET
+          1  HEMT
+          1  GaAs pHEMT
+          1  D01GH
+          1  CMOS
 
-      5b86b67afe1f6fc86911.html — Marki page
-        ordering options: {}
-        inline specs    : {'isolation_db': (34.0, 'dB')}
-        parsed specs:
-          isolation_db           (34.0, 'dB')
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
-      682e39b1edf9cb20bb4b.html — Marki page
-        ordering options: {}
-        inline specs    : {'isolation_db': (34.0, 'dB')}
-        parsed specs:
-          isolation_db           (34.0, 'dB')
+======================================================================
+  product_status   350 value(s) across 4 distinct spelling(s)
+======================================================================
+        310  Production
+         22  Last Time Buy
+         12  Preview
+          6  NRND
 
-      6ed9dbf70aa2fa881514.html — Marki page
-        ordering options: {}
-        inline specs    : {}
-        parsed specs:
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
-      ad52c348adbaa5b78048.html — Marki page
-        ordering options: {'MXDB1500WG': 'WR-15'}
-        inline specs    : {}
-        parsed specs:
-          absmax_temp_max_c      (100.0, '°C')
-          absmax_temp_min_c      (-55.0, '°C')
-          conversion_loss_db     (7.2, 'dB')
-          if_freq_ghz            (0.0, 'GHz')
-          isolation_db           (32.0, 'dB')
-          lo_freq_ghz            (50.0, 'GHz')
-          nf_db                  (7.2, 'dB')
-          rf_freq_ghz            (50.0, 'GHz')
+======================================================================
+  package_size   316 value(s) across 153 distinct spelling(s)
+======================================================================
+         30  3.0 x 3.0
+         22  2.0 x 2.0
+         17  4.0 x 4.0
+         13  4.0 x 4.0 x 0.85
+         11  5.0 x 5.0
+         11  15.2 x 15.2 x 3.5
+          9  2.0 x 1.25
+          7  2 x 2 x 0.85
+          6  4 x 4 x 0.85
+          5  6.0 x 6.0 x 0.85
+          5  5.0 x 5.0 x 0.85
+          4  5.08 x 5.08 x 1.40
+          4  5.0 x 5.0 x 1.45
+          3  7.00 x 7.00 x 0.85
+          3  7.0 x 7.0 x 0.85
+        166  ... 138 more distinct value(s) in the tail
 
-      b55f88c1c268c452beb7.html — Marki page
-        ordering options: {}
-        inline specs    : {'isolation_db': (34.0, 'dB')}
-        parsed specs:
-          isolation_db           (34.0, 'dB')
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
-      cffcc7e0b2e5a2a86f93.html — Marki page
-        ordering options: {'MXDB1000WG': 'WR-10'}
-        inline specs    : {}
-        parsed specs:
-          absmax_temp_max_c      (100.0, '°C')
-          absmax_temp_min_c      (-55.0, '°C')
-          conversion_loss_db     (9.0, 'dB')
-          if_freq_ghz            (0.0, 'GHz')
-          isolation_db           (37.0, 'dB')
-          lo_freq_ghz            (75.0, 'GHz')
-          nf_db                  (9.0, 'dB')
-          package                ('WR-10', '')
-          rf_freq_ghz            (75.0, 'GHz')
+======================================================================
+  availability   255 value(s) across 209 distinct spelling(s)
+======================================================================
+         33  0
+          3  64
+          3  19
+          2  53
+          2  50
+          2  315
+          2  31
+          2  282
+          2  2500
+          2  23
+          2  185
+          2  13
+          2  102
+          1  99556
+          1  9891
+        194  ... 194 more distinct value(s) in the tail
 
-      e9d8f66a6cda5d410f14.html — Marki page
-        ordering options: {'MXDB1200WG': 'WR-12'}
-        inline specs    : {}
-        parsed specs:
-          absmax_temp_max_c      (100.0, '°C')
-          absmax_temp_min_c      (-55.0, '°C')
-          conversion_loss_db     (7.5, 'dB')
-          if_freq_ghz            (0.0, 'GHz')
-          isolation_db           (30.0, 'dB')
-          lo_freq_ghz            (60.0, 'GHz')
-          nf_db                  (7.5, 'dB')
-          rf_freq_ghz            (60.0, 'GHz')
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
-      datasheet_mining.json — raw context
-        ...Downloads\\rfparts\\data\\datasheets\\Marki-Microwave\\mxdb-1500wg.html|112402:1785863841", "15487": "C:\\Users\\lane.white\\Downloads\\rfparts\\data\\datasheets\\Marki-Microwave\\mxdb-1000wg.html|110513:1785863841", "15488": "C:\\Users\\lane.white\\Downloads\\rfparts\\data\\datasheets\\Marki-Microwave\\tw50-12l00wg.html|84778:1785863841", "15489": "C:\\Users\\lane.white\\Downloads\\rfparts\\data\\datasheets\\Marki-Microwave\\tw50-22h00...
+======================================================================
+  vendor_category   233 value(s) across 24 distinct spelling(s)
+======================================================================
+         57  PRECISION AMPLIFIERS
+         39  RF AMPLIFIERS
+         21  ANALOG FUNCTIONS
+         20  RF CONTROL PRODUCTS
+         14  RF MIXERS
+         12  POWER MANAGEMENT
+         11  FREQUENCY DIVIDERS/MULTIPLIERS
+          7  HIGH SPEED A/D CONVERTERS
+          7  BEAMFORMERS, PHASE SHIFTERS & VECTOR MODULATOR
+          6  VOLTAGE CONTROLLED OSCILLATORS (VCO)
+          6  RF DETECTORS
+          5  PRECISION D/A CONVERTERS
+          5  PRECISION A/D CONVERTERS
+          4  HIGH SPEED D/A CONVERTERS
+          3  SWITCH/MUX
+         16  ... 9 more distinct value(s) in the tail
 
-      parts.json — raw context
-        ...om/products/surface-mount/mixers/mt3l-0113hsm-2/", "snippet": "marki:surface-mount/mixers", "found_at": 1785940160.8814976 } ] }, { "mpn": "mxdb-1000wg", "mpn_norm": "MXDB-1000WG", "vendor": "Marki Microwave", "category": "mixer", "subcategory": "", "product_url": "https://markimicrowave.com/products/waveguide/mixers/mxdb-1000wg/", "description": "MXDB-1000WG is a double balanced...
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
 
-      parts.json — raw context
-        ...om/products/surface-mount/mixers/mt3l-0113hsm-2/", "snippet": "marki:surface-mount/mixers", "found_at": 1785358369.4991517 } ] }, { "mpn": "mxdb-1000wg", "mpn_norm": "MXDB-1000WG", "vendor": "Marki Microwave", "category": "mixer", "subcategory": "", "product_url": "https://markimicrowave.com/products/waveguide/mixers/mxdb-1000wg/", "description": "", "first_seen": 1785358371....
+======================================================================
+  space_qual_level   233 value(s) across 12 distinct spelling(s)
+======================================================================
+         84  MIL-PRF-38535 Class V
+         57  MIL-PRF-38534 Class K
+         30  ASD Model (MIL-PRF-38535 Class V with Exceptio
+         23  Commercial Space Low (CSL)
+         22  MIL-PRF-38535 Class Level S (with Exceptions)
+          9  Commercial Space High (CSH)
+          3  MIL-PRF-38535 Class V / -38534 Class K
+          1  NASA/EEE-INST-002
+          1  MIL-PRF-38535 Class Level S
+          1  MIL-PRF-38535 Class Level B
+          1  MIL-PRF-38534 Class H / MIL-STD-883 Class Leve
+          1  MIL-PRF-38534 Class H / Class K
 
-How to read it: if a source's RAW value is right but the stored row
-is wrong, the parser mis-scaled it. If the raw value is already odd,
-the source says so. If an old high-confidence row beats a newer
-correct one, re-parse that source (bump PARSER_VERSION or touch the
-file). If a datasheet extracts text but hits NO patterns, the wording
-differs from PARAM_SPECS and the snippet shows what to add.
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
+
+======================================================================
+  orderable_parts   233 value(s) across 233 distinct spelling(s)
+======================================================================
+          1  SW2010803Q
+          1  RHP50000IVCSL#TRPBF
+          1  RH6200MW, RH6200MW-EMX
+          1  RH6105MILDICE, RH6105MW, RH6105MW-EMX
+          1  RH6016MW, RH6016MW-EMX
+          1  RH5596DICE, RH5596HDC#PBF-CSH, RH5596HDC#PBF-C
+          1  RH3845MKDICE, RH3845MW-1, RH3845MW-1-EMX, RH38
+          1  RH3083MILDICE, RH3083MKDICE, RH3083MW, RH3083M
+          1  RH3080MKDICE
+          1  RH27AEW, RH27CDICE, RH27CW, RH27CW-EMX, RH27EW
+          1  RH1965MKDICE
+          1  RH1959MILDICE, RH1959MW, RH1959MW-EMX
+          1  RH1814DICE, RH1814MW, RH1814MW-EMX
+          1  RH1573KDICE
+          1  RH137H, RH137HDICE, RH137KDICE
+        218  ... 218 more distinct value(s) in the tail
+
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
+
+======================================================================
+  radiation_hardness   232 value(s) across 2 distinct spelling(s)
+======================================================================
+        124  Yes
+        108  No
+
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
+
+======================================================================
+  process   198 value(s) across 11 distinct spelling(s)
+======================================================================
+        141  GaN-on-SiC
+         24  GaN-on SiC
+         11  LDMOS
+          6  GaN-on Si
+          5  GaAs pHEMT
+          4  GaN-on-SiC HEMT
+          2  HMIC
+          2  GaAs
+          1  GaN on SiC
+          1  GaN
+          1  AlGaAs
+
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
+
+======================================================================
+  package_material   191 value(s) across 7 distinct spelling(s)
+======================================================================
+         87  Ceramic
+         34  Ceramic/Metal
+         32  Plastic
+         30  Metal
+          5  Glass
+          2  Metal/Plastic
+          1  Glass/Metal
+
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
+
+======================================================================
+  lead_finish   191 value(s) across 7 distinct spelling(s)
+======================================================================
+        118  SnPb
+         41  Gold
+         19  Ni_Pd_Au
+          6  Sn_Ag_Cu (SAC305)
+          4  Ni_Au
+          2  Sn
+          1  Sn_Pb_Ag
+
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
+
+======================================================================
+  waveguide   175 value(s) across 28 distinct spelling(s)
+======================================================================
+         31  WR-28
+         15  WR-90
+         15  WR-42
+         15  WR-12
+         14  WR-22
+         14  WR-19
+         13  WR-10
+          9  WR-15
+          7  WRD180
+          7  WRD-750
+          6  WRD-650
+          3  WRD500D36
+          3  WRD-350
+          3  WR-62
+          3  WR-112
+         17  ... 13 more distinct value(s) in the tail
+
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
+
+======================================================================
+  form_factor   142 value(s) across 5 distinct spelling(s)
+======================================================================
+         98  Packaged Discrete Transistor
+         19  Packaged MMIC
+         18  Discrete Bare Die
+          6  MMIC Bare Die
+          1  Packaged MMIC, MMIC Bare Die
+
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
+
+======================================================================
+  frequency_band   113 value(s) across 7 distinct spelling(s)
+======================================================================
+         69  General Purpose, Broadband
+         22  S-Band
+          8  L-Band
+          7  C-Band
+          5  Ku-Band
+          1  X-Band
+          1  L, S, C, X, Ku
+
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
+
+======================================================================
+  modulation   70 value(s) across 14 distinct spelling(s)
+======================================================================
+         28  AM, FM, Pulse
+         21  CW, FM, AM
+          7  CW, AM, FM
+          3  AM, FM, PM, ODFM
+          2  OQPSK
+          1  PPM
+          1  CW/FM
+          1  CW, FM, 32APSK
+          1  AM, FM, fM or PM
+          1  AM, FM, PM, ODFM, Pulse
+          1  AM, FM or Pulse
+          1  AM, FM
+          1  A3E, D8PSK
+          1  A3E
+
+    no fold rules for this field -- review the list above and tell me
+    which spellings mean the same thing
+
+======================================================================
+  WHAT IS WORTH FOLDING, AND WHAT IS NOT
+======================================================================
+
+  Worth folding (same fact, different spelling):
+    mount_type   SMT / SMD / Surface Mount / surface-mount -> one value
+    connector    SMA / SMA Female / SMA (F)                -> SMA
+                 3.5mm / 2.92mm / K connector              -> one value, they
+                                                              intermate
+    space        Space Qualified / space-qualified / Yes   -> qualified
+    pulsed_cw    CW / Continuous Wave                      -> CW
+
+  NOT worth folding (genuinely different facts):
+    die into SMT      a bare die is not surface mount -- it has no package and
+                      needs chip-and-wire assembly. Merging them would let a
+                      die-only part answer an SMT search.
+    package into      "QFN" is the body, "SMT" is how it attaches. A part is
+    mount_type        both; collapsing them loses one axis of search.
+    package_size      a dimension, not an enum -- leave it alone.
+
+  Judgement call, your domain:
+    connectorized vs module        often the same part described two ways
+    hi_rel vs space qualified      distinct qualification levels, but vendors
+                                   use them loosely -- keeping them apart is
+                                   safer, and the space_variant field already
+                                   records the finer grade
