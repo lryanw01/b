@@ -1,43 +1,365 @@
-  "pn": "10F-10F+",
-  "cat": "adapter",
-  "group": "Adapters",
-  "specs": {
-   "conn_2": "1.0mm",
-   "f_low": "1.0mm",
-   "f_high": "DC",
-   "vswr": "110",
-   "impedance": "1.07",
-   "case_style": "DJ3474 LxD 0.50x0.154"
-  },
-  "flo": 1,
-  "fhi": "DC",
-  "vswr": 110,
-  "impedance": 1.07,
-  "url": "https://www.minicircuits.com/WebStore/dashboard.html?model=10F-10F%2B",
-  "datasheet_url": "https://www.minicircuits.com/pdfs/10F-10F+.pdf",
-  "sparams_url": "https://www.minicircuits.com/pages/s-params/10F-10F+_S2P.zip",
-  "case_style": "DJ3474",
-  "ez_sample": false
- },
- {
-  "pn": "10F-10M+",
-  "cat": "adapter",
-  "group": "Adapters",
-  "specs": {
-   "conn_2": "1.0mm",
-   "f_low": "1.0mm",
-   "f_high": "DC",
-   "vswr": "110",
-   "impedance": "1.10",
-   "case_style": "DJ3474-1 LxD 0.49x0.232"
-  },
-  "flo": 1,
-  "fhi": "DC",
-  "vswr": 110,
-  "impedance": 1.1,
-  "url": "https://www.minicircuits.com/WebStore/dashboard.html?model=10F-10M%2B",
-  "datasheet_url": "https://www.minicircuits.com/pdfs/10F-10M+.pdf",
-  "sparams_url": "https://www.minicircuits.com/pages/s-params/10F-10M+_S2P.zip",
-  "case_style": "DJ3474-1",
-  "ez_sample": false
- },
+Dataset health
+==============================================
+parts: 15939     vendors: 1     duplicate groups remaining: 810
+
+Source overlap
+  EverythingRF only         0
+  Vendor site only          0
+  Found in both             0
+  Other/local sources   15939
+
+Pedigree distribution  (informational — not scored)
+  space-qualified      0    0.0%
+  space-grade          0    0.0%
+  hi-rel               0    0.0%
+  upscreenable         0    0.0%
+  —                15939  100.0%
+
+Parts by category
+  uncategorized         8542
+  filter                1757
+  spl                    869
+  amplifier              715
+  mix                    531
+  cpl                    512
+  att                    400
+  transformer            353
+  flt                    294
+  osc                    276
+  xfmr                   239
+  adapter                180
+  switch                 153
+  oscillator             128
+  die                    119
+  amp                    118
+  equalizer              103
+  multiplier              90
+  sw                      64
+  bias_tee                54
+  cable                   44
+  eq                      35
+  termination             34
+  attenuator              31
+  divider                 30
+  mixer                   30
+  syn                     25
+  mult                    22
+  test                    22
+  limiter                 21
+  coupler                 20
+  psen                    17
+  mod                     14
+  phase_shifter           14
+  bias                    13
+  dc_block                11
+  detector                11
+  match                   10
+  noncat                   9
+  acc                      8
+  phase_detector           8
+  chk                      7
+  lim                      3
+  pd                       2
+  wg                       1
+
+Spec coverage by category
+  (% of parts in that category carrying a value — RF specs are
+   only shown for the categories they apply to)
+
+  uncategorized (8542)
+    frequency          402    4.7%  
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  filter (1757)
+    frequency          458   26.1%  █████
+    NF / insertion loss     0    0.0%  
+    package           1709   97.3%  ███████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  spl (869)
+    frequency          863   99.3%  ███████████████████
+    package             18    2.1%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  amplifier (715)
+    frequency          714   99.9%  ███████████████████
+    gain               714   99.9%  ███████████████████
+    NF                 690   96.5%  ███████████████████
+    P1dB               705   98.6%  ███████████████████
+    OIP3               683   95.5%  ███████████████████
+    Psat                 0    0.0%  
+    package            701   98.0%  ███████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  mix (531)
+    frequency          527   99.2%  ███████████████████
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  cpl (512)
+    frequency          510   99.6%  ███████████████████
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  att (400)
+    frequency          366   91.5%  ██████████████████
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  transformer (353)
+    frequency          353  100.0%  ████████████████████
+    package            353  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  flt (294)
+    frequency          230   78.2%  ███████████████
+    package             47   16.0%  ███
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  osc (276)
+    frequency            2    0.7%  
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  xfmr (239)
+    frequency          238   99.6%  ███████████████████
+    package             31   13.0%  ██
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  adapter (180)
+    frequency          160   88.9%  █████████████████
+    package            154   85.6%  █████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  switch (153)
+    frequency          131   85.6%  █████████████████
+    isolation           77   50.3%  ██████████
+    NF / insertion loss    77   50.3%  ██████████
+    P1dB                 0    0.0%  
+    package            145   94.8%  ██████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  oscillator (128)
+    frequency          124   96.9%  ███████████████████
+    package            128  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  die (119)
+    frequency           98   82.4%  ████████████████
+    package              1    0.8%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  amp (118)
+    frequency          110   93.2%  ██████████████████
+    package              9    7.6%  █
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  equalizer (103)
+    frequency          103  100.0%  ████████████████████
+    package             74   71.8%  ██████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  multiplier (90)
+    frequency           90  100.0%  ████████████████████
+    package             83   92.2%  ██████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  sw (64)
+    frequency           58   90.6%  ██████████████████
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  bias_tee (54)
+    frequency           53   98.1%  ███████████████████
+    package             54  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  cable (44)
+    frequency            7   15.9%  ███
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  eq (35)
+    frequency           34   97.1%  ███████████████████
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  termination (34)
+    frequency            8   23.5%  ████
+    package             34  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  attenuator (31)
+    frequency           30   96.8%  ███████████████████
+    attenuation         30   96.8%  ███████████████████
+    power               30   96.8%  ███████████████████
+    package             30   96.8%  ███████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  divider (30)
+    frequency           30  100.0%  ████████████████████
+    isolation           26   86.7%  █████████████████
+    NF / insertion loss    30  100.0%  ████████████████████
+    package             30  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  mixer (30)
+    frequency           30  100.0%  ████████████████████
+    conversion loss     30  100.0%  ████████████████████
+    isolation           30  100.0%  ████████████████████
+    P1dB                30  100.0%  ████████████████████
+    OIP3                 0    0.0%  
+    package             30  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  syn (25)
+    frequency            1    4.0%  
+    package              1    4.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  mult (22)
+    frequency           22  100.0%  ████████████████████
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  test (22)
+    frequency            3   13.6%  ██
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  limiter (21)
+    frequency           21  100.0%  ████████████████████
+    NF / insertion loss    21  100.0%  ████████████████████
+    power               21  100.0%  ████████████████████
+    package             21  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  coupler (20)
+    frequency           20  100.0%  ████████████████████
+    isolation            0    0.0%  
+    NF / insertion loss     0    0.0%  
+    package             20  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  psen (17)
+    frequency            5   29.4%  █████
+    package             17  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  mod (14)
+    frequency           14  100.0%  ████████████████████
+    package             13   92.9%  ██████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  phase_shifter (14)
+    frequency           13   92.9%  ██████████████████
+    NF / insertion loss    14  100.0%  ████████████████████
+    package             14  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  bias (13)
+    frequency            1    7.7%  █
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  dc_block (11)
+    frequency           11  100.0%  ████████████████████
+    package             11  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  detector (11)
+    frequency           10   90.9%  ██████████████████
+    package             11  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  match (10)
+    frequency            1   10.0%  ██
+    package             10  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  noncat (9)
+    frequency            0    0.0%  
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  acc (8)
+    frequency            0    0.0%  
+    package              8  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  phase_detector (8)
+    frequency            7   87.5%  █████████████████
+    package              7   87.5%  █████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  chk (7)
+    frequency            3   42.9%  ████████
+    package              7  100.0%  ████████████████████
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  lim (3)
+    frequency            0    0.0%  
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  pd (2)
+    frequency            2  100.0%  ████████████████████
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+  wg (1)
+    frequency            0    0.0%  
+    package              0    0.0%  
+    TID                  0    0.0%  
+    SEL                  0    0.0%  
+
+Radiation data (TID/SEL): 0 parts (0.0%)
+
+Families (base part + pedigree variants)
+  1788 base parts have variants (3649 parts total)
+  893 span more than one pedigree level
