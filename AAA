@@ -1,365 +1,266 @@
-Dataset health
-==============================================
-parts: 15939     vendors: 1     duplicate groups remaining: 810
+C:\Users\lane.white\Downloads\rfparts\rfparts\sources\minicircuits_products_full.json
+  15939 record(s)
 
-Source overlap
-  EverythingRF only         0
-  Vendor site only          0
-  Found in both             0
-  Other/local sources   15939
+  31 distinct 'cat' value(s)
+    count  cat                    -> maps to           group(s)
+  ------------------------------------------------------------------------------
+     8542  uncategorized          ?                    Catalog (variant or specia   <-- NO RULE, invents a category
+     2051  flt                    ?                    Filters, Catalog (variant    <-- NO RULE, invents a category
+      899  spl                    ?                    Catalog (variant or specia   <-- NO RULE, invents a category
+      832  amp                    ?                    Amplifiers, Catalog (varia   <-- NO RULE, invents a category
+      592  xfmr                   ?                    Transformers / Baluns, Cat   <-- NO RULE, invents a category
+      561  mix                    ?                    Catalog (variant or specia   <-- NO RULE, invents a category
+      532  cpl                    ?                    Catalog (variant or specia   <-- NO RULE, invents a category
+      431  att                    ?                    Catalog (variant or specia   <-- NO RULE, invents a category
+      404  osc                    ?                    Catalog (variant or specia   <-- NO RULE, invents a category
+      214  sw                     ?                    Switches, Catalog (variant   <-- NO RULE, invents a category
+      180  adapter                ?                    Adapters, Catalog (variant   <-- NO RULE, invents a category
+      138  eq                     ?                    Equalizers, Catalog (varia   <-- NO RULE, invents a category
+      119  die                    ?                    MMIC Die Parts, Catalog (v   <-- NO RULE, invents a category
+      112  mult                   ?                    Frequency Multipliers, Cat   <-- NO RULE, invents a category
+       67  bias                   ?                    Bias Tees, Catalog (varian   <-- NO RULE, invents a category
+       44  cable                  ?                    Catalog (variant or specia   <-- NO RULE, invents a category
+       34  term                   ?                    Terminations   <-- NO RULE, invents a category
+       26  test                   ?                    Catalog (variant or specia   <-- NO RULE, invents a category
+       25  syn                    ?                    Catalog (variant or specia   <-- NO RULE, invents a category
+       24  lim                    ?                    Limiters, Catalog (variant   <-- NO RULE, invents a category
+       17  psen                   ?                    Power Sensors   <-- NO RULE, invents a category
+       14  mod                    ?                    Modulators / Demodulators,   <-- NO RULE, invents a category
+       14  ps                     ?                    Phase Shifters   <-- NO RULE, invents a category
+       11  dcb                    ?                    DC Blocks   <-- NO RULE, invents a category
+       11  pdet                   ?                    Power Detectors   <-- NO RULE, invents a category
+       10  match                  ?                    Impedance Matching Pads   <-- NO RULE, invents a category
+       10  pd                     ?                    Phase Detectors, Catalog (   <-- NO RULE, invents a category
+        9  noncat                 ?                    Custom Assemblies, Custom    <-- NO RULE, invents a category
+        8  acc                    ?                    Wrenches   <-- NO RULE, invents a category
+        7  chk                    ?                    RF Chokes, Catalog (varian   <-- NO RULE, invents a category
+        1  wg                     ?                    Waveguides   <-- NO RULE, invents a category
 
-Pedigree distribution  (informational — not scored)
-  space-qualified      0    0.0%
-  space-grade          0    0.0%
-  hi-rel               0    0.0%
-  upscreenable         0    0.0%
-  —                15939  100.0%
+  15939 record(s) are blank or have no mapping rule
 
-Parts by category
-  uncategorized         8542
-  filter                1757
-  spl                    869
-  amplifier              715
-  mix                    531
-  cpl                    512
-  att                    400
-  transformer            353
-  flt                    294
-  osc                    276
-  xfmr                   239
-  adapter                180
-  switch                 153
-  oscillator             128
-  die                    119
-  amp                    118
-  equalizer              103
-  multiplier              90
-  sw                      64
-  bias_tee                54
-  cable                   44
-  eq                      35
-  termination             34
-  attenuator              31
-  divider                 30
-  mixer                   30
-  syn                     25
-  mult                    22
-  test                    22
-  limiter                 21
-  coupler                 20
-  psen                    17
-  mod                     14
-  phase_shifter           14
-  bias                    13
-  dc_block                11
-  detector                11
-  match                   10
-  noncat                   9
-  acc                      8
-  phase_detector           8
-  chk                      7
-  lim                      3
-  pd                       2
-  wg                       1
+  top-level fields present:
+      15939  pn
+      15939  cat
+      15939  group
+      15939  url
+      15914  datasheet_url
+      15914  sparams_url
+      12016  from_sitemap
+       8300  specs
+       5421  flo
+       5248  fhi
+       3707  ez_sample
+       3681  case_style
+       2102  impedance
+        781  gain
+        781  vcc
+        772  p1db
+        770  icc_ma
+        765  vswr_in
 
-Spec coverage by category
-  (% of parts in that category carrying a value — RF specs are
-   only shown for the categories they apply to)
+  spec keys inside 'specs':
+       5154  interface
+       3656  case_style
+       2695  impedance
+       2254  technology
+       1815  rejection
+       1804  passband_f1
+       1804  filter_e
+       1802  stopband_f3
+       1802  rejection_f3
+       1750  passband_f2
+       1699  rejection_f4
+       1676  stopband_f4
+       1038  voltage
+       1017  current
+       1016  f_low
+       1016  f_high
+       1005  nf
+        910  gain
 
-  uncategorized (8542)
-    frequency          402    4.7%  
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
+  3681/15939 record(s) have a non-empty case_style -- this is why some categories show 0% package coverage
 
-  filter (1757)
-    frequency          458   26.1%  █████
-    NF / insertion loss     0    0.0%  
-    package           1709   97.3%  ███████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
+  ==========================================================================
+  sample record(s) with cat='uncategorized'
+  ==========================================================================
+    pn='047-12SMP+'  group='Catalog (variant or specialty)'
+      cat              'uncategorized'
+      from_sitemap     'True'
+      url              'https://www.minicircuits.com/WebStore/dashboard.html?model=047-12SMP%2'
+      datasheet_url    'https://www.minicircuits.com/pdfs/047-12SMP+.pdf'
+      sparams_url      'https://www.minicircuits.com/pages/s-params/047-12SMP+_S2P.zip'
 
-  spl (869)
-    frequency          863   99.3%  ███████████████████
-    package             18    2.1%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
+    pn='047-12SMPR+'  group='Catalog (variant or specialty)'
+      cat              'uncategorized'
+      from_sitemap     'True'
+      url              'https://www.minicircuits.com/WebStore/dashboard.html?model=047-12SMPR%'
+      datasheet_url    'https://www.minicircuits.com/pdfs/047-12SMPR+.pdf'
+      sparams_url      'https://www.minicircuits.com/pages/s-params/047-12SMPR+_S2P.zip'
 
-  amplifier (715)
-    frequency          714   99.9%  ███████████████████
-    gain               714   99.9%  ███████████████████
-    NF                 690   96.5%  ███████████████████
-    P1dB               705   98.6%  ███████████████████
-    OIP3               683   95.5%  ███████████████████
-    Psat                 0    0.0%  
-    package            701   98.0%  ███████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
 
-  mix (531)
-    frequency          527   99.2%  ███████████████████
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
+  ==========================================================================
+  sample record(s) with cat='flt'
+  ==========================================================================
+    pn='ABF-3R3G+'  group='Filters'
+      cat              'flt'
+      specs:
+          passband_f1    '3100'
+          passband_f2    '3500'
+          stopband_f3    'DC-2400'
+          rejection_f3   '35'
+          stopband_f4    '4000-7000'
+          rejection_f4   '35'
+          filter_e       'Band Pass'
+          technology     'Thin Film'
+          rejection      '35'
+          case_style     'ZH3433 LxWxH 0.472x0.472x0.100'
+      url              'https://www.minicircuits.com/WebStore/dashboard.html?model=ABF-3R3G%2B'
+      datasheet_url    'https://www.minicircuits.com/pdfs/ABF-3R3G+.pdf'
+      sparams_url      'https://www.minicircuits.com/pages/s-params/ABF-3R3G+_S2P.zip'
+      case_style       'ZH3433'
+      ez_sample        'False'
 
-  cpl (512)
-    frequency          510   99.6%  ███████████████████
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
+    pn='ABF-6R5G+'  group='Filters'
+      cat              'flt'
+      specs:
+          passband_f1    '6100'
+          passband_f2    '6900'
+          stopband_f3    'DC-5100'
+          rejection_f3   '39'
+          stopband_f4    '7900-16500'
+          rejection_f4   '20'
+          filter_e       'Band Pass'
+          technology     'Thin Film'
+          rejection      '20'
+          case_style     'UC2731 LxWxH 0.22x0.32x0.08'
+      url              'https://www.minicircuits.com/WebStore/dashboard.html?model=ABF-6R5G%2B'
+      datasheet_url    'https://www.minicircuits.com/pdfs/ABF-6R5G+.pdf'
+      sparams_url      'https://www.minicircuits.com/pages/s-params/ABF-6R5G+_S2P.zip'
+      case_style       'UC2731'
+      ez_sample        'False'
 
-  att (400)
-    frequency          366   91.5%  ██████████████████
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
 
-  transformer (353)
-    frequency          353  100.0%  ████████████████████
-    package            353  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
+  ==========================================================================
+  sample record(s) with cat='spl'
+  ==========================================================================
+    pn='AD3PS-1+'  group='Power Splitters / Combiners'
+      cat              'spl'
+      specs:
+          no_of_ways     '3'
+          f_low          '1'
+          f_high         '300'
+          isolation      '35'
+          insertion_loss_above_theoretical '0.4'
+          phase_unbalance '4'
+          amplitude_unbalance '0.3'
+          power_input_as_splitter '0.5'
+          technology     'Core & Wire'
+          insertion_loss '0.4'
+          power          '0.5'
+          case_style     'CJ725 LxWxH 0.385x0.397x0.215'
+      flo              '1'
+      fhi              '300'
+      iso_db           '35'
+      url              'https://www.minicircuits.com/WebStore/dashboard.html?model=AD3PS-1%2B'
+      datasheet_url    'https://www.minicircuits.com/pdfs/AD3PS-1+.pdf'
+      sparams_url      'https://www.minicircuits.com/pages/s-params/AD3PS-1+_S2P.zip'
+      case_style       'CJ725'
+      ez_sample        'False'
 
-  flt (294)
-    frequency          230   78.2%  ███████████████
-    package             47   16.0%  ███
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
+    pn='AD4PS-1+'  group='Power Splitters / Combiners'
+      cat              'spl'
+      specs:
+          no_of_ways     '4'
+          f_low          '1'
+          f_high         '500'
+          isolation      '30'
+          insertion_loss_above_theoretical '0.5'
+          phase_unbalance '5'
+          amplitude_unbalance '0.5'
+          power_input_as_splitter '0.5'
+          technology     'Core & Wire'
+          insertion_loss '0.5'
+          power          '0.5'
+          case_style     'CJ725 LxWxH 0.385x0.397x0.215'
+      flo              '1'
+      fhi              '500'
+      iso_db           '30'
+      url              'https://www.minicircuits.com/WebStore/dashboard.html?model=AD4PS-1%2B'
+      datasheet_url    'https://www.minicircuits.com/pdfs/AD4PS-1+.pdf'
+      sparams_url      'https://www.minicircuits.com/pages/s-params/AD4PS-1+_S2P.zip'
+      case_style       'CJ725'
+      ez_sample        'False'
 
-  osc (276)
-    frequency            2    0.7%  
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
 
-  xfmr (239)
-    frequency          238   99.6%  ███████████████████
-    package             31   13.0%  ██
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
+  ==========================================================================
+  sample record(s) with cat='amp'
+  ==========================================================================
+    pn='ADCA3270'  group='Amplifiers'
+      cat              'amp'
+      specs:
+          f_low          '45'
+          f_high         '1218'
+          gain           '25'
+          nf             '3'
+          input_vswr     '1.43'
+          output_vswr    '1.2'
+          voltage        '24'
+          current        '350/480'
+          vswr_in        '1.43'
+          vswr_out       '1.2'
+          case_style     'DL3631'
+      flo              '45'
+      fhi              '1218'
+      gain             '25'
+      nf               '3'
+      vswr_in          '1.43'
+      vswr_out         '1.2'
+      vcc              '24'
+      icc_ma           '350480'
+      url              'https://www.minicircuits.com/WebStore/dashboard.html?model=ADCA3270'
+      datasheet_url    'https://www.minicircuits.com/pdfs/ADCA3270.pdf'
+      sparams_url      'https://www.minicircuits.com/pages/s-params/ADCA3270_S2P.zip'
+      case_style       'DL3631'
+      ez_sample        'False'
 
-  adapter (180)
-    frequency          160   88.9%  █████████████████
-    package            154   85.6%  █████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
+    pn='ADCA3280'  group='Amplifiers'
+      cat              'amp'
+      specs:
+          f_low          '45'
+          f_high         '1794'
+          gain           '22.7'
+          nf             '3.3'
+          input_vswr     '1.32'
+          output_vswr    '1.25'
+          voltage        '18/24'
+          current        '450/570'
+          vswr_in        '1.32'
+          vswr_out       '1.25'
+          case_style     'DL3631'
+      flo              '45'
+      fhi              '1794'
+      gain             '22.7'
+      nf               '3.3'
+      vswr_in          '1.32'
+      vswr_out         '1.25'
+      vcc              '1824'
+      icc_ma           '450570'
+      url              'https://www.minicircuits.com/WebStore/dashboard.html?model=ADCA3280'
+      datasheet_url    'https://www.minicircuits.com/pdfs/ADCA3280.pdf'
+      sparams_url      'https://www.minicircuits.com/pages/s-params/ADCA3280_S2P.zip'
+      case_style       'DL3631'
+      ez_sample        'False'
 
-  switch (153)
-    frequency          131   85.6%  █████████████████
-    isolation           77   50.3%  ██████████
-    NF / insertion loss    77   50.3%  ██████████
-    P1dB                 0    0.0%  
-    package            145   94.8%  ██████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
 
-  oscillator (128)
-    frequency          124   96.9%  ███████████████████
-    package            128  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  die (119)
-    frequency           98   82.4%  ████████████████
-    package              1    0.8%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  amp (118)
-    frequency          110   93.2%  ██████████████████
-    package              9    7.6%  █
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  equalizer (103)
-    frequency          103  100.0%  ████████████████████
-    package             74   71.8%  ██████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  multiplier (90)
-    frequency           90  100.0%  ████████████████████
-    package             83   92.2%  ██████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  sw (64)
-    frequency           58   90.6%  ██████████████████
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  bias_tee (54)
-    frequency           53   98.1%  ███████████████████
-    package             54  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  cable (44)
-    frequency            7   15.9%  ███
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  eq (35)
-    frequency           34   97.1%  ███████████████████
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  termination (34)
-    frequency            8   23.5%  ████
-    package             34  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  attenuator (31)
-    frequency           30   96.8%  ███████████████████
-    attenuation         30   96.8%  ███████████████████
-    power               30   96.8%  ███████████████████
-    package             30   96.8%  ███████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  divider (30)
-    frequency           30  100.0%  ████████████████████
-    isolation           26   86.7%  █████████████████
-    NF / insertion loss    30  100.0%  ████████████████████
-    package             30  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  mixer (30)
-    frequency           30  100.0%  ████████████████████
-    conversion loss     30  100.0%  ████████████████████
-    isolation           30  100.0%  ████████████████████
-    P1dB                30  100.0%  ████████████████████
-    OIP3                 0    0.0%  
-    package             30  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  syn (25)
-    frequency            1    4.0%  
-    package              1    4.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  mult (22)
-    frequency           22  100.0%  ████████████████████
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  test (22)
-    frequency            3   13.6%  ██
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  limiter (21)
-    frequency           21  100.0%  ████████████████████
-    NF / insertion loss    21  100.0%  ████████████████████
-    power               21  100.0%  ████████████████████
-    package             21  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  coupler (20)
-    frequency           20  100.0%  ████████████████████
-    isolation            0    0.0%  
-    NF / insertion loss     0    0.0%  
-    package             20  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  psen (17)
-    frequency            5   29.4%  █████
-    package             17  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  mod (14)
-    frequency           14  100.0%  ████████████████████
-    package             13   92.9%  ██████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  phase_shifter (14)
-    frequency           13   92.9%  ██████████████████
-    NF / insertion loss    14  100.0%  ████████████████████
-    package             14  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  bias (13)
-    frequency            1    7.7%  █
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  dc_block (11)
-    frequency           11  100.0%  ████████████████████
-    package             11  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  detector (11)
-    frequency           10   90.9%  ██████████████████
-    package             11  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  match (10)
-    frequency            1   10.0%  ██
-    package             10  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  noncat (9)
-    frequency            0    0.0%  
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  acc (8)
-    frequency            0    0.0%  
-    package              8  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  phase_detector (8)
-    frequency            7   87.5%  █████████████████
-    package              7   87.5%  █████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  chk (7)
-    frequency            3   42.9%  ████████
-    package              7  100.0%  ████████████████████
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  lim (3)
-    frequency            0    0.0%  
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  pd (2)
-    frequency            2  100.0%  ████████████████████
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-  wg (1)
-    frequency            0    0.0%  
-    package              0    0.0%  
-    TID                  0    0.0%  
-    SEL                  0    0.0%  
-
-Radiation data (TID/SEL): 0 parts (0.0%)
-
-Families (base part + pedigree variants)
-  1788 base parts have variants (3649 parts total)
-  893 span more than one pedigree level
+==============================================================================
+  DATABASE: C:\Users\lane.white\.rfparts\parts.db
+==============================================================================
+  904 Mini-Circuits part(s) stored, 8 categor(ies)
+        285  filter
+        206  attenuator
+        134  coupler
+        123  switch
+         68  amplifier
+         57  divider
+         30  balun
+          1  bias_tee
