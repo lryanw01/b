@@ -1,34 +1,43 @@
-PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\dbg_part_specs.py" CMA-83LN+
-database     : C:\Users\lane.white\Downloads\rfparts\Data\parts.db
-source tree  : C:\Users\lane.white\Downloads\rfparts\Sources
-source tree  : C:\Users\lane.white\Downloads\rfparts\Data\datasheets
-source tree  : C:\Users\lane.white\Downloads\rfparts\Data\vendor_cache
-source tree  : C:\Users\lane.white\Downloads\rfparts\Data
-source tree  : C:\Users\lane.white\Downloads\rfparts
-
-########################################################################
-#  CMA-83LN+
-########################################################################
-  not in the database. Still scanning the sources below: a part can be present in a source and fail to ingest.
-
-  --- raw data from the sources on disk ---
-  11581 text file(s) examined, 14 candidate(s)
-
-      minicircuits_products_full.json — raw context
-        ....minicircuits.com/pdfs/CMA-82+.pdf", "sparams_url": "https://www.minicircuits.com/pages/s-params/CMA-82+_S2P.zip", "case_style": "DL1721", "ez_sample": false }, { "pn": "CMA-83LN+", "cat": "amp", "group": "Amplifiers", "specs": { "f_low": "500", "f_high": "8000", "gain": "21.5", "nf": "1.3", "p1db": "20.3", "oip3": "30.1", "input_vswr": "1.32", "output_vswr": "1.31", "voltage": "5.0/6.0", "c...
-
-      rfparts_capture_data.json — raw context
-        ... "subcategory_terms_matched": { "pa": [ "pa" ] } } }, { "vendor": "Mini-Circuits", "category": "amplifier", "title": "CMA-83LN+ — amplifier", "url": "https://www.minicircuits.com/WebStore/dashboard.html?model=CMA-83LN%2B", "source_type": "catalog", "model": "CMA-83LN+", "mined_specs": { "freq_ghz": [ 0.5, 8.0 ], "gain_db": 2...
-
-      rfparts_capture_data.json — raw context
-        ... "subcategory_terms_matched": { "pa": [ "pa" ] } } }, { "vendor": "Mini-Circuits", "category": "amplifier", "title": "CMA-83LN+ — amplifier", "url": "https://www.minicircuits.com/WebStore/dashboard.html?model=CMA-83LN%2B", "source_type": "catalog", "model": "CMA-83LN+", "mined_specs": { "freq_ghz": [ 0.5, 8.0 ], "gain_db": 2...
-
-      minicircuits_products_full.json — raw context
-        ....minicircuits.com/pdfs/CMA-82+.pdf", "sparams_url": "https://www.minicircuits.com/pages/s-params/CMA-82+_S2P.zip", "case_style": "DL1721", "ez_sample": false }, { "pn": "CMA-83LN+", "cat": "amp", "group": "Amplifiers", "specs": { "f_low": "500", "f_high": "8000", "gain": "21.5", "nf": "1.3", "p1db": "20.3", "oip3": "30.1", "input_vswr": "1.32", "output_vswr": "1.31", "voltage": "5.0/6.0", "c...
-
-How to read it: if a source's RAW value is right but the stored row
-is wrong, the parser mis-scaled it. If the raw value is already odd,
-the source says so. If an old high-confidence row beats a newer
-correct one, re-parse that source (bump PARSER_VERSION or touch the
-file). If a datasheet extracts text but hits NO patterns, the wording
-differs from PARAM_SPECS and the snippet shows what to add.
+  "pn": "10F-10F+",
+  "cat": "adapter",
+  "group": "Adapters",
+  "specs": {
+   "conn_2": "1.0mm",
+   "f_low": "1.0mm",
+   "f_high": "DC",
+   "vswr": "110",
+   "impedance": "1.07",
+   "case_style": "DJ3474 LxD 0.50x0.154"
+  },
+  "flo": 1,
+  "fhi": "DC",
+  "vswr": 110,
+  "impedance": 1.07,
+  "url": "https://www.minicircuits.com/WebStore/dashboard.html?model=10F-10F%2B",
+  "datasheet_url": "https://www.minicircuits.com/pdfs/10F-10F+.pdf",
+  "sparams_url": "https://www.minicircuits.com/pages/s-params/10F-10F+_S2P.zip",
+  "case_style": "DJ3474",
+  "ez_sample": false
+ },
+ {
+  "pn": "10F-10M+",
+  "cat": "adapter",
+  "group": "Adapters",
+  "specs": {
+   "conn_2": "1.0mm",
+   "f_low": "1.0mm",
+   "f_high": "DC",
+   "vswr": "110",
+   "impedance": "1.10",
+   "case_style": "DJ3474-1 LxD 0.49x0.232"
+  },
+  "flo": 1,
+  "fhi": "DC",
+  "vswr": 110,
+  "impedance": 1.1,
+  "url": "https://www.minicircuits.com/WebStore/dashboard.html?model=10F-10M%2B",
+  "datasheet_url": "https://www.minicircuits.com/pdfs/10F-10M+.pdf",
+  "sparams_url": "https://www.minicircuits.com/pages/s-params/10F-10M+_S2P.zip",
+  "case_style": "DJ3474-1",
+  "ez_sample": false
+ },
