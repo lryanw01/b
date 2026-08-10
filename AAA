@@ -1,3 +1,115 @@
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py"
+database : C:\Users\lane.white\Downloads\rfparts\Data\parts.db
+library  : C:\Users\lane.white\Downloads\rfparts\data\datasheets
+vendors  : minicircuits, marki, qorvo, macom
+
+16629 part(s) to fetch: minicircuits 14219, macom 2410
+  launching chrome.exe on port 9222
+  attached to Chrome (about:blank)
+
+  [1/16629] 10F-10F+             FAIL Error
+  [2/16629] 10F-10M+             FAIL Error
+  [3/16629] 10F-135F+            FAIL Error
+  [4/16629] 10F-135M+            FAIL Error
+  [5/16629] 10F-185F+            FAIL Error
+  [6/16629] 10F-185M+            FAIL Error
+  [7/16629] 10M-10M+             FAIL Error
+  [8/16629] 10M-135F+            FAIL Error
+  [9/16629] 10M-135M+            FAIL Error
+  [10/16629] 10M-185F+            FAIL Error
+  [11/16629] 10M-185M+            FAIL Error
+  [12/16629] 24B-KB+              FAIL Error
+  [13/16629] 24F-24F+             FAIL Error
+  [14/16629] 24F-24M+             FAIL Error
+  [15/16629] 24F-35F+             FAIL Error
+  [16/16629] 24F-35M+             FAIL Error
+  [17/16629] 24F-KF+              FAIL Error
+  [18/16629] 24F-KM+              FAIL Error
+  [19/16629] 24M-24M+             FAIL Error
+  [20/16629] 24M-24M-T+           FAIL Error
+  [21/16629] 24M-35F+             FAIL Error
+  [22/16629] 24M-35M+             FAIL Error
+  [23/16629] 24M-KF+              FAIL Error
+  [24/16629] 24M-KM+              FAIL Error
+  [25/16629] 24FPM-24F+           FAIL Error
+  [26/16629] 35F-35F50+           FAIL Error
+  [27/16629] 35F-35M50+           FAIL Error
+  [28/16629] 35M-35M50+           FAIL Error
+  [29/16629] 35FFL-35F50+         FAIL Error
+  [30/16629] 135F-135F+           FAIL Error
+  [31/16629] 135F-135M+           FAIL Error
+  [32/16629] 135F-185F+           FAIL Error
+  [33/16629] 135F-185M+           FAIL Error
+  [34/16629] 135M-135M+           FAIL Error
+  [35/16629] 135M-185F+           FAIL Error
+  [36/16629] 135M-185M+           FAIL Error
+  [37/16629] 185B-185B+           FAIL Error
+  [38/16629] 185F-24F+            FAIL Error
+  [39/16629] 185F-24M+            FAIL Error
+  [40/16629] 185F-185F+           FAIL Error
+  [41/16629] 185F-KF+             FAIL Error
+  [42/16629] 185F-KM+             FAIL Error
+  [43/16629] 185M-24F+            FAIL Error
+  [44/16629] 185M-24M+            FAIL Error
+  [45/16629] 185M-185F+           FAIL Error
+  [46/16629] 185M-185M+           FAIL Error
+  [47/16629] 185M-KF+             FAIL Error
+  [48/16629] 185M-KM+             FAIL Error
+  [49/16629] 24FR-35F+            FAIL Error
+  [50/16629] 24FR-35M+            FAIL Error
+  [51/16629] 24FR-KF+             FAIL Error
+  [52/16629] 24FR-KM+             FAIL Error
+  [53/16629] 24MR-24M-T+          FAIL Error
+  [54/16629] 24MR-35F+            FAIL Error
+  [55/16629] 24MR-35M+            FAIL Error
+  [56/16629] 24MR-KF+             FAIL Error
+  [57/16629] 24MR-KM+             FAIL Error
+  [58/16629] 135FR-185F+          FAIL Error
+  [59/16629] 135FR-185M+          FAIL Error
+  [60/16629] 135MR-185F+          FAIL Error
+  [61/16629] 135MR-185M+          FAIL Error
+  [62/16629] 185FR-24F+           FAIL Error
+  [63/16629] 185FR-24M+           FAIL Error
+  [64/16629] 185FR-185F+          FAIL Error
+  [65/16629] 185FR-185M+          FAIL Error
+  [66/16629] 185FR-KF+            FAIL Error
+  [67/16629] 185FR-KM+            FAIL Error
+Traceback (most recent call last):
+  File "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py", line 333, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py", line 272, in main
+    resp = ctx.request.get(t["url"], timeout=45000)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\lane.white\AppData\Roaming\Python\Python312\site-packages\playwright\sync_api\_generated.py", line 20843, in get
+    self._sync(
+  File "C:\Users\lane.white\AppData\Roaming\Python\Python312\site-packages\playwright\_impl\_sync_base.py", line 113, in _sync
+    self._dispatcher_fiber.switch()
+  File "C:\Users\lane.white\AppData\Roaming\Python\Python312\site-packages\playwright\sync_api\_context_manager.py", line 56, in greenlet_main
+    self._loop.run_until_complete(self._connection.run_as_sync())
+  File "C:\EngTools\Python3128\Lib\asyncio\base_events.py", line 673, in run_until_complete
+    self.run_forever()
+  File "C:\EngTools\Python3128\Lib\asyncio\windows_events.py", line 322, in run_forever
+    super().run_forever()
+  File "C:\EngTools\Python3128\Lib\asyncio\base_events.py", line 640, in run_forever
+    self._run_once()
+  File "C:\EngTools\Python3128\Lib\asyncio\base_events.py", line 1954, in _run_once
+    event_list = self._selector.select(timeout)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\EngTools\Python3128\Lib\asyncio\windows_events.py", line 445, in select
+    self._poll(timeout)
+  File "C:\EngTools\Python3128\Lib\asyncio\windows_events.py", line 774, in _poll
+    status = _overlapped.GetQueuedCompletionStatus(self._iocp, ms)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+Future exception was never retrieved
+future: <Future finished exception=TargetClosedError('Target page, context or browser has been closed')>
+playwright._impl._errors.TargetClosedError: Target page, context or browser has been closed
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py"
+database : C:\Users\lane.white\Downloads\rfparts\Data\parts.db
+library  : C:\Users\lane.white\Downloads\rfparts\data\datasheets
+vendors  : minicircuits, marki, qorvo, macom
+
 16629 part(s) to fetch: minicircuits 14219, macom 2410
   CDP: 1 context(s)
        1 page(s) in context 0: about:blank
@@ -5,3 +117,116 @@
 
   [1/16629] 10F-10F+             tiny HTML (536 B) -- error page, not saved
   [2/16629] 10F-10M+             tiny HTML (536 B) -- error page, not saved
+  [3/16629] 10F-135F+            tiny HTML (536 B) -- error page, not saved
+  [4/16629] 10F-135M+            tiny HTML (536 B) -- error page, not saved
+  [5/16629] 10F-185F+            tiny HTML (536 B) -- error page, not saved
+  [6/16629] 10F-185M+            tiny HTML (536 B) -- error page, not saved
+  [7/16629] 10M-10M+             tiny HTML (536 B) -- error page, not saved
+Traceback (most recent call last):
+  File "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py", line 440, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py", line 381, in main
+    blob, status, why = fetch_via_page(page, t["url"], args.debug)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py", line 266, in fetch_via_page
+    page.wait_for_timeout(150)
+  File "C:\Users\lane.white\AppData\Roaming\Python\Python312\site-packages\playwright\sync_api\_generated.py", line 12529, in wait_for_timeout
+    self._sync(
+  File "C:\Users\lane.white\AppData\Roaming\Python\Python312\site-packages\playwright\_impl\_sync_base.py", line 113, in _sync
+    self._dispatcher_fiber.switch()
+  File "C:\Users\lane.white\AppData\Roaming\Python\Python312\site-packages\playwright\sync_api\_context_manager.py", line 56, in greenlet_main
+    self._loop.run_until_complete(self._connection.run_as_sync())
+  File "C:\EngTools\Python3128\Lib\asyncio\base_events.py", line 673, in run_until_complete
+    self.run_forever()
+  File "C:\EngTools\Python3128\Lib\asyncio\windows_events.py", line 322, in run_forever
+    super().run_forever()
+  File "C:\EngTools\Python3128\Lib\asyncio\base_events.py", line 640, in run_forever
+    self._run_once()
+  File "C:\EngTools\Python3128\Lib\asyncio\base_events.py", line 1954, in _run_once
+    event_list = self._selector.select(timeout)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\EngTools\Python3128\Lib\asyncio\windows_events.py", line 445, in select
+    self._poll(timeout)
+  File "C:\EngTools\Python3128\Lib\asyncio\windows_events.py", line 774, in _poll
+    status = _overlapped.GetQueuedCompletionStatus(self._iocp, ms)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+Future exception was never retrieved
+future: <Future finished exception=TargetClosedError('Target page, context or browser has been closed')>
+playwright._impl._errors.TargetClosedError: Target page, context or browser has been closed
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py" --vendors marki
+database : C:\Users\lane.white\Downloads\rfparts\Data\parts.db
+library  : C:\Users\lane.white\Downloads\rfparts\data\datasheets
+vendors  : marki
+
+Nothing to fetch: every matching part either already has a datasheet
+or already states a qualification.
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py" --vendors qorvo
+database : C:\Users\lane.white\Downloads\rfparts\Data\parts.db
+library  : C:\Users\lane.white\Downloads\rfparts\data\datasheets
+vendors  : qorvo
+
+Nothing to fetch: every matching part either already has a datasheet
+or already states a qualification.
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py" --vendors MACOM
+usage: fetch missing datasheets.py [-h] [--vendors [{minicircuits,marki,qorvo,macom} ...]] [--limit LIMIT] [--out OUT] [--delay DELAY] [--endpoint ENDPOINT] [--profile PROFILE] [--chrome CHROME]
+                                   [--test-url TEST_URL] [--debug] [--dry-run] [--include-qualified]
+fetch missing datasheets.py: error: argument --vendors: invalid choice: 'MACOM' (choose from minicircuits, marki, qorvo, macom)
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py" --vendors macom
+database : C:\Users\lane.white\Downloads\rfparts\Data\parts.db
+library  : C:\Users\lane.white\Downloads\rfparts\data\datasheets
+vendors  : macom
+
+2410 part(s) to fetch: macom 2410
+  CDP: 1 context(s)
+       1 page(s) in context 0: https://www.minicircuits.com/pdfs/10M-13
+  attached to Chrome (https://www.minicircuits.com/pdfs/10M-135F+.pdf)
+
+  [1/2410] AMC-143-SMA          tiny HTML (536 B) -- error page, not saved
+  [2/2410] MAPC-A2517           tiny HTML (536 B) -- error page, not saved
+  [3/2410] MAAP-015030-DIE      tiny HTML (536 B) -- error page, not saved
+  [4/2410] 905R6M               tiny HTML (536 B) -- error page, not saved
+  [5/2410] 9010R0M-14-2         tiny HTML (536 B) -- error page, not saved
+  [6/2410] 9022R0M              tiny HTML (536 B) -- error page, not saved
+  [7/2410] 9033R0M-14-3         tiny HTML (536 B) -- error page, not saved
+  [8/2410] 90R1 thru 90R9       tiny HTML (536 B) -- error page, not saved
+  [9/2410] 906R8M               tiny HTML (536 B) -- error page, not saved
+  [10/2410] 90R5 thru 901R0      tiny HTML (536 B) -- error page, not saved
+  [11/2410] 9010R0M              tiny HTML (536 B) -- error page, not saved
+  [12/2410] 9047R0M              tiny HTML (536 B) -- error page, not saved
+  [13/2410] 9082R0M              tiny HTML (536 B) -- error page, not saved
+  [14/2410] 902R2 thru 904R7     tiny HTML (536 B) -- error page, not saved
+  [15/2410] 9015R0M              tiny HTML (536 B) -- error page, not saved
+  [16/2410] 908R2M               tiny HTML (536 B) -- error page, not saved
+  [17/2410] 901R0 thru 902R2     tiny HTML (536 B) -- error page, not saved
+Traceback (most recent call last):
+  File "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py", line 440, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py", line 381, in main
+    blob, status, why = fetch_via_page(page, t["url"], args.debug)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py", line 266, in fetch_via_page
+    page.wait_for_timeout(150)
+  File "C:\Users\lane.white\AppData\Roaming\Python\Python312\site-packages\playwright\sync_api\_generated.py", line 12529, in wait_for_timeout
+    self._sync(
+  File "C:\Users\lane.white\AppData\Roaming\Python\Python312\site-packages\playwright\_impl\_sync_base.py", line 113, in _sync
+    self._dispatcher_fiber.switch()
+  File "C:\Users\lane.white\AppData\Roaming\Python\Python312\site-packages\playwright\sync_api\_context_manager.py", line 56, in greenlet_main
+    self._loop.run_until_complete(self._connection.run_as_sync())
+  File "C:\EngTools\Python3128\Lib\asyncio\base_events.py", line 673, in run_until_complete
+    self.run_forever()
+  File "C:\EngTools\Python3128\Lib\asyncio\windows_events.py", line 322, in run_forever
+    super().run_forever()
+  File "C:\EngTools\Python3128\Lib\asyncio\base_events.py", line 640, in run_forever
+    self._run_once()
+  File "C:\EngTools\Python3128\Lib\asyncio\base_events.py", line 1954, in _run_once
+    event_list = self._selector.select(timeout)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\EngTools\Python3128\Lib\asyncio\windows_events.py", line 445, in select
+    self._poll(timeout)
+  File "C:\EngTools\Python3128\Lib\asyncio\windows_events.py", line 774, in _poll
+    status = _overlapped.GetQueuedCompletionStatus(self._iocp, ms)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
