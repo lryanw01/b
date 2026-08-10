@@ -196,13 +196,33 @@ def attach(p, endpoint, profile, chrome_path=None, wait=30):
                 break
             time.sleep(0.5)
     browser = p.chromium.connect_over_cdp(endpoint)
+    print(f"  CDP: {len(browser.contexts)} context(s)")
     ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+    try:
+        print(f"       {len(ctx.pages)} page(s) in context 0: "
+              + ", ".join((pg.url or "about:blank")[:40] for pg in ctx.pages[:3]))
+    except Exception:
+        pass
     # Without this a PDF link that Chrome decides to download is simply dropped.
     try:
         ctx.set_default_timeout(45000)
     except Exception:
         pass
-    page = ctx.pages[0] if ctx.pages else ctx.new_page()
+    # Use a page we KNOW is live. Reusing whatever sits at index 0 can hand back
+    # a tab that is closing or detached, and a goto on that silently does
+    # nothing -- the address bar never moves and every fetch reports a failure.
+    page = None
+    for cand in list(ctx.pages):
+        try:
+            if not cand.is_closed():
+                cand.bring_to_front()
+                page = cand
+                break
+        except Exception:
+            continue
+    if page is None:
+        page = ctx.new_page()
+        print("       (opened a new tab)")
     return browser, ctx, page
 
 
@@ -286,6 +306,8 @@ def main(argv=None):
     ap.add_argument("--endpoint", default="http://localhost:9222")
     ap.add_argument("--profile", default=None)
     ap.add_argument("--chrome", default=None)
+    ap.add_argument("--test-url", default=None,
+                    help="attach, navigate to this ONE url, report what happens")
     ap.add_argument("--debug", action="store_true",
                     help="print the reason for each failure")
     ap.add_argument("--dry-run", action="store_true",
@@ -300,6 +322,24 @@ def main(argv=None):
     print(f"database : {partdb.DB_PATH}")
     print(f"library  : {out_root}")
     print(f"vendors  : {', '.join(args.vendors)}")
+
+    if args.test_url:
+        print(f"\nprobing one URL: {args.test_url}")
+        with sync_playwright() as pw:
+            _b, _c, page = attach(
+                pw, args.endpoint,
+                args.profile or (Path.home() / "rfparts-chrome"), args.chrome)
+            print(f"  attached; page at {page.url[:70] or 'about:blank'}")
+            blob, status, why = fetch_via_page(page, args.test_url, True)
+            print(f"  result : {why}   status={status}   "
+                  f"bytes={len(blob) if blob else 0}")
+            try:
+                print(f"  page is now at {page.url[:78]}")
+            except Exception:
+                pass
+            if blob:
+                print(f"  first bytes: {blob[:24]!r}")
+        return 0
 
     targets = find_targets(args.vendors, args.limit, args.include_qualified)
     if not targets:
@@ -339,6 +379,11 @@ def main(argv=None):
             # page uses the whole browser stack, sends a real Referer, and lets
             # you watch it work.
             blob, status, why = fetch_via_page(page, t["url"], args.debug)
+            if args.debug:
+                try:
+                    print(f"      page is now at {page.url[:78]}")
+                except Exception:
+                    pass
             if blob is None:
                 failed += 1
                 print(f"  [{i}/{len(targets)}] {t['mpn']:<20} FAIL {why}")
