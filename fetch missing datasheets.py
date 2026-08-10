@@ -197,6 +197,11 @@ def attach(p, endpoint, profile, chrome_path=None, wait=30):
             time.sleep(0.5)
     browser = p.chromium.connect_over_cdp(endpoint)
     ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+    # Without this a PDF link that Chrome decides to download is simply dropped.
+    try:
+        ctx.set_default_timeout(45000)
+    except Exception:
+        pass
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
     return browser, ctx, page
 
@@ -208,6 +213,65 @@ CHALLENGE = ("cf-browser-verification", "just a moment", "checking your browser"
 def looks_like_challenge(blob):
     head = blob[:4000].decode("utf-8", "replace").lower()
     return any(m in head for m in CHALLENGE)
+
+
+def fetch_via_page(page, url, debug=False):
+    """(bytes, status, reason) for a datasheet URL, driving the real page.
+
+    Chrome handles a PDF link one of two ways: it renders it in the built-in
+    viewer, or it downloads it and aborts the navigation. Both are normal, and a
+    fetcher has to accept either -- treating the aborted navigation as an error
+    is what makes every PDF look like a failure.
+    """
+    got = {}
+
+    def _on_download(dl):
+        try:
+            got["path"] = dl.path()
+            got["name"] = dl.suggested_filename
+        except Exception as e:
+            got["err"] = f"{type(e).__name__}: {e}"
+
+    page.on("download", _on_download)
+    resp = None
+    nav_err = None
+    try:
+        resp = page.goto(url, wait_until="commit", timeout=45000)
+    except Exception as e:
+        nav_err = f"{type(e).__name__}: {str(e)[:80]}"
+    # A download aborts the navigation, so give it a moment to land.
+    for _ in range(20):
+        if got.get("path"):
+            break
+        page.wait_for_timeout(150)
+    try:
+        page.remove_listener("download", _on_download)
+    except Exception:
+        pass
+
+    if got.get("path"):
+        try:
+            return Path(got["path"]).read_bytes(), 200, "download"
+        except OSError as e:
+            return None, None, f"download unreadable: {e}"
+    if resp is not None:
+        status = resp.status
+        try:
+            body = resp.body()
+        except Exception as e:
+            # The viewer can consume the body; fall back to the rendered page.
+            if debug:
+                print(f"      body() failed ({type(e).__name__}); using content()")
+            try:
+                body = page.content().encode("utf-8", "replace")
+            except Exception:
+                body = b""
+        if status != 200:
+            return None, status, f"HTTP {status}"
+        if not body:
+            return None, status, "empty response"
+        return body, status, "navigation"
+    return None, None, nav_err or "no response"
 
 
 def main(argv=None):
@@ -222,6 +286,8 @@ def main(argv=None):
     ap.add_argument("--endpoint", default="http://localhost:9222")
     ap.add_argument("--profile", default=None)
     ap.add_argument("--chrome", default=None)
+    ap.add_argument("--debug", action="store_true",
+                    help="print the reason for each failure")
     ap.add_argument("--dry-run", action="store_true",
                     help="list what would be fetched and stop")
     ap.add_argument("--include-qualified", action="store_true",
@@ -266,20 +332,16 @@ def main(argv=None):
             if existing:
                 skipped += 1
                 continue
-            try:
-                # Through the browser context, so it carries the session and
-                # cookies you already hold rather than presenting as a new client.
-                resp = ctx.request.get(t["url"], timeout=45000)
-                status = resp.status
-                blob = resp.body()
-            except Exception as e:
+            # NAVIGATE, do not call the API context. ctx.request.get() issues a
+            # bare HTTP call that never touches the page -- the address bar sits
+            # on the start page, and over a CDP-attached browser it frequently
+            # cannot reach the session at all, so every fetch fails. Driving the
+            # page uses the whole browser stack, sends a real Referer, and lets
+            # you watch it work.
+            blob, status, why = fetch_via_page(page, t["url"], args.debug)
+            if blob is None:
                 failed += 1
-                print(f"  [{i}/{len(targets)}] {t['mpn']:<20} FAIL "
-                      f"{type(e).__name__}")
-                continue
-            if status != 200 or not blob:
-                failed += 1
-                print(f"  [{i}/{len(targets)}] {t['mpn']:<20} HTTP {status}")
+                print(f"  [{i}/{len(targets)}] {t['mpn']:<20} FAIL {why}")
                 time.sleep(args.delay)
                 continue
             if looks_like_challenge(blob):
