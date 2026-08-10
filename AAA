@@ -1,6 +1,24 @@
-==========================================================================
-  VERDICT
-==========================================================================
-    12895 parts,  109088 specs   C:\Users\lane.white\.rfparts\parts.db
-    31020 parts,  248401 specs   C:\Users\lane.white\Downloads\rfparts\Data\parts.db  <-- most complete
-    10002 parts,   98996 specs   C:\Users\lane.white\Downloads\rfparts\Data\database\parts.db
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 1968, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 3260, in _go
+    self.app.run_rebuild(erf, src, (), self.dedupe.get(),
+TypeError: App.run_rebuild() got an unexpected keyword argument 'sources'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 1968, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 3260, in _go
+    self.app.run_rebuild(erf, src, (), self.dedupe.get(),
+TypeError: App.run_rebuild() got an unexpected keyword argument 'sources'
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 1968, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 3260, in _go
+    self.app.run_rebuild(erf, src, (), self.dedupe.get(),
+TypeError: App.run_rebuild() got an unexpected keyword argument 'sources'
