@@ -1,24 +1,121 @@
-Exception in Tkinter callback
-Traceback (most recent call last):
-  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 1968, in __call__
-    return self.func(*args)
-           ^^^^^^^^^^^^^^^^
-  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 3260, in _go
-    self.app.run_rebuild(erf, src, (), self.dedupe.get(),
-TypeError: App.run_rebuild() got an unexpected keyword argument 'sources'
-Exception in Tkinter callback
-Traceback (most recent call last):
-  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 1968, in __call__
-    return self.func(*args)
-           ^^^^^^^^^^^^^^^^
-  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 3260, in _go
-    self.app.run_rebuild(erf, src, (), self.dedupe.get(),
-TypeError: App.run_rebuild() got an unexpected keyword argument 'sources'
-Exception in Tkinter callback
-Traceback (most recent call last):
-  File "C:\EngTools\Python3128\Lib\tkinter\__init__.py", line 1968, in __call__
-    return self.func(*args)
-           ^^^^^^^^^^^^^^^^
-  File "C:\Users\lane.white\Downloads\rfparts\rfparts\gui.py", line 3260, in _go
-    self.app.run_rebuild(erf, src, (), self.dedupe.get(),
-TypeError: App.run_rebuild() got an unexpected keyword argument 'sources'
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\dbg_part_specs.py" pd-0r510
+database     : C:\Users\lane.white\Downloads\rfparts\Data\parts.db
+source tree  : C:\Users\lane.white\Downloads\rfparts\Sources
+source tree  : C:\Users\lane.white\Downloads\rfparts\Data\datasheets
+source tree  : C:\Users\lane.white\Downloads\rfparts\Data\vendor_cache
+source tree  : C:\Users\lane.white\Downloads\rfparts\Data
+source tree  : C:\Users\lane.white\Downloads\rfparts
+
+########################################################################
+#  pd-0r510
+########################################################################
+
+  ====================================================================
+  pd-0r510   vendor=Marki Microwave   category=divider/-
+  2-Way Wilkinson power dividers can be used for both in-phase power splitting and power combining
+  https://markimicrowave.com/products/connectorized/power-dividers-combiners/pd-0r510/
+
+  11 stored spec row(s):
+    key                          min       typ       max unit   conf  method / source
+    amplitude_balance_db                   0.1           dB     0.80  catalog / https://markimicrowave.com/products/conn
+    datasheet_file                                              0.90  catalog / -
+    datasheet_url                                               0.90  catalog / https://markimicrowave.com/products/conn
+    freq_ghz                     0.5                  10 GHz    0.85  catalog / https://markimicrowave.com/products/conn
+    insertion_loss_db                      0.9           dB     0.80  catalog / https://markimicrowave.com/products/conn
+    isolation_db                            15           dB     0.80  catalog / https://markimicrowave.com/products/conn
+    mount_type                                                  0.80  catalog / https://markimicrowave.com/products/conn
+    package                                                     0.80  catalog / https://markimicrowave.com/products/conn
+    phase_balance_deg                        1           °      0.80  catalog / https://markimicrowave.com/products/conn
+    power_w                                510                  0.45  datasheet / -
+      snippet: mined from pd-0r510.html
+    vswr                                   1.6           -      0.80  catalog / https://markimicrowave.com/products/conn
+
+  1 evidence row(s):
+    vendor-catalog                     w=2.0  https://markimicrowave.com/products/co
+
+  resolved for the grid/ranker:
+    amplitude_balance_db       0.1
+    datasheet_file             C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Marki-Microwave\pd-0r510.html
+    datasheet_url              https://markimicrowave.com/products/connectorized/power-dividers-combiners/pd-0r510/datasheet/
+    freq_ghz                   (0.5, 10.0)
+    insertion_loss_db          0.9
+    isolation_db               15.0
+    mount_type                 connectorized
+    noise_nf_db                0.9
+    noise_nf_db_from           insertion_loss_db
+    package                    connectorized
+    phase_balance_deg          1.0
+    power_w                    510.0
+    vswr                       1.6
+
+  frequency band 0.5 - 10.0 GHz -> looks sane
+
+  sources implied by the stored rows: Marki, local datasheet mining
+
+  --- raw data from the sources on disk ---
+  10494 text file(s) examined, 21 candidate(s)
+
+      pd-0r510.html — local datasheet
+        sniffed type : html
+        text chars   : 6883
+        patterns hit : ['power_w']
+          power_w                (510.0, '')
+        text starts  :  PD-0R510_Wilkinson Power Divider Company About Marki Microwave News and Events Leadership Corporate Compliance & Legal Quality Contact Us Newsletter Careers Tech Support Contact Us Order Now Buy from a Global Distribution Partner Contact a Sales Representative Request for Quote Request Custom Product Returns Waveguide
+
+      2ada7a077312cc13773c.html — Marki page
+        ordering options: {}
+        inline specs    : {'insertion_loss_db': (1.0, 'dB')}
+        parsed specs:
+          insertion_loss_db      (1.0, 'dB')
+
+      69d48c6a68a90cda532b.html — Marki page
+        ordering options: {}
+        inline specs    : {'insertion_loss_db': (1.0, 'dB')}
+        parsed specs:
+          insertion_loss_db      (1.0, 'dB')
+
+      8c38708c239372a347f4.html — Marki page
+        ordering options: {}
+        inline specs    : {'insertion_loss_db': (1.0, 'dB')}
+        parsed specs:
+          insertion_loss_db      (1.0, 'dB')
+
+      ac8fde92da3143dd5fb9.html — Marki page
+        ordering options: {}
+        inline specs    : {}
+        parsed specs:
+          amplitude_balance_db   (0.1, 'dB')
+          freq_max               (10.0, 'GHz')
+          freq_min               (0.5, 'GHz')
+          insertion_loss_db      (0.9, 'dB')
+          isolation_db           (15.0, 'dB')
+          phase_balance_deg      (1.0, '°')
+          vswr                   (1.6, '-')
+
+      f11fbd2e4bc1f53aa03c.html — Marki page
+        ordering options: {}
+        inline specs    : {'insertion_loss_db': (1.0, 'dB')}
+        parsed specs:
+          insertion_loss_db      (1.0, 'dB')
+
+      datasheet_mining.json — raw context
+        ...e\\Downloads\\rfparts\\data\\datasheets\\Marki-Microwave\\pd4-0126.html|106764:1786126813", "30718": "C:\\Users\\lane.white\\Downloads\\rfparts\\data\\datasheets\\Marki-Microwave\\pd-0r510.html|107657:1786126813", "30719": "C:\\Users\\lane.white\\Downloads\\rfparts\\data\\datasheets\\Marki-Microwave\\pd-0109.html|104211:1786126813", "30720": "C:\\Users\\lane.white\\Downloads\\rfparts\\data\\datasheets\\Marki-Microwave\\pd-0126.html|1062...
+
+      parts.json — raw context
+        ...r-dividers-combiners/pd-0r426/", "snippet": "marki:connectorized/power-dividers-combiners", "found_at": 1786372251.9453468 } ] }, { "mpn": "pd-0r510", "mpn_norm": "PD-0R510", "vendor": "Marki Microwave", "category": "divider", "subcategory": "", "product_url": "https://markimicrowave.com/products/connectorized/power-dividers-combiners/pd-0r510/", "description": "2-Way Wilkinson p...
+
+      parts.json — raw context
+        ...r-dividers-combiners/pd-0r426/", "snippet": "marki:connectorized/power-dividers-combiners", "found_at": 1785358367.5521536 } ] }, { "mpn": "pd-0r510", "mpn_norm": "PD-0R510", "vendor": "Marki Microwave", "category": "divider", "subcategory": "", "product_url": "https://markimicrowave.com/products/connectorized/power-dividers-combiners/pd-0r510/", "description": "", "first_see...
+
+      rfparts_capture_data.json — raw context
+        ... { "vendor": "Marki Microwave", "category": "divider", "title": "pd 0r510", "url": "https://markimicrowave.com/products/connectorized/power-dividers-combiners/pd-0r510/", "source_type": "live_page", "model": "", "mined_specs": { "dimensions": { "l": 20.32, "w": 45.72, "unit": "mm", "raw": "20.32 x 45.72mm" }, "power_w": 510.0, "ports": 3, "moun...
+
+      rfparts_capture_data.json — raw context
+        ... { "vendor": "Marki Microwave", "category": "divider", "title": "pd 0r510", "url": "https://markimicrowave.com/products/connectorized/power-dividers-combiners/pd-0r510/", "source_type": "live_page", "model": "", "mined_specs": { "dimensions": { "l": 20.32, "w": 45.72, "unit": "mm", "raw": "20.32 x 45.72mm" }, "power_w": 510.0, "ports": 3, "moun...
+
+How to read it: if a source's RAW value is right but the stored row
+is wrong, the parser mis-scaled it. If the raw value is already odd,
+the source says so. If an old high-confidence row beats a newer
+correct one, re-parse that source (bump PARSER_VERSION or touch the
+file). If a datasheet extracts text but hits NO patterns, the wording
+differs from PARAM_SPECS and the snippet shows what to add.
