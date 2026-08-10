@@ -73,8 +73,17 @@ LEAD_COLS = [
     ("score", "Score", 66),
     ("vendor", "Vendor", 130),
     ("part", "Part", 190),
+    # Subcategory lives on the part ROW, not in specs, so it never appeared
+    # among the spec columns. For switches it carries absorptive/reflective --
+    # exactly what you want beside the part number.
+    ("subtype", "Subtype", 96),
     ("interface", "Interface", 100),
     ("space", "Space qual", 100),
+    # The mined score sits BESIDE the stated qualification rather than
+    # replacing it. It matters most where Space qual is blank -- the case it
+    # exists for -- so side by side lets a stated and an inferred one be told
+    # apart at a glance.
+    ("spacepct", "Space %", 78),
 ]
 TAIL_COLS = [("notes", "Notes", 260)]
 
@@ -84,7 +93,70 @@ TAIL_COLS = [("notes", "Notes", 260)]
 # whatever category was searched. (RF port counting is intentionally gone.)
 #   (col id, heading, spec key, criterion name, formatter)
 def _f_freq(v):
-    return f"{v[0]:g}–{v[1]:g}" if isinstance(v, (list, tuple)) and len(v) == 2 else ""
+    """Format a frequency band without assuming both endpoints exist.
+
+    Rebuilt datasets may legitimately contain only a lower or upper edge while
+    vendor-specific min/max rows are being combined.  Those values used to
+    reach ``:g`` as None and crash the entire Tkinter results callback.
+    """
+    def _num(x):
+        if isinstance(x, bool) or not isinstance(x, (int, float)):
+            return None
+        try:
+            return f"{x:g}"
+        except (TypeError, ValueError):
+            return None
+
+    if isinstance(v, (list, tuple)) and len(v) == 2:
+        lo, hi = _num(v[0]), _num(v[1])
+        if lo is not None and hi is not None:
+            return f"{lo}–{hi}"
+        if lo is not None:
+            return f"≥{lo}"
+        if hi is not None:
+            return f"≤{hi}"
+        return ""
+
+    single = _num(v)
+    return single or ""
+
+
+_SPACE_PCT_BG = [(70, "#d7ecd9"), (40, "#f2f0d8"), (0, "#f4f4f4")]
+
+
+def _space_pct_cell(c):
+    """(text, background) for the mined space-qualification score.
+
+    Blank when nothing was mined: an absent score and a score of zero mean
+    different things, and showing "0%" for "never assessed" would be a claim
+    the pipeline never made. Shading is deliberately gentle -- this is an
+    inference from datasheet wording, not a qualification."""
+    specs = c.get("specs") or {}
+    pct = specs.get("space_score_pct")
+    if pct is None:
+        return ("", CELL_NEUTRAL)
+    try:
+        v = float(pct)
+    except (TypeError, ValueError):
+        return ("", CELL_NEUTRAL)
+    bg = next(col for lo, col in _SPACE_PCT_BG if v >= lo)
+    return (f"{v:.0f}%", bg)
+
+
+def _subtype_str(c):
+    """Kind of part within its category: absorptive/reflective for a switch.
+
+    Falls back to a stated switch_type spec when the part row carries no
+    subcategory, so a value parsed from a datasheet still shows up."""
+    sub = (c.get("subcategory") or "").strip()
+    if not sub:
+        specs = c.get("specs") or {}
+        for k in ("switch_type", "subtype", "configuration"):
+            v = specs.get(k)
+            if isinstance(v, str) and v.strip():
+                sub = v.strip()
+                break
+    return sub.replace("_", " ")[:22]
 
 
 def _f_text(v):
@@ -118,6 +190,11 @@ SPEC_COLS = [
     ("psat", "Psat (dBm)", "psat_dbm", None, _f_num),
     ("il", "Ins.loss (dB)", "insertion_loss_db", None, _f_num),
     ("cl", "Conv.loss (dB)", "conversion_loss_db", "cl", _f_num),
+    # A mixer has three ports and three ranges. freq_ghz alone cannot express
+    # that, and these were being stored and then never shown.
+    ("rff", "RF (GHz)", "rf_freq_ghz", "rff", _f_freq),
+    ("lof", "LO (GHz)", "lo_freq_ghz", "lof", _f_freq),
+    ("iff", "IF (GHz)", "if_freq_ghz", "iff", _f_freq),
     ("isol", "Isolation (dB)", "isolation_db", "isol", _f_num),
     ("tsw", "Switching", "switching_time_ns", "tsw", _f_time_ns),
     ("thr", "Config", "throw_config", "thr", _f_text),
@@ -265,6 +342,341 @@ def spec_label(key):
 CONFIG_CATEGORIES = ("switch",)
 
 
+class CheckList(ttk.Menubutton):
+    """A dropdown of checkboxes: pick any number of values, not just one.
+
+    tkinter has no multi-select combobox, so this is a Menubutton whose menu
+    holds one Checkbutton per choice plus Select all / Clear all. The button
+    text summarises the selection ("(any)", "SMT", "3 selected") so the panel
+    stays readable when several are ticked.
+
+    It keeps a StringVar in sync holding a comma-separated selection, so callers
+    that already read `self.vars[key].get()` keep working: an empty string or
+    "(any)" still means no constraint, and a single choice still reads as that
+    one value. That is what lets the existing query/filter code stay untouched.
+    """
+
+    ANY = "(any)"
+
+    def __init__(self, master, textvariable=None, values=(), width=22,
+                 on_change=None, **kw):
+        super().__init__(master, width=width, style="TMenubutton", **kw)
+        self._var = textvariable if textvariable is not None else tk.StringVar()
+        self._on_change = on_change
+        self._checks = {}
+        self._menu = tk.Menu(self, tearoff=False)
+        self.configure(menu=self._menu, direction="below")
+        self.set_values(values)
+
+    # ---- public API mirroring the bits of Combobox that callers used --------
+    def set_values(self, values):
+        """Rebuild the menu. Ticked values that still exist stay ticked."""
+        previously = set(self.selection())
+        self._menu.delete(0, "end")
+        self._checks = {}
+        self._menu.add_command(label="Select all", command=self.select_all)
+        self._menu.add_command(label="Clear all", command=self.clear_all)
+        self._menu.add_separator()
+        for v in values:
+            if v == self.ANY:
+                continue          # "(any)" is what an empty selection MEANS
+            bv = tk.BooleanVar(value=(v in previously))
+            self._checks[v] = bv
+            self._menu.add_checkbutton(label=v, variable=bv,
+                                       onvalue=True, offvalue=False,
+                                       command=self._sync)
+        self._sync()
+
+    def config(self, **kw):
+        if "values" in kw:
+            self.set_values(kw.pop("values"))
+        if kw:
+            super().config(**kw)
+    configure = config
+
+    def selection(self):
+        """The ticked values, in menu order."""
+        return [v for v, bv in self._checks.items() if bv.get()]
+
+    def select_all(self):
+        for bv in self._checks.values():
+            bv.set(True)
+        self._sync()
+
+    def clear_all(self):
+        for bv in self._checks.values():
+            bv.set(False)
+        self._sync()
+
+    def set_selection(self, values):
+        wanted = {str(v).strip() for v in values if str(v).strip()}
+        for v, bv in self._checks.items():
+            bv.set(v in wanted)
+        self._sync()
+
+    def _sync(self):
+        chosen = self.selection()
+        # Everything ticked means the same as nothing ticked: no constraint.
+        if not chosen or len(chosen) == len(self._checks):
+            self._var.set("")
+            self.configure(text=self.ANY)
+        elif len(chosen) == 1:
+            self._var.set(chosen[0])
+            self.configure(text=chosen[0][:26])
+        else:
+            self._var.set(", ".join(chosen))
+            self.configure(text=f"{len(chosen)} selected")
+        if self._on_change:
+            try:
+                self._on_change()
+            except Exception:
+                pass
+
+
+def selected_values(raw):
+    """A CheckList variable's text -> list of chosen values ([] means any)."""
+    s = str(raw or "").strip()
+    if not s or s == CheckList.ANY:
+        return []
+    return [v.strip() for v in s.split(",") if v.strip()
+            and v.strip() != CheckList.ANY]
+
+
+class BrowseWindow(tk.Toplevel):
+    """Browse the catalogue: every part in the chosen categories and vendors.
+
+    The main search answers "what fits this spec". This answers "what do we have",
+    which is a different question and was previously only answerable by writing
+    SQL. Both selectors are multi-select, because the useful queries are things
+    like "every switch and mixer from MACOM or Qorvo".
+    """
+
+    def __init__(self, master, app):
+        super().__init__(master)
+        self.app = app
+        self.title("Browse catalogue")
+        self.geometry("1500x780")
+        self._rows = []
+        self._sort_col = None
+        self._sort_desc = False
+
+        bar = ttk.Frame(self, padding=8)
+        bar.pack(fill="x")
+        ttk.Label(bar, text="Categories").grid(row=0, column=0, sticky="w")
+        self.cat_var = tk.StringVar()
+        self.cat_pick = CheckList(bar, textvariable=self.cat_var,
+                                  values=self._categories(), width=26)
+        self.cat_pick.grid(row=0, column=1, sticky="w", padx=(4, 14))
+
+        ttk.Label(bar, text="Vendors").grid(row=0, column=2, sticky="w")
+        self.ven_var = tk.StringVar()
+        self.ven_pick = CheckList(bar, textvariable=self.ven_var,
+                                  values=self._vendors(), width=30)
+        self.ven_pick.grid(row=0, column=3, sticky="w", padx=(4, 14))
+
+        ttk.Label(bar, text="Max rows").grid(row=0, column=4, sticky="w")
+        self.limit_var = tk.StringVar(value="400")
+        ttk.Entry(bar, textvariable=self.limit_var, width=7).grid(
+            row=0, column=5, sticky="w", padx=(4, 14))
+
+        ttk.Button(bar, text="Show", command=self.refresh).grid(row=0, column=6)
+        ttk.Button(bar, text="Export CSV", command=self.export).grid(
+            row=0, column=7, padx=6)
+        self.status = ttk.Label(bar, text="", foreground="#555")
+        self.status.grid(row=1, column=0, columnspan=8, sticky="w", pady=(6, 0))
+
+        wrap = ttk.Frame(self, padding=(8, 0, 8, 8))
+        wrap.pack(fill="both", expand=True)
+        self.table = DatasheetTable(wrap, on_sort=self._on_sort)
+        self.table.pack(fill="both", expand=True)
+        # Deliberately NOT refreshing on open: with nothing selected that means
+        # "every part", and building the entire catalogue before the window is
+        # even visible is what made it look hung.
+        self.table.set_columns(["Vendor", "Part", "Category"], [150, 190, 110])
+        self.status.configure(
+            text="Choose categories and/or vendors, then press Show. "
+                 "Leave both empty to list everything (slower).")
+
+    # ---------------------------------------------------------------- data
+    def _categories(self):
+        try:
+            rows = partdb.db().execute(
+                "SELECT category AS c, COUNT(*) AS n FROM parts "
+                "WHERE category IS NOT NULL AND category != '' "
+                "GROUP BY category ORDER BY n DESC").fetchall()
+            return [f"{r['c']}  ({r['n']})" for r in rows]
+        except Exception:
+            return []
+
+    def _vendors(self):
+        """Vendors as the CANONICAL name, so one entry per manufacturer rather
+        than one per spelling."""
+        try:
+            rows = partdb.db().execute(
+                "SELECT vendor AS v, COUNT(*) AS n FROM parts "
+                "WHERE vendor IS NOT NULL AND vendor != '' GROUP BY vendor"
+            ).fetchall()
+        except Exception:
+            return []
+        merged = {}
+        for r in rows:
+            merged[partdb.canonical_vendor(r["v"])] = \
+                merged.get(partdb.canonical_vendor(r["v"]), 0) + r["n"]
+        return [f"{v}  ({n})" for v, n in
+                sorted(merged.items(), key=lambda kv: -kv[1])]
+
+    @staticmethod
+    def _strip_count(label):
+        return re.sub(r"\s*\(\d+\)\s*$", "", str(label)).strip()
+
+    def refresh(self):
+        cats = [self._strip_count(v) for v in selected_values(self.cat_var.get())]
+        vens = [self._strip_count(v) for v in selected_values(self.ven_var.get())]
+        try:
+            limit = max(1, int(self.limit_var.get()))
+        except ValueError:
+            limit = 2000
+        try:
+            rows = self._query(cats, vens, limit)
+        except Exception as e:
+            self.status.configure(text=f"query failed: {type(e).__name__}: {e}")
+            return
+        self._rows = rows
+        self._render(rows)
+        cat_txt = ", ".join(cats) if cats else "all categories"
+        ven_txt = ", ".join(vens) if vens else "all vendors"
+        self.status.configure(
+            text=f"{len(rows)} part(s) — {cat_txt} — {ven_txt}"
+                 + ("   (limit reached; raise Max rows to see more)"
+                    if len(rows) >= limit else ""))
+
+    def _vendor_spellings(self, canon_names):
+        """Raw vendor strings in the database for these canonical names.
+
+        Vendors are canonicalised when a candidate is BUILT, so filtering has to
+        happen on the raw column that SQL can see -- otherwise the query cannot
+        use an index and every row has to be assembled before it can be rejected.
+        """
+        if not canon_names:
+            return []
+        want = {c.lower() for c in canon_names}
+        out = []
+        try:
+            for r in partdb.db().execute(
+                    "SELECT DISTINCT vendor FROM parts "
+                    "WHERE vendor IS NOT NULL AND vendor != ''"):
+                if partdb.canonical_vendor(r["vendor"]).lower() in want:
+                    out.append(r["vendor"])
+        except Exception:
+            pass
+        return out
+
+    def _query(self, cats, vendors, limit):
+        """Ask SQL for the matching part ids, then build only those.
+
+        The first version fetched query_candidates(limit*3) -- which itself
+        over-fetches threefold -- and filtered in Python, so choosing one vendor
+        still assembled the specs of ~18000 parts. That is the whole database on
+        every refresh AND every sort, which is why it stopped responding.
+        """
+        where, args = [], []
+        if cats:
+            where.append("lower(category) IN (%s)" % ",".join("?" * len(cats)))
+            args += [c.lower() for c in cats]
+        if vendors:
+            spellings = self._vendor_spellings(vendors)
+            if not spellings:
+                return []
+            where.append("vendor IN (%s)" % ",".join("?" * len(spellings)))
+            args += spellings
+        sql = "SELECT id FROM parts"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY vendor, mpn LIMIT ?"
+        args.append(limit)
+        ids = [r["id"] for r in partdb.db().execute(sql, args)]
+        if not ids:
+            return []
+        return partdb.query_candidates(ids=ids, limit=len(ids))
+
+    # -------------------------------------------------------------- render
+    def _visible_cols(self, rows):
+        present = set()
+        for c in rows:
+            s = c.get("specs") or {}
+            for cid, _h, key, _cr, _f in SPEC_COLS:
+                if s.get(key) not in (None, "", []):
+                    present.add(cid)
+        return [col for col in SPEC_COLS if col[0] in present]
+
+    def _render(self, rows):
+        spec_cols = self._visible_cols(rows)
+        headings = ["Vendor", "Part", "Category", "Subtype", "Space"] + \
+                   [h for _c, h, _k, _cr, _f in spec_cols] + ["Package"]
+        widths = [150, 190, 110, 96, 100] + \
+                 [110] * len(spec_cols) + [150]
+        self.table.set_columns(headings, widths)
+        self.table.clear_rows() if hasattr(self.table, "clear_rows") else None
+        for c in rows:
+            specs = c.get("specs") or {}
+            cells = [(c.get("vendor", ""), CELL_NEUTRAL),
+                     (c.get("model") or c.get("title", ""), CELL_NEUTRAL),
+                     (c.get("category") or "", CELL_NEUTRAL),
+                     (_subtype_str(c), CELL_NEUTRAL),
+                     (rank._space_str(c), CELL_NEUTRAL)]
+            for _cid, _h, key, _cr, fmt in spec_cols:
+                cells.append((fmt(specs.get(key)), CELL_NEUTRAL))
+            cells.append((str(specs.get("package") or "")[:28], CELL_NEUTRAL))
+            self.table.add_row(cells, c)
+        self._spec_cols = spec_cols
+
+    def _on_sort(self, col):
+        if self._sort_col == col:
+            self._sort_desc = not self._sort_desc
+        else:
+            self._sort_col, self._sort_desc = col, False
+        spec_cols = getattr(self, "_spec_cols", [])
+        keys = [lambda c: (c.get("vendor") or "").lower(),
+                lambda c: (c.get("model") or c.get("title") or "").lower(),
+                lambda c: (c.get("category") or "").lower(),
+                lambda c: _subtype_str(c).lower(),
+                lambda c: rank._space_str(c).lower()]
+        for _cid, _h, key, _cr, _f in spec_cols:
+            keys.append(lambda c, k=key: (c.get("specs") or {}).get(k))
+        keys.append(lambda c: str((c.get("specs") or {}).get("package") or "").lower())
+        if not (0 <= col < len(keys)):
+            return
+        self._rows = App._sorted_by(self._rows, keys[col], self._sort_desc)
+        self._render(self._rows)
+        self.table.note_sort(col, self._sort_desc)
+
+    def export(self):
+        if not self._rows:
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv", filetypes=[("CSV", "*.csv")],
+            initialfile="catalogue.csv")
+        if not path:
+            return
+        import csv as _csv
+        spec_keys = sorted({k for c in self._rows for k in (c.get("specs") or {})})
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as fh:
+                w = _csv.writer(fh)
+                w.writerow(["vendor", "mpn", "category", "subcategory",
+                            "description", "url"] + spec_keys)
+                for c in self._rows:
+                    s = c.get("specs") or {}
+                    w.writerow([c.get("vendor", ""), c.get("model", ""),
+                                c.get("category", ""), c.get("subcategory", ""),
+                                (c.get("description") or "")[:200],
+                                c.get("url", "")]
+                               + [s.get(k, "") for k in spec_keys])
+            self.status.configure(text=f"exported {len(self._rows)} row(s) to {path}")
+        except OSError as e:
+            self.status.configure(text=f"export failed: {e}")
+
+
 class App(ttk.Frame):
     # Class-level defaults so a re-layout triggered before the filter panel is
     # built (a category trace can fire during __init__) cannot raise.
@@ -329,8 +741,10 @@ class App(ttk.Frame):
 
         self.vars["subcategory"] = tk.StringVar(value="(any)")
         self._sub_label = ttk.Label(f, text="Subcategory")
-        self._sub_combo = ttk.Combobox(f, textvariable=self.vars["subcategory"],
-                                       values=["(any)"], width=22, state="readonly")
+        # Multi-select: a search for "absorptive OR reflective" is a normal thing
+        # to want, and a single-choice dropdown made it two searches.
+        self._sub_combo = CheckList(f, textvariable=self.vars["subcategory"],
+                                    values=[], width=22)
         self._sub_label_to = {"(any)": None}
         # A filter's response type (LPF/HPF/BPF/BSF) changes the frequency input
         # and key specs, so relayout when the subcategory changes too.
@@ -342,10 +756,9 @@ class App(ttk.Frame):
         # they are independent facts about the same part.
         self.vars["throw_config"] = tk.StringVar(value="(any)")
         self._cfg_label = ttk.Label(f, text="Config")
-        self._cfg_combo = ttk.Combobox(
+        self._cfg_combo = CheckList(
             f, textvariable=self.vars["throw_config"],
-            values=["(any)"] + list(registry.THROW_CONFIG_CHOICES),
-            width=22, state="readonly")
+            values=list(registry.THROW_CONFIG_CHOICES), width=22)
 
         self._keyparams_label = ttk.Label(f, text="", foreground="#777", wraplength=210)
 
@@ -406,10 +819,21 @@ class App(ttk.Frame):
         # Optional parametric inputs (NF, P1dB, OIP3, isolation, ...): one entry
         # per PARAM_SPECS key, shown for the categories that expose them.
         for pkey, meta in registry.PARAM_SPECS.items():
+            if pkey in self.vars:
+                # Already has a dedicated widget (the Config dropdown). Creating a
+                # second StringVar here silently orphaned the combobox: it kept
+                # writing to the old variable while every reader looked at the new
+                # empty one, so choosing SPDT did nothing at all.
+                continue
             self.vars[pkey] = tk.StringVar()
+            choices = registry.FIELD_CHOICES.get(pkey)
+            widget = (ttk.Combobox(f, textvariable=self.vars[pkey], width=22,
+                                   state="readonly",
+                                   values=["(any)"] + list(choices))
+                      if choices else
+                      ttk.Entry(f, textvariable=self.vars[pkey]))
             self._field_rows[pkey] = (
-                ttk.Label(f, text=meta["label"]),
-                ttk.Entry(f, textvariable=self.vars[pkey]), None)
+                ttk.Label(f, text=meta["label"]), widget, None)
 
         self.vars["space"] = tk.BooleanVar()
         self._space_check = ttk.Checkbutton(
@@ -456,6 +880,10 @@ class App(ttk.Frame):
                    command=self.open_suppliers).pack(side="left", padx=4)
         ttk.Button(self._btns2, text="Dataset health…",
                    command=self.show_health).pack(side="left")
+        # "What do we have" is a different question from "what fits this spec",
+        # and until now it could only be answered by writing SQL.
+        ttk.Button(self._btns2, text="Browse catalogue…",
+                   command=self.open_browse).pack(side="left", padx=4)
 
         self._build_spec_filters(f)
 
@@ -594,13 +1022,10 @@ class App(ttk.Frame):
         # same path as the spec-filter boxes means one implementation rather than
         # two, and it works whether the value came from a catalog column, the
         # description, or a mined datasheet.
-        cfg = ""
-        try:
-            cfg = (self.vars.get("throw_config").get() or "").strip()
-        except Exception:
-            cfg = ""
-        if cfg and cfg != "(any)":
-            out.append(("throw_config", "exact", cfg))
+        # NOTE: the Config dropdown deliberately does NOT hard-filter here. It is
+        # passed into the query instead, so rank marks matches met and mismatches
+        # miss and the score reflects it -- other configurations stay visible but
+        # sink. Use the Config box in this panel when exclusion is what you want.
         for key, var in getattr(self, "_spec_filter_vars", {}).items():
             try:
                 raw = var.get().strip()
@@ -626,7 +1051,12 @@ class App(ttk.Frame):
             specs = c.get("specs") or {}
             for key, kind, arg in active:
                 val = specs.get(key)
-                if kind == "exact":
+                if kind == "anyof":
+                    # Several ticked: match any of them.
+                    if str(val or "").strip().lower() not in [
+                            str(a).strip().lower() for a in arg]:
+                        break
+                elif kind == "exact":
                     # A dropdown choice is an exact match: picking SP4T must not
                     # also return SP4T-ish neighbours, and substring matching
                     # would make "SPST" match nothing while "SP1T" matched
@@ -641,6 +1071,25 @@ class App(ttk.Frame):
             else:
                 kept.append(c)
         return kept
+
+    def _chosen_subcategory(self):
+        """The selected subcategory as (key, synonyms), or None for "any".
+
+        Several may be ticked. The downstream query takes one, so the keys are
+        merged and the synonym lists concatenated -- searching absorptive OR
+        reflective then matches either, rather than silently using whichever
+        happened to be first.
+        """
+        picks = [self._sub_label_to.get(v)
+                 for v in selected_values(self.vars["subcategory"].get())]
+        picks = [p for p in picks if p]
+        if not picks:
+            return None
+        if len(picks) == 1:
+            return picks[0]
+        keys = "|".join(k for k, _s in picks)
+        syns = [s for _k, sl in picks for s in (sl or [])]
+        return (keys, syns)
 
     def _current_category_key(self):
         return self._cat_label_to_key.get(self.vars["category"].get().strip())
@@ -670,7 +1119,7 @@ class App(ttk.Frame):
         such as cavity/ceramic/tunable/diplexer/duplexer)."""
         if self._current_category_key() != "filter":
             return None
-        chosen = self._sub_label_to.get(self.vars["subcategory"].get().strip())
+        chosen = self._chosen_subcategory()
         return self._FILTER_RESPONSE.get(chosen[0] if chosen else None)
 
     def _apply_keyparams(self, cat_key):
@@ -730,8 +1179,8 @@ class App(ttk.Frame):
             values.append(lbl)
             self._sub_label_to[lbl] = (k, syns)
         self._sub_combo.config(values=values)
-        if self.vars["subcategory"].get() not in values:
-            self.vars["subcategory"].set("(any)")
+        # CheckList keeps ticks that still exist and drops the rest, so nothing
+        # needs resetting here.
         self._apply_keyparams(key)
         # Don't let a value typed under one category leak into a search for
         # another that hides that field (e.g. gain set for an amp, then Switches).
@@ -911,7 +1360,7 @@ class App(ttk.Frame):
         imp = self.vars["impedance"].get().strip() if pkg == "connectorized" else ""
         cat_key = self._current_category_key()
         sub_key, sub_terms = None, None
-        chosen = self._sub_label_to.get(self.vars["subcategory"].get().strip())
+        chosen = self._chosen_subcategory()
         if chosen:
             sub_key, sub_terms = chosen
         ns = SimpleNamespace(
@@ -939,7 +1388,17 @@ class App(ttk.Frame):
         for pkey, meta in registry.PARAM_SPECS.items():
             var = self.vars.get(pkey)
             raw = var.get().strip() if var is not None else ""
-            if not raw:
+            if not raw or raw == "(any)":
+                continue
+            if meta.get("kind") == "text":
+                picks = selected_values(raw)
+                if picks:
+                    q[meta["spec_key"]] = picks if len(picks) > 1 else picks[0]
+                    continue
+                # Enumerated specs go through as strings so rank scores them as a
+                # criterion. Passing them to float() silently dropped them, which
+                # is why choosing SPDT changed nothing.
+                q[meta["spec_key"]] = raw
                 continue
             try:
                 q[meta["spec_key"]] = float(raw)
@@ -1134,14 +1593,22 @@ class App(ttk.Frame):
         keys = [lambda c: (c.get("tier", "?"), -(c.get("fit_score") or 0)),
                 lambda c: (c.get("vendor") or "").lower(),
                 lambda c: (c.get("model") or c.get("title") or "").lower(),
+                lambda c: _subtype_str(c).lower(),
                 lambda c: self._interface_str(c).lower(),
-                lambda c: rank._space_str(c)]
+                lambda c: rank._space_str(c),
+                lambda c: (c.get("specs") or {}).get("space_score_pct")]
         for _cid, _h, key, _cr, _fmt in spec_cols:
             def spec_key(c, k=key):
                 v = (c.get("specs") or {}).get(k)
                 if isinstance(v, (list, tuple)):
-                    v = v[0] if v else None      # frequency: sort by band start
-                return v if isinstance(v, (int, float)) else None
+                    # Prefer the lower band edge, but a partial upper-only band
+                    # is still a real sortable value rather than an exception or
+                    # an automatic blank.
+                    vals = [x for x in v if isinstance(x, (int, float))
+                            and not isinstance(x, bool)]
+                    v = vals[0] if vals else None
+                return (v if isinstance(v, (int, float))
+                        and not isinstance(v, bool) else None)
             keys.append(spec_key)
         keys.append(lambda c: self._note_summary(c).lower())
         return keys
@@ -1214,11 +1681,13 @@ class App(ttk.Frame):
             cells.append((f"{tier} {c.get('fit_score', 0)}", TIER_BG.get(tier, CELL_NEUTRAL)))
             cells.append((c.get("vendor", "?"), CELL_NEUTRAL))
             cells.append((c.get("model") or c.get("title", "?"), CELL_NEUTRAL))
+            cells.append((_subtype_str(c), CELL_NEUTRAL))
             cells.append((self._interface_str(c),
                           self._cell_color(crit.get("pkg"),
                                            bool(specs.get("mount_type") or specs.get("package")))))
             cells.append((rank._space_str(c),
                           self._cell_color(crit.get("space"), True)))
+            cells.append(_space_pct_cell(c))
             # spec columns
             for _cid, _h, key, cr, fmt in spec_cols:
                 v = specs.get(key)
@@ -1441,7 +1910,8 @@ class App(ttk.Frame):
     def run_rebuild(self, erf_parent, source_dir, source_files, dedupe,
                     vendors=None, vendor_rate=1.0, adi_dir=None,
                     download_datasheets=True, use_cache=True, categories=None,
-                    reset=False, resume=True, reset_vendors_only=False):
+                    reset=False, resume=True, reset_vendors_only=False,
+                    mine_datasheets=True, sources=None):
         """Called by RebuildDialog; ingests on a worker thread."""
         self.build_cancel = threading.Event()
         self.rebuild_btn.config(state="disabled")
@@ -1463,7 +1933,8 @@ class App(ttk.Frame):
                     use_cache=use_cache, categories=categories, reset=reset,
                     resume=resume, reset_vendors_only=reset_vendors_only,
                     part=self._put_part, event=self._put_event,
-                    cancel=self.build_cancel)
+                    cancel=self.build_cancel,
+                    mine_datasheets=mine_datasheets, sources=sources)
                 self.q.put(("rebuilt", summary))
             except Exception as e:  # noqa: BLE001
                 self.q.put(("rebuild_error", str(e)))
@@ -1542,6 +2013,22 @@ class App(ttk.Frame):
                 f"(Base part number: {partdb.family_key(mpn or '')})")
             return
         FamilyWindow(self.winfo_toplevel(), mpn, partdb.family_key(mpn), members)
+
+    def open_browse(self):
+        """Open the catalogue browser, reusing the existing window if it is up."""
+        win = getattr(self, "_browse_win", None)
+        try:
+            if win is not None and win.winfo_exists():
+                win.lift()
+                win.refresh()
+                return
+        except Exception:
+            pass
+        try:
+            self._browse_win = BrowseWindow(self.winfo_toplevel(), self)
+        except Exception as e:
+            messagebox.showerror("Browse catalogue",
+                                 f"Could not open the browser:\n{e}")
 
     def show_health(self):
         try:
@@ -1697,21 +2184,34 @@ class DatasheetTable(ttk.Frame):
         self._sort_col = None
         self._sort_desc = False
         self._head_labels = []
+        self._warned_width = False
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
+
+        # Keep the header in a separate canvas so vertical scrolling moves only
+        # the data rows.  The header and body are horizontally synchronized.
+        self.header_canvas = tk.Canvas(
+            self, highlightthickness=0, background=HEAD_BG, height=32
+        )
+        self.header_canvas.grid(row=0, column=0, sticky="ew")
 
         self.canvas = tk.Canvas(self, highlightthickness=0, background="#ffffff")
-        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.canvas.grid(row=1, column=0, sticky="nsew")
         vs = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        vs.grid(row=0, column=1, sticky="ns")
-        hs = ttk.Scrollbar(self, orient="horizontal", command=self.canvas.xview)
-        hs.grid(row=1, column=0, sticky="ew")
+        vs.grid(row=1, column=1, sticky="ns")
+        hs = ttk.Scrollbar(self, orient="horizontal", command=self._xview)
+        hs.grid(row=2, column=0, sticky="ew")
         self.canvas.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
+
+        self.header_inner = tk.Frame(self.header_canvas, background=HEAD_BG)
+        self._header_win = self.header_canvas.create_window(
+            (0, 0), window=self.header_inner, anchor="nw"
+        )
+        self.header_inner.bind("<Configure>", self._sync_header_region)
 
         self.inner = tk.Frame(self.canvas, background="#ffffff")
         self._win = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
-        self.inner.bind("<Configure>",
-                        lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.inner.bind("<Configure>", self._sync_body_region)
         self.canvas.bind("<Enter>", lambda e: self._bind_wheel())
         self.canvas.bind("<Leave>", lambda e: self._unbind_wheel())
 
@@ -1720,6 +2220,21 @@ class DatasheetTable(ttk.Frame):
         self._row_frames = []      # per data row: list of cell labels
         self._candidates = []
         self._selected = None
+
+    def _xview(self, *args):
+        """Scroll the body and frozen header horizontally as one table."""
+        self.canvas.xview(*args)
+        self.header_canvas.xview(*args)
+
+    def _sync_header_region(self, _event=None):
+        bbox = self.header_canvas.bbox("all")
+        if bbox:
+            self.header_canvas.configure(scrollregion=bbox, height=max(1, bbox[3] - bbox[1]))
+
+    def _sync_body_region(self, _event=None):
+        bbox = self.canvas.bbox("all")
+        if bbox:
+            self.canvas.configure(scrollregion=bbox)
 
     def _bind_wheel(self):
         self.canvas.bind_all("<MouseWheel>",
@@ -1732,6 +2247,8 @@ class DatasheetTable(ttk.Frame):
             self.canvas.unbind_all(seq)
 
     def clear(self):
+        for w in self.header_inner.winfo_children():
+            w.destroy()
         for w in self.inner.winfo_children():
             w.destroy()
         self._row_frames = []
@@ -1749,7 +2266,7 @@ class DatasheetTable(ttk.Frame):
             text = h
             if self._sort_col == col:
                 text = f"{h}  {'\u25bc' if self._sort_desc else '\u25b2'}"
-            lbl = tk.Label(self.inner, text=text, bg=HEAD_BG, fg=HEAD_FG,
+            lbl = tk.Label(self.header_inner, text=text, bg=HEAD_BG, fg=HEAD_FG,
                            font=("TkDefaultFont", 9, "bold"), padx=6, pady=4,
                            borderwidth=1, relief="solid", anchor="center",
                            wraplength=max(w, 60),
@@ -1757,8 +2274,11 @@ class DatasheetTable(ttk.Frame):
             lbl.grid(row=0, column=col, sticky="nsew")
             if self.on_sort:
                 lbl.bind("<Button-1>", lambda e, c=col: self.on_sort(c))
+            self.header_inner.columnconfigure(col, minsize=w)
             self.inner.columnconfigure(col, minsize=w)
             self._head_labels.append(lbl)
+        self.update_idletasks()
+        self._sync_header_region()
 
     def sort_state(self):
         return self._sort_col, self._sort_desc
@@ -1778,14 +2298,41 @@ class DatasheetTable(ttk.Frame):
         self._selected = None
 
     def add_row(self, cells, candidate):
+        """Add one data row, tolerating a cell/column count mismatch.
+
+        This used to index self._widths[col] directly, so a single row with one
+        cell more than there are columns raised IndexError halfway through
+        rendering and left a half-built grid on screen -- the table "breaking"
+        while loading. A mismatch is a bug worth knowing about, but it must not
+        destroy the view, so rows are padded or trimmed to the header width and
+        the discrepancy is reported once.
+        """
+        ncols = len(self._headings) or len(cells)
+        cells = list(cells)
+        if len(cells) != ncols:
+            if not self._warned_width:
+                self._warned_width = True
+                print(f"  ! table row had {len(cells)} cell(s) for {ncols} "
+                      f"column(s); padding/trimming. Headings and cells are out "
+                      f"of step -- check LEAD_COLS/TAIL_COLS against the cell "
+                      f"builder.")
+            if len(cells) < ncols:
+                cells += [("", CELL_NEUTRAL)] * (ncols - len(cells))
+            else:
+                cells = cells[:ncols]
         r = len(self._row_frames) + 1
         labels = []
-        for col, (text, bg) in enumerate(cells):
-            anchor = "w" if col in (1, 2) or col == len(cells) - 1 else "center"
-            lbl = tk.Label(self.inner, text=text, bg=bg, padx=6, pady=3,
+        for col, cell in enumerate(cells):
+            try:
+                text, bg = cell
+            except (TypeError, ValueError):
+                text, bg = cell, CELL_NEUTRAL
+            width = self._widths[col] if col < len(self._widths) else 100
+            anchor = "w" if col in (1, 2) or col == ncols - 1 else "center"
+            lbl = tk.Label(self.inner, text="" if text is None else str(text),
+                           bg=bg or CELL_NEUTRAL, padx=6, pady=3,
                            borderwidth=1, relief="solid", anchor=anchor,
-                           wraplength=max(self._widths[col], 60),
-                           justify="left")
+                           wraplength=max(width, 60), justify="left")
             lbl.grid(row=r, column=col, sticky="nsew")
             lbl.bind("<Button-1>", lambda e, idx=r - 1: self._select(idx))
             lbl.bind("<Double-1>", lambda e: self.on_open() if self.on_open else None)
@@ -2426,6 +2973,10 @@ class RebuildDialog(tk.Toplevel):
         self.adi_dir = tk.StringVar(value=str(ADI_PARAMETRICS))
         self.rate = tk.StringVar(value="1.0")
         self.dl = tk.BooleanVar(value=True)
+        # Datasheet enrichment: mining local datasheets for specs the catalog
+        # listings do not carry. On by default, but it is the slowest step on a
+        # cold run, so it needs to be switchable.
+        self.enrich = tk.BooleanVar(value=True)
         # Resume and cache answer different questions, so they are separate
         # controls. Deriving one from the other is why the vendor walks never
         # resumed: use_cache saved the request, but nothing recorded which units
@@ -2507,33 +3058,32 @@ class RebuildDialog(tk.Toplevel):
         # ---- live vendor catalogues -------------------------------------
         vf = ttk.LabelFrame(frm, text="Vendor catalogues to refresh", padding=8)
         vf.grid(row=3, column=0, columnspan=3, sticky="ew", **pad)
-        notes = {
-            "adi": "parametric .xlsx you exported (never scraped)",
-            "qorvo": "parametric tables incl. freq/gain/NF/OIP3",
-            "macom": "product-detail pages + cdn datasheets",
-            "skyworks": "category walk, then product page per part",
-            "marki": "paged listings; datasheet text from HTML",
-        }
-        for i, v in enumerate(space_dataset.CATALOG_VENDORS):
-            name = vendor_catalogs.VENDORS[v]["name"]
-            ttk.Checkbutton(vf, text=name,
-                            variable=self.vendor_vars[v]).grid(row=i, column=0,
-                                                               sticky="w")
-            ttk.Label(vf, text=notes.get(v, ""), foreground="#666").grid(
-                row=i, column=1, sticky="w", padx=(10, 0))
-        row = len(space_dataset.CATALOG_VENDORS)
+        # SOURCES, not vendors. A Qorvo part can arrive from the everythingRF
+        # pages, the aerospace brochure or the parametric tables, so "re-run
+        # Qorvo" cannot say which of those to touch. Re-running a source leaves
+        # every other source's parts exactly as they are.
+        self.source_vars = {k: tk.BooleanVar(value=False)
+                            for k in space_dataset.SOURCES}
+        for i, (key, label) in enumerate(space_dataset.SOURCES.items()):
+            r, c = divmod(i, 2)
+            ttk.Checkbutton(vf, text=label,
+                            variable=self.source_vars[key]).grid(
+                row=r, column=c, sticky="w", padx=(0, 18))
+        row = (len(space_dataset.SOURCES) + 1) // 2
         ttk.Button(vf, text="All", width=6,
                    command=lambda: [x.set(True) for x in
-                                    self.vendor_vars.values()]).grid(row=row,
-                                                                     column=0,
-                                                                     sticky="w",
-                                                                     pady=(6, 0))
+                                    self.source_vars.values()]).grid(
+            row=row, column=0, sticky="w", pady=(6, 0))
         ttk.Button(vf, text="None", width=6,
                    command=lambda: [x.set(False) for x in
-                                    self.vendor_vars.values()]).grid(row=row,
-                                                                     column=1,
-                                                                     sticky="w",
-                                                                     pady=(6, 0))
+                                    self.source_vars.values()]).grid(
+            row=row, column=1, sticky="w", pady=(6, 0))
+        ttk.Label(vf, text="nothing ticked = every source",
+                  foreground="#666").grid(row=row + 1, column=0, columnspan=2,
+                                          sticky="w")
+        ttk.Button(vf, text="Source folders\u2026",
+                   command=self._open_folders).grid(row=row, column=1,
+                                                    sticky="e", pady=(6, 0))
 
         of = ttk.Frame(frm)
         of.grid(row=4, column=0, columnspan=3, sticky="ew", **pad)
@@ -2553,36 +3103,35 @@ class RebuildDialog(tk.Toplevel):
         ttk.Checkbutton(of, text="Reuse cached pages (much faster on a re-run)",
                         variable=self.use_cache).grid(row=3, column=0,
                                                       columnspan=2, sticky="w")
-        mf = ttk.LabelFrame(frm, text="Rebuild mode", padding=8)
-        mf.grid(row=7, column=0, columnspan=3, sticky="ew", **pad)
-        ttk.Radiobutton(mf, text="Normal rebuild",
+        ttk.Checkbutton(of, text="Enrich from local datasheets (fills specs the "
+                                 "listings omit; only new/changed parts)",
+                        variable=self.enrich).grid(row=4, column=0, columnspan=2,
+                                                   sticky="w")
+        # Mode comes FIRST, because it changes what the rest of the dialog
+        # means. "Normal" and "Reset first" were really one axis -- whether
+        # existing data is kept -- so they are one choice of two.
+        mf = ttk.LabelFrame(frm, text="1. Mode", padding=8)
+        mf.grid(row=0, column=0, columnspan=3, sticky="ew", **pad)
+        ttk.Radiobutton(mf, text="Refresh — keep what is there, add and update "
+                                 "only what changed",
                         variable=self.mode, value="resume",
                         command=self._mode_changed).pack(anchor="w")
-        ttk.Radiobutton(mf, text="RESET first — delete parts, scrape state, "
-                                 "cached pages and downloaded datasheets",
+        ttk.Radiobutton(mf, text="Reset — delete the selected sources' parts, "
+                                 "scrape state and caches, then re-read",
                         variable=self.mode, value="reset",
                         command=self._mode_changed).pack(anchor="w")
+        self.mode_hint = ttk.Label(mf, text="", foreground="#666",
+                                   wraplength=560, justify="left")
+        self.mode_hint.pack(anchor="w", pady=(4, 0))
         self.reset_scope_cb = ttk.Checkbutton(
-            mf, text="narrow the reset to only the vendors ticked above "
-                     "(default: reset EVERYTHING)",
+            mf, text="narrow the reset to only the sources ticked below",
             variable=self.reset_vendors_only, state="disabled")
         self.reset_scope_cb.pack(anchor="w", padx=(22, 0))
-        ttk.Separator(mf, orient="horizontal").pack(fill="x", pady=6)
         self.resume_cb = ttk.Checkbutton(
-            mf, text="Resume — skip catalogue pages, product pages and "
-                     "datasheets already recorded as done",
+            mf, text="Resume — skip pages already recorded as done",
             variable=self.resume)
-        self.resume_cb.pack(anchor="w")
-        ttk.Checkbutton(
-            mf, text="Reuse cached pages — saves the network request, but still "
-                     "re-parses (independent of Resume)",
-            variable=self.use_cache).pack(anchor="w")
+        self.resume_cb.pack(anchor="w", pady=(6, 0))
 
-        cf = ttk.LabelFrame(frm, text="Optional categories (none selected = all)", padding=8)
-        cf.grid(row=6, column=0, columnspan=3, sticky="ew", **pad)
-        for i, key in enumerate(GUI_CATEGORIES):
-            ttk.Checkbutton(cf, text=registry.category_label(key),
-                            variable=self.category_vars[key]).grid(row=i//4, column=i%4, sticky="w", padx=4)
 
         ttk.Label(frm, text="Local folders and vendor catalogues are optional "
                             "individually, but pick at least one of them.",
@@ -2619,8 +3168,8 @@ class RebuildDialog(tk.Toplevel):
             n = max(1, int(self.sample_n.get()))
         except ValueError:
             n = 2
-        vendors = [v for v, var in self.vendor_vars.items() if var.get()] \
-            if hasattr(self, "vendor_vars") else []
+        vendors = [v for v, var in getattr(self, "source_vars", {}).items()
+                   if var.get() and v in ("macom", "marki", "skyworks")]
         try:
             from . import parse_sample
         except Exception as exc:
@@ -2651,10 +3200,53 @@ class RebuildDialog(tk.Toplevel):
         SampleBundleWindow(self, out, log)
 
     def _mode_changed(self):
+        """Reshape the dialog for the chosen mode.
+
+        Reset wipes the scrape state, so Resume cannot mean anything afterwards
+        -- leaving it tickable would be offering a promise the mode has already
+        broken."""
         reset = self.mode.get() == "reset"
         self.reset_scope_cb.config(state="normal" if reset else "disabled")
-        # Resume state is wiped by a reset, so offering it would be a lie.
         self.resume_cb.config(state="disabled" if reset else "normal")
+        if reset:
+            self.mode_hint.config(
+                text="Deletes parts, scrape state, cached pages and downloaded "
+                     "datasheets before re-reading. Tick sources below and the "
+                     "narrow option to limit what is deleted; otherwise "
+                     "EVERYTHING goes.")
+        else:
+            self.mode_hint.config(
+                text="Nothing is deleted. Sources you do not tick are not "
+                     "touched at all -- not re-read, and their parts left "
+                     "exactly as they are. Tick nothing to refresh every "
+                     "source.")
+
+    def _open_folders(self):
+        """Where each source is read from, in its own window.
+
+        These paths are set once and then never touched, so they were pushing
+        the choices that DO change on every run further down the dialog."""
+        win = tk.Toplevel(self)
+        win.title("Source folders")
+        win.transient(self)
+        frm = ttk.Frame(win, padding=10)
+        frm.pack(fill="both", expand=True)
+        rows = [("everythingRF parent folder", self.erf),
+                ("Catalog files folder", self.src),
+                ("ADI parametric folder", self.adi_dir)]
+        for i, (label, var) in enumerate(rows):
+            ttk.Label(frm, text=label).grid(row=i, column=0, sticky="w", pady=3)
+            ttk.Entry(frm, textvariable=var, width=52).grid(row=i, column=1,
+                                                            sticky="ew", padx=6)
+            ttk.Button(frm, text="Browse\u2026", width=9,
+                       command=lambda v=var: self._pick(v)).grid(row=i, column=2)
+        frm.columnconfigure(1, weight=1)
+        ttk.Label(frm, text="Paths are unchanged from before; this window only "
+                            "moves them out of the way.",
+                  foreground="#666").grid(row=len(rows), column=0, columnspan=3,
+                                          sticky="w", pady=(8, 4))
+        ttk.Button(frm, text="Close", command=win.destroy).grid(
+            row=len(rows) + 1, column=2, sticky="e")
 
     def _pick(self, var):
         d = filedialog.askdirectory(parent=self)
@@ -2663,8 +3255,9 @@ class RebuildDialog(tk.Toplevel):
 
     def _go(self):
         erf, src = self.erf.get().strip(), self.src.get().strip()
-        vendors = [v for v, var in self.vendor_vars.items() if var.get()]
-        if not (erf or src or vendors):
+        sources = [k for k, var in self.source_vars.items() if var.get()]
+        vendors = None          # the source selection decides which walks run
+        if not (erf or src or sources):
             messagebox.showwarning(
                 "Nothing selected",
                 "Choose an everythingRF folder, a sources folder, or at least "
@@ -2674,7 +3267,7 @@ class RebuildDialog(tk.Toplevel):
             rate = max(0.0, float(self.rate.get()))
         except ValueError:
             rate = 1.0
-        categories = [k for k, var in self.category_vars.items() if var.get()]
+        categories = None      # category filtering removed from the rebuild
         reset = self.mode.get() == "reset"
         if reset:
             narrowed = bool(self.reset_vendors_only.get() and vendors)
@@ -2707,12 +3300,14 @@ class RebuildDialog(tk.Toplevel):
         self.destroy()
         self.app.run_rebuild(erf, src, (), self.dedupe.get(),
                              vendors=vendors, vendor_rate=rate,
+                             sources=sources,
                              adi_dir=self.adi_dir.get().strip() or None,
                              download_datasheets=self.dl.get(),
                              use_cache=self.use_cache.get(),
-                             categories=categories, reset=reset,
+                             categories=None, reset=reset,
                              resume=(self.resume.get() and not reset),
-                             reset_vendors_only=self.reset_vendors_only.get())
+                             reset_vendors_only=self.reset_vendors_only.get(),
+                             mine_datasheets=self.enrich.get())
 
 
 class SuppliersWindow(tk.Toplevel):
