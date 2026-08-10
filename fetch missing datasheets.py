@@ -128,8 +128,24 @@ def find_targets(vendors, limit, include_qualified=False):
             url = str(specs.get("datasheet_url") or "").strip()
             if not url.startswith("http"):
                 continue
-            if index and loose(r["mpn"]) in index:
-                continue                        # already have the file
+            have = index.get(loose(r["mpn"])) if index else None
+            if have is not None:
+                # A file we cannot read is not a datasheet we have. The Qorvo
+                # library is ~900 PDFs mangled by a text-mode save; they carry
+                # the right names, so counting them as present is what made
+                # "nothing to fetch" the answer for the vendor with the worst
+                # coverage. Corrupt or empty files are treated as missing and
+                # re-fetched, which also repairs them.
+                bad = False
+                try:
+                    if dsmine and dsmine._sniff(have) == "corrupt":
+                        bad = True
+                    elif Path(have).stat().st_size < 1024:
+                        bad = True
+                except OSError:
+                    bad = True
+                if not bad:
+                    continue
             if specs.get("datasheet_file"):
                 p = Path(str(specs["datasheet_file"]))
                 if p.is_file():
@@ -235,69 +251,73 @@ def looks_like_challenge(blob):
     return any(m in head for m in CHALLENGE)
 
 
-def fetch_via_page(page, url, debug=False):
-    """(bytes, status, reason) for a datasheet URL, driving the real page.
+_JS_FETCH = """
+async (u) => {
+  try {
+    const r = await fetch(u, {credentials: 'include', redirect: 'follow'});
+    const buf = await r.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    const CH = 0x8000;
+    for (let i = 0; i < bytes.length; i += CH) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+    }
+    return {status: r.status, data: btoa(bin)};
+  } catch (e) {
+    return {status: 0, data: null, error: String(e)};
+  }
+}
+"""
 
-    Chrome handles a PDF link one of two ways: it renders it in the built-in
-    viewer, or it downloads it and aborts the navigation. Both are normal, and a
-    fetcher has to accept either -- treating the aborted navigation as an error
-    is what makes every PDF look like a failure.
+
+def origin_of(url):
+    import urllib.parse
+    u = urllib.parse.urlparse(url)
+    return f"{u.scheme}://{u.netloc}" if u.scheme and u.netloc else ""
+
+
+def fetch_via_page(page, url, debug=False, current_origin=None):
+    """(bytes, status, reason) for a datasheet URL.
+
+    Fetched from INSIDE the page with JavaScript rather than by navigating to it.
+    Navigating to a PDF hands it to Chrome's built-in viewer, which consumes the
+    response body -- resp.body() then fails and the only thing left to read is
+    the viewer's own HTML wrapper. That wrapper is 536 bytes, which is exactly
+    what every download turned into: the same tiny HTML for every part, from
+    every vendor, because it was never the vendor's response at all.
+
+    fetch() inside the page avoids the viewer completely, carries the session
+    cookies, and returns the real bytes. It has to run same-origin or the browser
+    blocks it, so the caller navigates to the vendor's root first -- once per
+    origin, not once per file.
     """
-    got = {}
-
-    def _on_download(dl):
-        try:
-            got["path"] = dl.path()
-            got["name"] = dl.suggested_filename
-        except Exception as e:
-            got["err"] = f"{type(e).__name__}: {e}"
-
-    page.on("download", _on_download)
-    resp = None
-    nav_err = None
+    import base64
     try:
-        resp = page.goto(url, wait_until="commit", timeout=45000)
+        res = page.evaluate(_JS_FETCH, url)
     except Exception as e:
-        nav_err = f"{type(e).__name__}: {str(e)[:80]}"
-    # A download aborts the navigation, so give it a moment to land.
-    for _ in range(20):
-        if got.get("path"):
-            break
-        page.wait_for_timeout(150)
+        return None, None, f"{type(e).__name__}: {str(e)[:70]}"
+    if not isinstance(res, dict):
+        return None, None, "unexpected result from fetch"
+    status = res.get("status") or 0
+    if res.get("error"):
+        return None, status, f"fetch blocked: {str(res['error'])[:60]}"
+    if not res.get("data"):
+        return None, status, f"HTTP {status}" if status else "empty response"
     try:
-        page.remove_listener("download", _on_download)
-    except Exception:
-        pass
-
-    if got.get("path"):
-        try:
-            return Path(got["path"]).read_bytes(), 200, "download"
-        except OSError as e:
-            return None, None, f"download unreadable: {e}"
-    if resp is not None:
-        status = resp.status
-        try:
-            body = resp.body()
-        except Exception as e:
-            # The viewer can consume the body; fall back to the rendered page.
-            if debug:
-                print(f"      body() failed ({type(e).__name__}); using content()")
-            try:
-                body = page.content().encode("utf-8", "replace")
-            except Exception:
-                body = b""
-        if status != 200:
-            return None, status, f"HTTP {status}"
-        if not body:
-            return None, status, "empty response"
-        return body, status, "navigation"
-    return None, None, nav_err or "no response"
+        blob = base64.b64decode(res["data"])
+    except Exception as e:
+        return None, status, f"decode failed: {type(e).__name__}"
+    if status != 200:
+        return None, status, f"HTTP {status}"
+    return blob, status, "fetch"
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--vendors", nargs="*", default=list(VENDOR_MATCH),
-                    choices=list(VENDOR_MATCH))
+                    type=str.lower, choices=list(VENDOR_MATCH),
+                    metavar="VENDOR",
+                    help="any of: " + ", ".join(VENDOR_MATCH) + " (case-insensitive)")
     ap.add_argument("--limit", type=int, default=0, help="0 = no cap")
     ap.add_argument("--out", default=None,
                     help="datasheet library root (default: the one dsmine uses)")
@@ -359,6 +379,7 @@ def main(argv=None):
         return 0
 
     saved = skipped = failed = challenged = 0
+    current_origin = None
     with sync_playwright() as p:
         browser, ctx, page = attach(
             p, args.endpoint,
@@ -368,7 +389,13 @@ def main(argv=None):
             folder = out_root / VENDOR_FOLDER.get(t["vendor_key"], t["vendor"])
             folder.mkdir(parents=True, exist_ok=True)
             stem = safe_name(t["mpn"])
-            existing = list(folder.glob(f"{stem}.*"))
+            # find_targets() has already decided this part needs a file --
+            # including deciding that an unreadable one does not count. Re-testing
+            # here with a plain existence check undid that and would have skipped
+            # every corrupt Qorvo file all over again.
+            existing = [f for f in folder.glob(f"{stem}.*")
+                        if f.stat().st_size >= 1024
+                        and not (dsmine and dsmine._sniff(f) == "corrupt")]
             if existing:
                 skipped += 1
                 continue
@@ -378,12 +405,23 @@ def main(argv=None):
             # cannot reach the session at all, so every fetch fails. Driving the
             # page uses the whole browser stack, sends a real Referer, and lets
             # you watch it work.
+            # One navigation per ORIGIN, not per file: fetch() must run
+            # same-origin, and re-navigating for every part would be both slow
+            # and needlessly noisy for the vendor.
+            org = origin_of(t["url"])
+            if org and org != current_origin:
+                try:
+                    page.goto(org + "/", wait_until="domcontentloaded",
+                              timeout=45000)
+                    current_origin = org
+                    print(f"  -- on {org}")
+                except Exception as e:
+                    print(f"  ! could not open {org}: {type(e).__name__}")
+                    current_origin = None
             blob, status, why = fetch_via_page(page, t["url"], args.debug)
             if args.debug:
-                try:
-                    print(f"      page is now at {page.url[:78]}")
-                except Exception:
-                    pass
+                print(f"      {why}  status={status}  "
+                      f"bytes={len(blob) if blob else 0}")
             if blob is None:
                 failed += 1
                 print(f"  [{i}/{len(targets)}] {t['mpn']:<20} FAIL {why}")
@@ -437,4 +475,9 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        # Stopping is a normal way to use this; a stack trace is not an answer.
+        print("\nstopped. Files already saved are kept, and a re-run skips them.")
+        sys.exit(130)
