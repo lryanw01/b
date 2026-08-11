@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 noise_match.py -- find the LNA input matching network for a *noise* match.
 
