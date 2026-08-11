@@ -178,34 +178,66 @@ def fmt_val(kind, val):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("lna", help="LNA .s2p (must contain noise block)")
+    ap.add_argument("lna", help="LNA .s2p")
     ap.add_argument("filt", help="roofing filter .s2p")
     ap.add_argument("--freq", type=float, default=None,
-                    help="design frequency in Hz (e.g. 10e9)")
+                    help="design frequency in Hz (e.g. 1.45e9)")
     ap.add_argument("--filter-port", choices=["11", "22"], default="22",
                     help="filter output-port S-param (default 22)")
+    # target impedance the LNA should see -- one of these, else noise block
+    ap.add_argument("--gamma-opt", type=float, nargs=2, metavar=("MAG", "ANGdeg"),
+                    help="target reflection coeff from datasheet noise table")
+    ap.add_argument("--z-opt", type=float, nargs=2, metavar=("R", "X"),
+                    help="target impedance in ohms (overrides everything)")
+    ap.add_argument("--to-z0", action="store_true",
+                    help="fallback with no noise data: match filter output to Z0")
     args = ap.parse_args()
 
     lna = parse_touchstone(args.lna)
     flt = parse_touchstone(args.filt)
-    if lna["nf"] is None:
-        raise SystemExit("LNA file has no noise block -> no Gamma_opt available")
+    z0 = lna["z0"]
 
-    nf = lna["nf"]
-    f = args.freq if args.freq else 0.5 * (nf["f"].min() + nf["f"].max())
+    # ---- design frequency ----
+    if args.freq:
+        f = args.freq
+    elif lna["nf"] is not None:
+        f = 0.5 * (lna["nf"]["f"].min() + lna["nf"]["f"].max())
+    else:
+        f = 0.5 * (flt["f"].min() + flt["f"].max())
     w = 2 * math.pi * f
 
-    gopt = interp_c(nf["f"], nf["gopt"], f)
-    nfmin = float(np.interp(f, np.sort(nf["f"]),
-                            nf["nfmin_db"][np.argsort(nf["f"])]))
-    z_opt = g_to_z(gopt, lna["z0"])
+    # ---- resolve target impedance the LNA should see ----
+    nfmin = None
+    if args.z_opt is not None:
+        z_opt = complex(args.z_opt[0], args.z_opt[1]); tsrc = "user --z-opt"
+    elif args.gamma_opt is not None:
+        g = args.gamma_opt[0] * cmath.exp(1j * math.radians(args.gamma_opt[1]))
+        z_opt = g_to_z(g, z0); tsrc = "user --gamma-opt (datasheet noise table)"
+    elif lna["nf"] is not None:
+        nf = lna["nf"]; order = np.argsort(nf["f"])
+        gopt = interp_c(nf["f"], nf["gopt"], f)
+        nfmin = float(np.interp(f, nf["f"][order], nf["nfmin_db"][order]))
+        z_opt = g_to_z(gopt, z0); tsrc = "LNA noise block"
+    elif args.to_z0:
+        z_opt = complex(z0, 0.0)
+        tsrc = f"fallback: match filter output to {z0:.0f} ohm (no noise data)"
+    else:
+        raise SystemExit(
+            "This LNA .s2p has no noise block, so Gamma_opt is unknown.\n"
+            "A 50-ohm NF-vs-freq curve does NOT contain it:\n"
+            "  F = Fmin + (Rn/Gs)*|Ys - Yopt|^2  -> 4 unknowns, 1 scalar per freq.\n"
+            "Supply the target one of these ways:\n"
+            "  --gamma-opt MAG ANGdeg   from the datasheet noise-parameter table\n"
+            "  --z-opt R X              target impedance in ohms\n"
+            "  --to-z0                  fallback: restore the characterized 50-ohm NF")
 
     gsrc = interp_c(flt["f"], flt["s"][args.filter_port], f)
     z_src = g_to_z(gsrc, flt["z0"])
 
     print(f"Design frequency        : {f/1e9:.4f} GHz")
-    print(f"LNA  NFmin              : {nfmin:.3f} dB")
-    print(f"LNA  Gamma_opt          : {abs(gopt):.4f} /_{math.degrees(cmath.phase(gopt)):+.2f} deg")
+    print(f"Target source           : {tsrc}")
+    if nfmin is not None:
+        print(f"LNA  NFmin              : {nfmin:.3f} dB")
     print(f"Target Z_opt (LNA wants): {z_opt.real:8.3f} {z_opt.imag:+8.3f} j  ohm")
     print(f"Filter S{args.filter_port} (LNA sees)   : {abs(gsrc):.4f} /_{math.degrees(cmath.phase(gsrc)):+.2f} deg")
     print(f"Source Z (LNA sees)     : {z_src.real:8.3f} {z_src.imag:+8.3f} j  ohm")
