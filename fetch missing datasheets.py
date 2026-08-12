@@ -109,10 +109,15 @@ def safe_name(mpn):
 
 # ------------------------------------------------------------------ targets
 def find_targets(vendors, limit, include_qualified=False, state=None,
-                 retry_dead=False):
+                 retry_dead=False, force=()):
     """Parts worth fetching a datasheet for."""
     conn = partdb.db()
     dead = 0
+    # A forced vendor ignores every skip: the file it already has, the outcome a
+    # previous run recorded, and the resume point. It exists for the case where
+    # the URLs themselves were wrong, so everything learned from them is worth
+    # nothing and re-attempting the lot is the only honest option.
+    force = {f.lower() for f in (force or ())}
     print("  scanning the database ...", flush=True)
     index = dsmine.build_index() if dsmine else {}
     out, seen = [], set()
@@ -138,8 +143,9 @@ def find_targets(vendors, limit, include_qualified=False, state=None,
             if not url.startswith("http"):
                 continue
             have_file = False
+            forced = key in force
             have = index.get(loose(r["mpn"])) if index else None
-            if have is not None:
+            if have is not None and not forced:
                 # A file we cannot read is not a datasheet we have. The Qorvo
                 # library is ~900 PDFs mangled by a text-mode save; they carry
                 # the right names, so counting them as present is what made
@@ -156,12 +162,12 @@ def find_targets(vendors, limit, include_qualified=False, state=None,
                     bad = True
                 if not bad:
                     have_file = True
-            if not have_file and specs.get("datasheet_file"):
+            if not have_file and not forced and specs.get("datasheet_file"):
                 p = Path(str(specs["datasheet_file"]))
                 if p.is_file() and p.stat().st_size >= 1024:
                     have_file = True
-            if (not have_file and state is not None and not retry_dead
-                    and is_dead(state, r["mpn"], url)):
+            if (not have_file and not forced and state is not None
+                    and not retry_dead and is_dead(state, r["mpn"], url)):
                 dead += 1
                 continue
             seen.add(r["id"])
@@ -171,6 +177,7 @@ def find_targets(vendors, limit, include_qualified=False, state=None,
             # parts in a list they had just been removed from.
             out.append({"mpn": r["mpn"], "vendor": r["vendor"],
                         "vendor_key": key, "url": url, "have": have_file,
+                        "forced": forced,
                         "category": r["category"] or ""})
             if limit and sum(1 for o in out if not o["have"]) >= limit:
                 return out, dead
@@ -341,6 +348,28 @@ def save_state(state):
         return False
 
 
+def _vlabel(tgt):
+    """Which vendor this part belongs to, for the per-line report."""
+    return VENDOR_FOLDER.get(tgt.get("vendor_key", ""), tgt.get("vendor", "?"))[:14]
+
+
+def _eta(started, done, total):
+    """'  eta 12m' from the rate so far, or '' too early to mean anything.
+
+    Measured rather than assumed: failures are far quicker than downloads, so a
+    figure from a fixed per-part cost would be wrong in whichever direction the
+    run happens to be going."""
+    if done < 5 or done >= total:
+        return ""
+    rate = done / max(1e-9, time.time() - started)
+    left = (total - done) / max(1e-9, rate)
+    if left < 90:
+        return f"  eta {left:.0f}s"
+    if left < 5400:
+        return f"  eta {left / 60:.0f}m"
+    return f"  eta {left / 3600:.1f}h"
+
+
 def state_key(mpn, url):
     return f"{loose(mpn)}|{url}"
 
@@ -358,10 +387,89 @@ def remember(state, mpn, url, status, why):
     }
 
 
+# A regex over TLDs is a trap: matching ".co" inside ".com" flags cdn.macom.com
+# as broken. Judge the LAST LABEL instead -- a real TLD is short and alphabetic,
+# while "comprivileged" is a hostname with a path welded onto it.
+_KNOWN_TLD = {"com", "net", "org", "edu", "gov", "mil", "int", "io", "co",
+              "us", "uk", "de", "fr", "jp", "cn", "ca", "au", "eu", "info",
+              "biz", "tv", "ai", "dev", "app", "cloud"}
+
+
+def _host_looks_broken(host):
+    labels = host.split(".")
+    if len(labels) < 2:
+        return True
+    last = labels[-1].lower()
+    if last in _KNOWN_TLD:
+        return False
+    # Not a TLD we know: broken if it merely STARTS with one, which is what a
+    # concatenated base and path looks like.
+    return any(last.startswith(tld) and len(last) > len(tld)
+               for tld in _KNOWN_TLD)
+
+
+def url_problem(url):
+    """Why this URL cannot be fetched, or None if it looks usable.
+
+    Catches hosts glued to a path -- "www.macom.comprivileged" -- which come from
+    a source that concatenated a base and a relative href instead of joining
+    them. Every one of those is a guaranteed failure, and attempting them wastes
+    a request and a slot in the run."""
+    import urllib.parse
+    u = urllib.parse.urlparse(url or "")
+    if u.scheme not in ("http", "https") or not u.netloc:
+        return "malformed URL"
+    host = u.netloc.split(":")[0]
+    if _host_looks_broken(host):
+        return f"broken host {host[:40]!r} (base+path concatenated)"
+    if "." not in u.netloc:
+        return f"implausible host {u.netloc[:40]!r}"
+    return None
+
+
 def origin_of(url):
     import urllib.parse
     u = urllib.parse.urlparse(url)
     return f"{u.scheme}://{u.netloc}" if u.scheme and u.netloc else ""
+
+
+def ensure_page(ctx, page):
+    """A live page, reopening one if the old has been closed.
+
+    A closed page is unrecoverable for every later part -- once Chrome or the tab
+    goes, Page.evaluate raises TargetClosedError forever and the rest of the run
+    fails instantly without trying anything. Reopening costs one tab and saves
+    the remaining thousands."""
+    try:
+        if page is not None and not page.is_closed():
+            return page, False
+    except Exception:
+        pass
+    try:
+        return ctx.new_page(), True
+    except Exception:
+        return page, False
+
+
+def fetch_via_navigation(page, url):
+    """Last resort: navigate straight at the URL and read the response.
+
+    Not subject to the same-origin rule that blocks fetch(), so it works where a
+    cross-origin fetch cannot -- at the cost of moving the page, which is why it
+    is the fallback rather than the default."""
+    try:
+        resp = page.goto(url, wait_until="commit", timeout=45000)
+    except Exception as e:
+        return None, None, f"nav {type(e).__name__}: {str(e)[:50]}"
+    if resp is None:
+        return None, None, "nav gave no response"
+    try:
+        body = resp.body()
+    except Exception as e:
+        return None, resp.status, f"nav body unreadable ({type(e).__name__})"
+    if resp.status != 200:
+        return None, resp.status, f"HTTP {resp.status}"
+    return body, resp.status, "navigation"
 
 
 def fetch_via_page(page, url, debug=False, current_origin=None):
@@ -380,15 +488,42 @@ def fetch_via_page(page, url, debug=False, current_origin=None):
     origin, not once per file.
     """
     import base64
-    try:
-        res = page.evaluate(_JS_FETCH, url)
-    except Exception as e:
-        return None, None, f"{type(e).__name__}: {str(e)[:70]}"
+    res = None
+    for attempt in (1, 2):
+        try:
+            res = page.evaluate(_JS_FETCH, url)
+            break
+        except Exception as e:
+            msg = str(e)
+            # "Execution context was destroyed" means the page navigated out
+            # from under the fetch. Re-establish the origin and try once more
+            # rather than burning the part.
+            if attempt == 1 and ("Execution context" in msg
+                                 or "destroyed" in msg
+                                 or "Target closed" in msg):
+                try:
+                    org = origin_of(url)
+                    page.goto(org + "/", wait_until="domcontentloaded",
+                              timeout=30000)
+                    continue
+                except Exception:
+                    pass
+            return None, None, f"{type(e).__name__}: {msg[:70]}"
     if not isinstance(res, dict):
         return None, None, "unexpected result from fetch"
     status = res.get("status") or 0
     if res.get("error"):
-        return None, status, f"fetch blocked: {str(res['error'])[:60]}"
+        # "Failed to fetch" is the browser refusing a CROSS-ORIGIN request. The
+        # page is on one host and the datasheet is on another, so same-origin
+        # fetch cannot work no matter how many times it is tried -- navigate
+        # instead, which has no such restriction.
+        err = str(res["error"])
+        if "Failed to fetch" in err or "NetworkError" in err:
+            blob, st, why = fetch_via_navigation(page, url)
+            if blob is not None:
+                return blob, st, why + " (after CORS block)"
+            return None, st, why
+        return None, status, f"fetch blocked: {err[:60]}"
     if not res.get("data"):
         return None, status, f"HTTP {status}" if status else "empty response"
     try:
@@ -414,6 +549,11 @@ def main(argv=None):
     ap.add_argument("--endpoint", default="http://localhost:9222")
     ap.add_argument("--profile", default=None)
     ap.add_argument("--chrome", default=None)
+    ap.add_argument("--force", nargs="*", default=(), type=str.lower,
+                    metavar="VENDOR",
+                    help="re-attempt EVERY part for these vendors, ignoring "
+                         "existing files, recorded failures and the resume "
+                         "point (e.g. --force macom)")
     ap.add_argument("--from-start", action="store_true",
                     help="ignore the resume point and walk from the top")
     ap.add_argument("--retry-dead", action="store_true",
@@ -459,7 +599,7 @@ def main(argv=None):
     print(f"state    : {state_path()}  ({len(state)} remembered outcome(s))")
     targets, dead = find_targets(args.vendors, args.limit,
                                  args.include_qualified, state,
-                                 args.retry_dead)
+                                 args.retry_dead, args.force)
     if dead:
         print(f"\n{dead} part(s) skipped: a previous run proved the URL dead "
               f"(--retry-dead to try them again)")
@@ -482,7 +622,13 @@ def main(argv=None):
         if last >= 0:
             print(f"resuming after #{last + 1} ({targets[last]['mpn']}) -- the "
                   f"furthest part in this order that already has a file")
-            targets = targets[last + 1:]
+            # Forced parts are exempt: the point of forcing is to revisit what
+            # the resume point would otherwise put behind us.
+            kept_forced = [x for x in targets[:last + 1] if x.get("forced")]
+            targets = kept_forced + targets[last + 1:]
+            if kept_forced:
+                print(f"  ...but keeping {len(kept_forced)} forced part(s) from "
+                      f"before that point")
     targets = [x for x in targets if not x.get("have")]
     print(f"{held} part(s) already in the library; {len(targets)} left to fetch")
     if not targets:
@@ -499,6 +645,7 @@ def main(argv=None):
 
     saved = skipped = failed = challenged = 0
     current_origin = None
+    started = time.time()
     with sync_playwright() as p:
         browser, ctx, page = attach(
             p, args.endpoint,
@@ -512,9 +659,10 @@ def main(argv=None):
             # including deciding that an unreadable one does not count. Re-testing
             # here with a plain existence check undid that and would have skipped
             # every corrupt Qorvo file all over again.
-            existing = [f for f in folder.glob(f"{stem}.*")
-                        if f.stat().st_size >= 1024
-                        and not (dsmine and dsmine._sniff(f) == "corrupt")]
+            existing = [] if t.get("forced") else [
+                f for f in folder.glob(f"{stem}.*")
+                if f.stat().st_size >= 1024
+                and not (dsmine and dsmine._sniff(f) == "corrupt")]
             if existing:
                 skipped += 1
                 continue
@@ -527,6 +675,17 @@ def main(argv=None):
             # One navigation per ORIGIN, not per file: fetch() must run
             # same-origin, and re-navigating for every part would be both slow
             # and needlessly noisy for the vendor.
+            page, reopened = ensure_page(ctx, page)
+            if reopened:
+                print("  (page had closed -- opened a new tab)")
+                current_origin = None
+            bad = url_problem(t["url"])
+            if bad:
+                failed += 1
+                remember(state, t["mpn"], t["url"], 0, bad)
+                print(f"  [{i}/{len(targets)}] {VENDOR_FOLDER.get(t['vendor_key'], '?')[:14]:<14} "
+                      f"{t['mpn']:<20} SKIP {bad}")
+                continue
             org = origin_of(t["url"])
             if org and org != current_origin:
                 try:
@@ -543,15 +702,23 @@ def main(argv=None):
                       f"bytes={len(blob) if blob else 0}")
             if blob is None:
                 failed += 1
-                remember(state, t["mpn"], t["url"], status, why)
-                print(f"  [{i}/{len(targets)}] {t['mpn']:<20} FAIL {why}")
+                # A closed browser says nothing about the URL, so it must not be
+                # remembered as dead -- otherwise one crash permanently retires
+                # every part that happened to follow it.
+                transient = ("TargetClosed" in why or "Execution context" in why
+                             or "closed" in why.lower())
+                if not transient:
+                    remember(state, t["mpn"], t["url"], status, why)
+                print(f"  [{i}/{len(targets)}] {_vlabel(t):<14} "
+                      f"{t['mpn']:<20} FAIL {why}{_eta(started, i, len(targets))}")
                 if failed % 25 == 0:
                     save_state(state)
                 time.sleep(args.delay)
                 continue
             if looks_like_challenge(blob):
                 challenged += 1
-                print(f"  [{i}/{len(targets)}] {t['mpn']:<20} CHALLENGE PAGE")
+                print(f"  [{i}/{len(targets)}] {_vlabel(t):<14} "
+                      f"{t['mpn']:<20} CHALLENGE PAGE")
                 input("      Open the site in that Chrome window, clear the "
                       "check, then press Enter to carry on... ")
                 continue
@@ -571,8 +738,9 @@ def main(argv=None):
                     failed += 1
                     remember(state, t["mpn"], t["url"], status,
                              f"tiny HTML {len(blob)}B")
-                    print(f"  [{i}/{len(targets)}] {t['mpn']:<20} "
-                          f"tiny HTML ({len(blob)} B) -- error page, not saved")
+                    print(f"  [{i}/{len(targets)}] {_vlabel(t):<14} "
+                          f"{t['mpn']:<20} tiny HTML ({len(blob)} B) -- error "
+                          f"page{_eta(started, i, len(targets))}")
                     if failed % 25 == 0:
                         save_state(state)
                     time.sleep(args.delay)
@@ -585,14 +753,16 @@ def main(argv=None):
                 dest.write_bytes(blob)          # bytes, never text
             except OSError as e:
                 failed += 1
-                print(f"  [{i}/{len(targets)}] {t['mpn']:<20} WRITE FAIL {e}")
+                print(f"  [{i}/{len(targets)}] {_vlabel(t):<14} "
+                      f"{t['mpn']:<20} WRITE FAIL {e}")
                 continue
             saved += 1
             state.pop(state_key(t["mpn"], t["url"]), None)
             if saved % 25 == 0:
                 save_state(state)
-            print(f"  [{i}/{len(targets)}] {t['mpn']:<20} {len(blob):>9,} B "
-                  f"-> {dest.name}")
+            print(f"  [{i}/{len(targets)}] {_vlabel(t):<14} "
+                  f"{t['mpn']:<20} {len(blob):>9,} B -> {dest.name}"
+                  f"{_eta(started, i, len(targets))}")
             time.sleep(args.delay + random.uniform(0.2, 1.2))
 
     save_state(state)
