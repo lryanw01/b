@@ -295,17 +295,19 @@ async (u) => {
 _PERMANENT = {404, 410, 451}
 
 
+_STATE_DIR = None
+
+
 def state_path():
-    try:
-        from pythonrfparts.paths import CACHE_DIR
-        return Path(CACHE_DIR) / "datasheet_fetch_state.json"
-    except Exception:
-        pass
-    try:
-        from rfparts.paths import CACHE_DIR
-        return Path(CACHE_DIR) / "datasheet_fetch_state.json"
-    except Exception:
-        return Path(partdb.DATA) / "cache" / "datasheet_fetch_state.json"
+    """Beside the datasheet library, not in a cache directory.
+
+    partdb and paths disagree about where the data root is on some installs, so
+    a cache-relative state file can be written to one place and looked for in
+    another -- the run then learns nothing and retries every dead URL forever.
+    The library is the one directory this program is certain about, because it
+    is the directory it writes files into."""
+    root = _STATE_DIR or Path(partdb.DATA)
+    return Path(root) / "_datasheet_fetch_state.json"
 
 
 def load_state():
@@ -348,6 +350,35 @@ def remember(state, mpn, url, status, why):
         "permanent": bool(status in _PERMANENT or why.startswith("tiny HTML")),
         "at": time.strftime("%Y-%m-%d %H:%M"),
     }
+
+
+def last_fetched_index(targets, out_root):
+    """Index of the furthest target that already has a file on disk.
+
+    The ordering is the one find_targets produces, so "furthest" means the point
+    a previous run reached before stopping. Everything before it has either been
+    fetched or been decided about, so a restart resumes rather than starting the
+    same vendor from the top again.
+
+    Scanned once per folder rather than per part: a stat for every one of 16000
+    targets is slower than listing the handful of folders they live in.
+    """
+    have = {}
+    for key, folder in VENDOR_FOLDER.items():
+        d = Path(out_root) / folder
+        if not d.is_dir():
+            continue
+        for f in d.iterdir():
+            try:
+                if f.is_file() and f.stat().st_size >= 1024:
+                    have.setdefault(loose(f.stem), f)
+            except OSError:
+                continue
+    last = -1
+    for i, tgt in enumerate(targets):
+        if loose(tgt["mpn"]) in have:
+            last = i
+    return last, len(have)
 
 
 def origin_of(url):
@@ -406,6 +437,8 @@ def main(argv=None):
     ap.add_argument("--endpoint", default="http://localhost:9222")
     ap.add_argument("--profile", default=None)
     ap.add_argument("--chrome", default=None)
+    ap.add_argument("--from-start", action="store_true",
+                    help="ignore the resume point and walk from the top")
     ap.add_argument("--retry-dead", action="store_true",
                     help="re-attempt URLs a previous run recorded as dead")
     ap.add_argument("--test-url", default=None,
@@ -443,7 +476,10 @@ def main(argv=None):
                 print(f"  first bytes: {blob[:24]!r}")
         return 0
 
+    global _STATE_DIR
+    _STATE_DIR = out_root
     state = load_state()
+    print(f"state    : {state_path()}  ({len(state)} remembered outcome(s))")
     targets, dead = find_targets(args.vendors, args.limit,
                                  args.include_qualified, state,
                                  args.retry_dead)
@@ -458,6 +494,20 @@ def main(argv=None):
     by_vendor = Counter(t["vendor_key"] for t in targets)
     print(f"\n{len(targets)} part(s) to fetch: "
           + ", ".join(f"{k} {n}" for k, n in by_vendor.most_common()))
+    # Positional resume: pick up after the furthest part that already has a
+    # file, rather than walking the whole vendor from the top every time.
+    if not args.from_start and targets:
+        last, have_n = last_fetched_index(targets, out_root)
+        if last >= 0:
+            skipped_ahead = last + 1
+            targets = targets[last + 1:]
+            print(f"resuming after {skipped_ahead} part(s) already reached "
+                  f"({have_n} file(s) in the library) -- --from-start to "
+                  f"begin at the top")
+            if not targets:
+                print("\nNothing left after the resume point.")
+                return 0
+
     if args.dry_run:
         for t in targets[:25]:
             print(f"    {t['mpn']:<22} {t['vendor'][:16]:<16} {t['url'][:64]}")
