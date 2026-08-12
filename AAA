@@ -1,26 +1,41 @@
-PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py"
-database : C:\Users\lane.white\Downloads\rfparts\Data\parts.db
-library  : C:\Users\lane.white\Downloads\rfparts\data\datasheets
-vendors  : minicircuits, adi, hittite, marki, qorvo, macom
-state    : C:\Users\lane.white\Downloads\rfparts\data\datasheets\_datasheet_fetch_state.json  (0 remembered outcome(s))
-  scanning the database ...
+https://www.macom.com/products/product-detail/MAAM-011252-CQ3 is a working link, but:
+  [10/1661] MACOM          MAAM-011252-CQ3      FAIL fetch blocked: TypeError: Failed to fetch  eta 26m
 
-20220 candidate(s): minicircuits 14219, macom 3540, marki 1525, adi 936
-resuming after #18559 (MADZ-011001) -- the furthest part in this order that already has a file
-8279 part(s) already in the library; 1661 left to fetch
-  launching chrome.exe on port 9222
-  CDP: 1 context(s)
-       1 page(s) in context 0: about:blank
-  attached to Chrome (about:blank)
+ [10/1661] MACOM          MAAM-011252-CQ3      FAIL fetch blocked: TypeError: Failed to fetch  eta 26m
+  [11/1661] MACOM          MAAM-010651          FAIL fetch blocked: TypeError: Failed to fetch  eta 28m
+  [12/1661] MACOM          MAAM-011357          FAIL fetch blocked: TypeError: Failed to fetch  eta 30m
+  [13/1661] MACOM          MAAM-009286          FAIL fetch blocked: TypeError: Failed to fetch  eta 31m
+  [14/1661] MACOM          MAAM-011326-DIE      FAIL fetch blocked: TypeError: Failed to fetch  eta 32m
+  [15/1661] MACOM          MAAM-011206          FAIL fetch blocked: TypeError: Failed to fetch  eta 33m
+  [16/1661] MACOM          MAAM-010513-000000   FAIL fetch blocked: TypeError: Failed to fetch  eta 34m
+  [17/1661] MACOM          MAAM-011100          FAIL fetch blocked: TypeError: Failed to fetch  eta 35m
+  [18/1661] MACOM          MAAM-011252          FAIL fetch blocked: TypeError: Failed to fetch  eta 35m
+  [19/1661] MACOM          MAAM28000            FAIL fetch blocked: TypeError: Failed to fetch  eta 36m
+  [20/1661] MACOM          XB1014-QT            FAIL fetch blocked: TypeError: Failed to fetch  eta 37m
+  [21/1661] MACOM          MAAM-011326          FAIL fetch blocked: TypeError: Failed to fetch  eta 37m
+  [22/1661] MACOM          MAAM-011290-DIE      FAIL fetch blocked: TypeError: Failed to fetch  eta 38m
+  [23/1661] MACOM          MAAM-011101          FAIL fetch blocked: TypeError: Failed to fetch  eta 38m
+  [24/1661] MACOM          MAAM-011305-DIE      FAIL fetch blocked: TypeError: Failed to fetch  eta 39m
+  [25/1661] MACOM          XB1004-BD            FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [26/1661] MACOM          MAAM02350-A2         FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [27/1661] MACOM          MAAM-011132          FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [28/1661] MACOM          XB1006-BD            FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [29/1661] MACOM          XB1008-BD            FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [30/1661] MACOM          MAAM-009560          FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [31/1661] MACOM          MAAM-011289-DIE      FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [32/1661] MACOM          XB1005-BD            FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [33/1661] MACOM          MAAM-011112          FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [34/1661] MACOM          MAAM-011305          FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [35/1661] MACOM          XB1007-QT            FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [36/1661] MACOM          XB1008-QT            FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [37/1661] MACOM          MAAM-011252-DIE      FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [38/1661] MACOM          MAAM28000-A1G        FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [39/1661] MACOM          MAAM-011290          FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [40/1661] MACOM          MAAM28000-A1         FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [41/1661] MACOM          MAAM-011289          FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [42/1661] MACOM          XB1007-BD            FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+  [43/1661] MACOM          CMM0511-QT           FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
 
-  -- on https://cdn.macom.com
-  [1/1661] MADZ-011002          FAIL Error: Page.evaluate: Execution context was destroyed, most likely because of
-  [2/1661] MADZ-011005          FAIL fetch blocked: TypeError: Failed to fetch
-  ! could not open https://www.macom.comprivileged: Error
-  [3/1661] M23564               FAIL Error: Page.evaluate: Execution context was destroyed, most likely because of
-  ! could not open https://www.macom.comprivileged: Error
-  [4/1661] M23544               FAIL fetch blocked: TypeError: Failed to fetch
-  ! could not open https://www.macom.comprivileged: Error
-  [5/1661] M31544               FAIL fetch blocked: TypeError: Failed to fetch
-  ! could not open https://www.macom.comprivileged: Error
-  [6/1661] MAEQ-21764           FAIL fetch blocked: TypeError: Failed to fetch
+
+
+I imagine the rest of these are just having the wrong links being used.
