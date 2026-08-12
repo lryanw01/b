@@ -113,6 +113,7 @@ def find_targets(vendors, limit, include_qualified=False, state=None,
     """Parts worth fetching a datasheet for."""
     conn = partdb.db()
     dead = 0
+    print("  scanning the database ...", flush=True)
     index = dsmine.build_index() if dsmine else {}
     out, seen = [], set()
     for key in vendors:
@@ -136,6 +137,7 @@ def find_targets(vendors, limit, include_qualified=False, state=None,
             url = str(specs.get("datasheet_url") or "").strip()
             if not url.startswith("http"):
                 continue
+            have_file = False
             have = index.get(loose(r["mpn"])) if index else None
             if have is not None:
                 # A file we cannot read is not a datasheet we have. The Qorvo
@@ -153,20 +155,24 @@ def find_targets(vendors, limit, include_qualified=False, state=None,
                 except OSError:
                     bad = True
                 if not bad:
-                    continue
-            if specs.get("datasheet_file"):
+                    have_file = True
+            if not have_file and specs.get("datasheet_file"):
                 p = Path(str(specs["datasheet_file"]))
-                if p.is_file():
-                    continue
-            if state is not None and not retry_dead and is_dead(state,
-                                                                r["mpn"], url):
+                if p.is_file() and p.stat().st_size >= 1024:
+                    have_file = True
+            if (not have_file and state is not None and not retry_dead
+                    and is_dead(state, r["mpn"], url)):
                 dead += 1
                 continue
             seen.add(r["id"])
+            # Parts that already HAVE a file stay in the list, flagged. They
+            # are what the resume point is measured against: dropping them here
+            # is why the resume never fired -- it was looking for already-fetched
+            # parts in a list they had just been removed from.
             out.append({"mpn": r["mpn"], "vendor": r["vendor"],
-                        "vendor_key": key, "url": url,
+                        "vendor_key": key, "url": url, "have": have_file,
                         "category": r["category"] or ""})
-            if limit and len(out) >= limit:
+            if limit and sum(1 for o in out if not o["have"]) >= limit:
                 return out, dead
     return out, dead
 
@@ -352,35 +358,6 @@ def remember(state, mpn, url, status, why):
     }
 
 
-def last_fetched_index(targets, out_root):
-    """Index of the furthest target that already has a file on disk.
-
-    The ordering is the one find_targets produces, so "furthest" means the point
-    a previous run reached before stopping. Everything before it has either been
-    fetched or been decided about, so a restart resumes rather than starting the
-    same vendor from the top again.
-
-    Scanned once per folder rather than per part: a stat for every one of 16000
-    targets is slower than listing the handful of folders they live in.
-    """
-    have = {}
-    for key, folder in VENDOR_FOLDER.items():
-        d = Path(out_root) / folder
-        if not d.is_dir():
-            continue
-        for f in d.iterdir():
-            try:
-                if f.is_file() and f.stat().st_size >= 1024:
-                    have.setdefault(loose(f.stem), f)
-            except OSError:
-                continue
-    last = -1
-    for i, tgt in enumerate(targets):
-        if loose(tgt["mpn"]) in have:
-            last = i
-    return last, len(have)
-
-
 def origin_of(url):
     import urllib.parse
     u = urllib.parse.urlparse(url)
@@ -492,21 +469,25 @@ def main(argv=None):
         return 0
     from collections import Counter
     by_vendor = Counter(t["vendor_key"] for t in targets)
-    print(f"\n{len(targets)} part(s) to fetch: "
+    print(f"\n{len(targets)} candidate(s): "
           + ", ".join(f"{k} {n}" for k, n in by_vendor.most_common()))
     # Positional resume: pick up after the furthest part that already has a
     # file, rather than walking the whole vendor from the top every time.
+    held = sum(1 for x in targets if x.get("have"))
     if not args.from_start and targets:
-        last, have_n = last_fetched_index(targets, out_root)
+        last = -1
+        for i, tgt in enumerate(targets):
+            if tgt.get("have"):
+                last = i
         if last >= 0:
-            skipped_ahead = last + 1
+            print(f"resuming after #{last + 1} ({targets[last]['mpn']}) -- the "
+                  f"furthest part in this order that already has a file")
             targets = targets[last + 1:]
-            print(f"resuming after {skipped_ahead} part(s) already reached "
-                  f"({have_n} file(s) in the library) -- --from-start to "
-                  f"begin at the top")
-            if not targets:
-                print("\nNothing left after the resume point.")
-                return 0
+    targets = [x for x in targets if not x.get("have")]
+    print(f"{held} part(s) already in the library; {len(targets)} left to fetch")
+    if not targets:
+        print("\nNothing left after the resume point.")
+        return 0
 
     if args.dry_run:
         for t in targets[:25]:
