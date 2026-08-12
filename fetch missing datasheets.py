@@ -70,6 +70,11 @@ if partdb is None:
 # below wherever the manufacturer is one of them.
 VENDOR_MATCH = {
     "minicircuits": "%mini%circuit%",
+    # ADI's datasheet URLs come from the parametric export, which states them
+    # outright. Hittite is matched too: the parts were folded into ADI but the
+    # vendor string on older rows still says Hittite.
+    "adi": "%analog devices%",
+    "hittite": "%hittite%",
     "marki":        "%marki%",
     "qorvo":        "%qorvo%",
     "macom":        "%macom%",
@@ -77,6 +82,7 @@ VENDOR_MATCH = {
 VENDOR_FOLDER = {
     "minicircuits": "Mini-Circuits", "marki": "Marki-Microwave",
     "qorvo": "Qorvo", "macom": "MACOM",
+    "adi": "Analog-Devices", "hittite": "Analog-Devices",
 }
 
 CHROME_CANDIDATES = {
@@ -102,9 +108,11 @@ def safe_name(mpn):
 
 
 # ------------------------------------------------------------------ targets
-def find_targets(vendors, limit, include_qualified=False):
+def find_targets(vendors, limit, include_qualified=False, state=None,
+                 retry_dead=False):
     """Parts worth fetching a datasheet for."""
     conn = partdb.db()
+    dead = 0
     index = dsmine.build_index() if dsmine else {}
     out, seen = [], set()
     for key in vendors:
@@ -150,13 +158,17 @@ def find_targets(vendors, limit, include_qualified=False):
                 p = Path(str(specs["datasheet_file"]))
                 if p.is_file():
                     continue
+            if state is not None and not retry_dead and is_dead(state,
+                                                                r["mpn"], url):
+                dead += 1
+                continue
             seen.add(r["id"])
             out.append({"mpn": r["mpn"], "vendor": r["vendor"],
                         "vendor_key": key, "url": url,
                         "category": r["category"] or ""})
             if limit and len(out) >= limit:
-                return out
-    return out
+                return out, dead
+    return out, dead
 
 
 # ------------------------------------------------------------------- chrome
@@ -270,6 +282,74 @@ async (u) => {
 """
 
 
+# ------------------------------------------------------------------- state
+# Outcomes are remembered PER PART, not as a position in the list. A high-water
+# mark breaks the moment the target list changes -- one new part shifts every
+# index after it, and the run either re-attempts hundreds of dead URLs or skips
+# live ones it has never tried. Keyed on the part and its URL, the record stays
+# correct however the list is reordered, and a URL that gets corrected is retried
+# because the key changed with it.
+#
+# Only PERMANENT failures are remembered. A timeout or a dropped connection says
+# nothing about the file, so those are tried again.
+_PERMANENT = {404, 410, 451}
+
+
+def state_path():
+    try:
+        from pythonrfparts.paths import CACHE_DIR
+        return Path(CACHE_DIR) / "datasheet_fetch_state.json"
+    except Exception:
+        pass
+    try:
+        from rfparts.paths import CACHE_DIR
+        return Path(CACHE_DIR) / "datasheet_fetch_state.json"
+    except Exception:
+        return Path(partdb.DATA) / "cache" / "datasheet_fetch_state.json"
+
+
+def load_state():
+    fp = state_path()
+    if fp.is_file():
+        try:
+            import json
+            data = json.loads(fp.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return {}
+
+
+def save_state(state):
+    fp = state_path()
+    try:
+        import json
+        fp.parent.mkdir(parents=True, exist_ok=True)
+        fp.write_text(json.dumps(state, indent=0), encoding="utf-8")
+        return True
+    except OSError as e:
+        print(f"  ! could not save fetch state: {e}")
+        return False
+
+
+def state_key(mpn, url):
+    return f"{loose(mpn)}|{url}"
+
+
+def is_dead(state, mpn, url):
+    rec = state.get(state_key(mpn, url))
+    return isinstance(rec, dict) and rec.get("permanent") is True
+
+
+def remember(state, mpn, url, status, why):
+    state[state_key(mpn, url)] = {
+        "status": status, "why": why[:60],
+        "permanent": bool(status in _PERMANENT or why.startswith("tiny HTML")),
+        "at": time.strftime("%Y-%m-%d %H:%M"),
+    }
+
+
 def origin_of(url):
     import urllib.parse
     u = urllib.parse.urlparse(url)
@@ -326,6 +406,8 @@ def main(argv=None):
     ap.add_argument("--endpoint", default="http://localhost:9222")
     ap.add_argument("--profile", default=None)
     ap.add_argument("--chrome", default=None)
+    ap.add_argument("--retry-dead", action="store_true",
+                    help="re-attempt URLs a previous run recorded as dead")
     ap.add_argument("--test-url", default=None,
                     help="attach, navigate to this ONE url, report what happens")
     ap.add_argument("--debug", action="store_true",
@@ -361,7 +443,13 @@ def main(argv=None):
                 print(f"  first bytes: {blob[:24]!r}")
         return 0
 
-    targets = find_targets(args.vendors, args.limit, args.include_qualified)
+    state = load_state()
+    targets, dead = find_targets(args.vendors, args.limit,
+                                 args.include_qualified, state,
+                                 args.retry_dead)
+    if dead:
+        print(f"\n{dead} part(s) skipped: a previous run proved the URL dead "
+              f"(--retry-dead to try them again)")
     if not targets:
         print("\nNothing to fetch: every matching part either already has a "
               "datasheet\nor already states a qualification.")
@@ -424,7 +512,10 @@ def main(argv=None):
                       f"bytes={len(blob) if blob else 0}")
             if blob is None:
                 failed += 1
+                remember(state, t["mpn"], t["url"], status, why)
                 print(f"  [{i}/{len(targets)}] {t['mpn']:<20} FAIL {why}")
+                if failed % 25 == 0:
+                    save_state(state)
                 time.sleep(args.delay)
                 continue
             if looks_like_challenge(blob):
@@ -447,8 +538,12 @@ def main(argv=None):
                 # mine "404 Not Found" for qualification wording.
                 if len(blob) < 2000:
                     failed += 1
+                    remember(state, t["mpn"], t["url"], status,
+                             f"tiny HTML {len(blob)}B")
                     print(f"  [{i}/{len(targets)}] {t['mpn']:<20} "
                           f"tiny HTML ({len(blob)} B) -- error page, not saved")
+                    if failed % 25 == 0:
+                        save_state(state)
                     time.sleep(args.delay)
                     continue
                 ext = ".html"
@@ -462,10 +557,14 @@ def main(argv=None):
                 print(f"  [{i}/{len(targets)}] {t['mpn']:<20} WRITE FAIL {e}")
                 continue
             saved += 1
+            state.pop(state_key(t["mpn"], t["url"]), None)
+            if saved % 25 == 0:
+                save_state(state)
             print(f"  [{i}/{len(targets)}] {t['mpn']:<20} {len(blob):>9,} B "
                   f"-> {dest.name}")
             time.sleep(args.delay + random.uniform(0.2, 1.2))
 
+    save_state(state)
     print(f"\nsaved {saved}, already had {skipped}, failed {failed}"
           + (f", {challenged} challenged" if challenged else ""))
     if saved:
@@ -479,5 +578,8 @@ if __name__ == "__main__":
         sys.exit(main())
     except KeyboardInterrupt:
         # Stopping is a normal way to use this; a stack trace is not an answer.
-        print("\nstopped. Files already saved are kept, and a re-run skips them.")
+        # The state is saved as outcomes are learned, so what was proven dead
+        # stays dead across the interruption.
+        print("\nstopped. Saved files are kept, dead URLs are remembered, and "
+              "a re-run picks up where this left off.")
         sys.exit(130)
