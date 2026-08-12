@@ -1,0 +1,11 @@
+{
+  "bench_jumper": {
+    "description": "Example JSON-defined cable",
+    "il_fixed": [0.04, 0.006, 0.003],
+    "il_per_ft": [0.010, 0.0035, 0.1200],
+    "vswr_bands": [[0.0, 6.0, 1.10], [6.0, 26.5, 1.25]],
+    "vf": 0.78,
+    "f_max_ghz": 26.5,
+    "default_length_ft": 2.0
+  }
+}
