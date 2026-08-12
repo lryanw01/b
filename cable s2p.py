@@ -295,6 +295,28 @@ def write_touchstone(path, f_ghz, s, form, z0, header_lines):
 # CLI
 # ----------------------------------------------------------------------------
 
+def build_freq_grid(start, stop, step, step2, fbreak):
+    """Uniform grid from start to min(fbreak,stop) at `step`, then `step2` to stop.
+
+    Both segments land exactly on their endpoints (rounded npts), so the step
+    size actually used may differ very slightly from the requested one to
+    keep the endpoints exact -- same convention as the original single-step
+    version. If fbreak is outside [start, stop], falls back to a single
+    uniform grid at `step`.
+    """
+    if fbreak <= start or fbreak >= stop:
+        n = int(round((stop - start) / step)) + 1
+        return np.linspace(start, stop, n)
+
+    n1 = int(round((fbreak - start) / step)) + 1
+    seg1 = np.linspace(start, fbreak, n1)
+
+    n2 = int(round((stop - fbreak) / step2)) + 1
+    seg2 = np.linspace(fbreak, stop, n2)
+
+    return np.concatenate([seg1, seg2[1:]])  # drop duplicate fbreak point
+
+
 def list_cables():
     print(f"{'key':<18} {'default L':>9}  {'f_max':>7}  description")
     print("-" * 78)
@@ -313,7 +335,9 @@ def main(argv=None):
                    help="length in feet (default: the cable's own default)")
     p.add_argument("--start", type=float, default=0.01, help="start GHz (default 0.01)")
     p.add_argument("--stop", type=float, default=40.0, help="stop GHz (default 40)")
-    p.add_argument("--step", type=float, default=0.01, help="step GHz (default 0.01)")
+    p.add_argument("--step", type=float, default=0.01, help="step GHz below --break (default 0.01 = 10 MHz)")
+    p.add_argument("--step2", type=float, default=0.1, help="step GHz from --break to --stop (default 0.1 = 100 MHz)")
+    p.add_argument("--break", dest="fbreak", type=float, default=10.0, help="GHz where step switches from --step to --step2 (default 10)")
     p.add_argument("--s11-model", choices=["ripple", "flat", "none"], default="ripple",
                    help="mismatch model (default ripple)")
     p.add_argument("--vswr-extrap", choices=["hold", "linear", "error"], default="hold",
@@ -340,8 +364,8 @@ def main(argv=None):
     spec = CABLES[a.cable]
     L = spec.default_length_ft if a.length is None else a.length
 
-    npts = int(round((a.stop - a.start) / a.step)) + 1
-    f = np.linspace(a.start, a.stop, npts)
+    f = build_freq_grid(a.start, a.stop, a.step, a.step2, a.fbreak)
+    npts = f.size
 
     s, info = build_network(
         spec, f, L,
@@ -364,6 +388,10 @@ def main(argv=None):
     out = a.output or f"{spec.key}_{L:g}ft.s2p"
     header = [
         f"Cable: {spec.key} -- {spec.description}",
+        f"Length = {L:g} ft, Z0 = {spec.z0:g} ohm, {npts} pts, "
+        f"{a.start:g} to {a.stop:g} GHz, step {a.step:g} GHz below "
+        f"{a.fbreak:g} GHz then {a.step2:g} GHz above"
+        if a.fbreak > a.start and a.fbreak < a.stop else
         f"Length = {L:g} ft, Z0 = {spec.z0:g} ohm, {npts} pts, "
         f"{a.start:g} to {a.stop:g} GHz, step {a.step:g} GHz",
         "IL(dB), f in GHz: (%g + %g*f + %g*sqrt(f)) + L*(%g + %g*f + %g*sqrt(f))"
