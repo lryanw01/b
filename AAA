@@ -1,1 +1,162 @@
-https://www.erzia.com/wp-content/uploads/ERZ-LNA-0070-0300-20-0.7_2.pdf
+Previous run before the update:
+  -- on https://www.minicircuits.com
+  [1/11008] ZABT-250W-63X+       FAIL HTTP 404
+  [2/11008] CBP6-522R58G+        FAIL HTTP 404
+  [3/11008] PLP-600+             FAIL HTTP 404
+  [4/11008] SALF-800+            FAIL HTTP 404
+  [5/11008] SCLF-10.7+           FAIL HTTP 404
+  [6/11008] SCLF-550+            FAIL HTTP 404
+  [7/11008] VLF-1525+              190,095 B -> VLF-1525+.pdf
+  [8/11008] VLF-1800+            FAIL HTTP 404
+  [9/11008] XLF-221-DG+          FAIL HTTP 404
+  [10/11008] ALMP-5075+           FAIL HTTP 404
+  [11/11008] ZX47-40LN-S+         FAIL HTTP 404
+  [12/11008] ZX47-50LN-S+         FAIL HTTP 404
+  [13/11008] ZX47-55LN-S+         FAIL HTTP 404
+  [14/11008] ZX47-60LN-S+         FAIL HTTP 404
+  [15/11008] ADP-2-20-75+         FAIL HTTP 404
+  [16/11008] JSPQ-350+            FAIL HTTP 404
+  [17/11008] ANNE-50CN+           FAIL HTTP 404
+  [18/11008] KARN-50CN+           FAIL HTTP 404
+  [19/11008] ADTT3-2+             FAIL HTTP 404
+  [20/11008] T2-1T+               FAIL HTTP 404
+  [21/11008] T3-1T-KK81+          FAIL HTTP 404
+  [22/11008] T4-1H-KK81+          FAIL HTTP 404
+  [23/11008] TCW1-392+              415,559 B -> TCW1-392+.pdf
+  [24/11008] TT1-6+               FAIL HTTP 404
+  [25/11008] TT4-1-X65+           FAIL HTTP 404
+  [26/11008] TT4-1A+              FAIL HTTP 404
+  [27/11008] AVA-183P-D+          FAIL HTTP 404
+  [28/11008] LZY-22X+             FAIL HTTP 404
+  [29/11008] TO-1724LN+           FAIL HTTP 404
+  [30/11008] TSY-83LN-DG+         FAIL HTTP 404
+  [31/11008] ZFL-11ADB+           FAIL HTTP 404
+  [32/11008] ZFL-500-BNC+         FAIL HTTP 404
+  [33/11008] ZFL-500B+            FAIL HTTP 404
+  [34/11008] ZFL-500HLNB+         FAIL HTTP 404
+  [35/11008] ZFL-500LN-BNC+       FAIL HTTP 404
+  [36/11008] ZFL-500LNB+          FAIL HTTP 404
+  [37/11008] ZFL-500LNB-BNC+      FAIL HTTP 404
+  [38/11008] ZFL-1000HB+          FAIL HTTP 404
+  [39/11008] ZFL-1000LNB+         FAIL HTTP 404
+  [40/11008] ZFL-1000VH2X+        FAIL HTTP 404
+  [41/11008] ZFL-1000VHB+         FAIL HTTP 404
+  [42/11008] ZFL-1000VHX+         FAIL HTTP 404
+  [43/11008] ZFL-1200GB+          FAIL HTTP 404
+  [44/11008] ZFL-1200GHB+         FAIL HTTP 404
+  [45/11008] ZFL-2000B+           FAIL HTTP 404
+  [46/11008] ZFL-2000GHB+         FAIL HTTP 404
+  [47/11008] ZFL-2000X+           FAIL HTTP 404
+  [48/11008] ZFL-2500B+           FAIL HTTP 404
+  [49/11008] ZFL-2500VHB+         FAIL HTTP 404
+  [50/11008] ZFL-2500VHX+         FAIL HTTP 404
+  [51/11008] ZHL-1-2W-N+          FAIL HTTP 404
+  [52/11008] ZHL-1-2W-S+          FAIL HTTP 404
+  [53/11008] ZHL-1-2WX+           FAIL HTTP 404
+  [54/11008] ZHL-1-2WX-S+         FAIL HTTP 404
+  [55/11008] ZHL-1A-S+            FAIL HTTP 404
+  [56/11008] ZHL-1W-63X-S+        FAIL HTTP 404
+  [57/11008] ZHL-2-8X-S+          FAIL HTTP 404
+  [58/11008] ZHL-2-12X+           FAIL HTTP 404
+  [59/11008] ZHL-2-S+             FAIL HTTP 404
+  [60/11008] ZHL-2G018G010+       FAIL HTTP 404
+...
+[1218/11008] MAC-60LH+            1,096,233 B -> MAC-60LH+.pdf (LAST FOUND DATASHEET)
+...
+ [2111/11008] ROS-ED9807/1         FAIL HTTP 404
+  [2112/11008] ROS-ED9808/1         FAIL HTTP 404
+  [2113/11008] ROS-ED9815/1         FAIL HTTP 404
+  [2114/11008] ROS-ED9819/1         FAIL HTTP 404
+  [2115/11008] ROS-ED9820/1         FAIL HTTP 404
+  [2116/11008] ROS-ED9823/1         FAIL HTTP 404
+  [2117/11008] ROS-ED9824/1         FAIL HTTP 404
+  [2118/11008] ROS-ED9825/1         FAIL HTTP 404
+  [2119/11008] ROS-ED9827/1         FAIL HTTP 404
+  [2120/11008] ROS-ED9836/1         FAIL HTTP 404
+  [2121/11008] ROS-ED9837/1         FAIL HTTP 404
+  [2122/11008] ROS-ED9841/1         FAIL HTTP 404
+
+stopped. Files already saved are kept, and a re-run skips them.
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py"
+database : C:\Users\lane.white\Downloads\rfparts\Data\parts.db
+library  : C:\Users\lane.white\Downloads\rfparts\data\datasheets
+vendors  : minicircuits, marki, qorvo, macom
+
+
+Run with first update:
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py"
+database : C:\Users\lane.white\Downloads\rfparts\Data\parts.db
+library  : C:\Users\lane.white\Downloads\rfparts\data\datasheets
+vendors  : minicircuits, adi, hittite, marki, qorvo, macom
+
+11941 part(s) to fetch: minicircuits 8595, macom 2410, adi 936
+  launching chrome.exe on port 9222
+  CDP: 1 context(s)
+       1 page(s) in context 0: about:blank
+  attached to Chrome (about:blank)
+
+  -- on https://www.minicircuits.com
+  [1/11941] ZABT-250W-63X+       FAIL HTTP 404
+  [2/11941] CBP6-522R58G+        FAIL HTTP 404
+  [3/11941] PLP-600+             FAIL HTTP 404
+  [4/11941] SALF-800+            FAIL HTTP 404
+  [5/11941] SCLF-10.7+           FAIL HTTP 404
+  [6/11941] SCLF-550+            FAIL HTTP 404
+  [7/11941] VLF-1800+            FAIL HTTP 404
+  [8/11941] XLF-221-DG+          FAIL HTTP 404
+  [9/11941] ALMP-5075+           FAIL HTTP 404
+  [10/11941] ZX47-40LN-S+         FAIL HTTP 404
+  [11/11941] ZX47-50LN-S+         FAIL HTTP 404
+  [12/11941] ZX47-55LN-S+         FAIL HTTP 404
+  [13/11941] ZX47-60LN-S+         FAIL HTTP 404
+  [14/11941] ADP-2-20-75+         FAIL HTTP 404
+  [15/11941] JSPQ-350+            FAIL HTTP 404
+  [16/11941] ANNE-50CN+           FAIL HTTP 404
+  [17/11941] KARN-50CN+           FAIL HTTP 404
+  [18/11941] ADTT3-2+             FAIL HTTP 404
+  [19/11941] T2-1T+               FAIL HTTP 404
+  [20/11941] T3-1T-KK81+          FAIL HTTP 404
+  [21/11941] T4-1H-KK81+          FAIL HTTP 404
+  [22/11941] TT1-6+               FAIL HTTP 404
+  [23/11941] TT4-1-X65+           FAIL HTTP 404
+  [24/11941] TT4-1A+              FAIL HTTP 404
+  [25/11941] AVA-183P-D+          FAIL HTTP 404
+  [26/11941] LZY-22X+             FAIL HTTP 404
+  [27/11941] TO-1724LN+           FAIL HTTP 404
+  [28/11941] TSY-83LN-DG+         FAIL HTTP 404
+  [29/11941] ZFL-11ADB+           FAIL HTTP 404
+  [30/11941] ZFL-500-BNC+         FAIL HTTP 404
+  [31/11941] ZFL-500B+            FAIL HTTP 404
+  [32/11941] ZFL-500HLNB+         FAIL HTTP 404
+  [33/11941] ZFL-500LN-BNC+       FAIL HTTP 404
+  [34/11941] ZFL-500LNB+          FAIL HTTP 404
+  [35/11941] ZFL-500LNB-BNC+      FAIL HTTP 404
+  [36/11941] ZFL-1000HB+          FAIL HTTP 404
+  [37/11941] ZFL-1000LNB+         FAIL HTTP 404
+  [38/11941] ZFL-1000VH2X+        FAIL HTTP 404
+  [39/11941] ZFL-1000VHB+         FAIL HTTP 404
+  [40/11941] ZFL-1000VHX+         FAIL HTTP 404
+  [41/11941] ZFL-1200GB+          FAIL HTTP 404
+  [42/11941] ZFL-1200GHB+         FAIL HTTP 404
+  [43/11941] ZFL-2000B+           FAIL HTTP 404
+  [44/11941] ZFL-2000GHB+         FAIL HTTP 404
+  [45/11941] ZFL-2000X+           FAIL HTTP 404
+  [46/11941] ZFL-2500B+           FAIL HTTP 404
+  [47/11941] ZFL-2500VHB+         FAIL HTTP 404
+
+stopped. Saved files are kept, dead URLs are remembered, and a re-run picks up where this left off.
+
+run with most recent update:
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\fetch missing datasheets.py"
+database : C:\Users\lane.white\Downloads\rfparts\Data\parts.db
+library  : C:\Users\lane.white\Downloads\rfparts\data\datasheets
+vendors  : minicircuits, adi, hittite, marki, qorvo, macom
+state    : C:\Users\lane.white\Downloads\rfparts\data\datasheets\_datasheet_fetch_state.json  (0 remembered outcome(s))
+
+11941 part(s) to fetch: minicircuits 8595, macom 2410, adi 936
+
+stopped. Saved files are kept, dead URLs are remembered, and a re-run picks up where this left off.
+
+
+
+This shoudl be starting at the part after [1218/11008] MAC-60LH+            1,096,233 B -> MAC-60LH+.pdf, because this was the last datasheet found.
