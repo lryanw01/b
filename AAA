@@ -1,942 +1,262 @@
-PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\dbg datasheet parse.py" --example-dir "C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING" --per-category 2
-examples : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING  (15 file(s))
-library  : 33852 file(s)
-  datasheets per category: filter 6231, amplifier 6177, mixer 3555, attenuator 2571, divider 1320, coupler 1275, oscillator 1227, transformer 1158, switch 888, multiplier 861, equalizer 591, adapter 519, limiter 399, termination 162, phase_shifter 135, detector 57
-  2829 file(s) whose part is not in the database (filename does not match an MPN)
-
-==============================================================================
-  TAK-3H+.pdf
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\Minicircuits\TAK-3H+.pdf
-  type    : pdf   281,931 bytes on disk   5,629 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                       5e-05 GHz   range    0.05 to 300 MHz
-  freq_max                         0.3 GHz   range
-  conversion_loss_db              4.82       prose    conversion loss, 4.82 dB
-  isolation_db                      40       prose    isolation, 40 dB
-
-  space score : 12%   hermetic
-
-  in the database as TAK-3H+ (Mini-Circuits, mixer):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    conversion_loss_db              4.82            None  -
-    datasheet_url                   None            None  catalog
-    freq_max                         0.3             0.3  catalog
-    freq_min                       5e-05           5e-05  catalog
-    isolation_db                    40.0            None  -
-    space_score_pct                 12.0            None  -
-    sparams_url                     None            None  catalog
-
-==============================================================================
-  mt3d-0113lsm-2.html
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\Marki-Microwave\mt3d-0113lsm-2.html
-  type    : html   192,120 bytes on disk   13,167 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                         1.5 GHz   range    1.5 - 13 GHz
-  freq_max                          13 GHz   range
-  nf_db                            0.5       prose    Noise Figure typically measures within 0.5 dB
-  oip3_dbm                          19       prose    IP3 data shown for a +19 dBm
-  power_w                            1       prose    1 w
-
-  space score : 9%   GaAs, MMIC
-
-  in the database as mt3d-0113lsm-2 (Marki Microwave, mixer):
-    spec                       datasheet        database  source
-    absmax_temp_max_c               None           100.0  catalog
-    absmax_temp_min_c               None           -40.0  catalog
-    conversion_loss_db              None             7.5  catalog
-    datasheet_file                  None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        13.0            None  -
-    freq_min                         1.5            None  -
-    isolation_db                    None            43.0  catalog
-    lo_freq_ghz                     None             1.5  catalog
-    mount_type                      None            None  catalog
-    nf_db                            0.5             7.5  catalog   <-- DIFFER
-    oip3_dbm                        19.0            27.0  catalog   <-- DIFFER
-    package                         None            None  catalog
-    power_w                          1.0             1.0  datasheet
-    rf_freq_ghz                     None             1.5  catalog
-    space_score_pct                  9.0             9.0  datasheet
-
-==============================================================================
-  amm-7203ch.html   [amplifier]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Marki-Microwave\amm-7203ch.html
-  type    : html   179,909 bytes on disk   12,391 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                          30 GHz   range    30 GHz – 60 GHz
-  freq_max                          60 GHz   range
-  nf_db                             10       prose    noise figure with greater than 10 dB
-  power_w                            1       prose    1 w
-
-  space score : 4%   MMIC
-
-  in the database as amm-7203ch (Marki Microwave, amplifier):
-    spec                       datasheet        database  source
-    absmax_current_ma               None           200.0  catalog
-    absmax_supply_v                 None            -2.0  catalog
-    absmax_temp_max_c               None            85.0  catalog
-    absmax_temp_min_c               None           -40.0  catalog
-    current_ma                      None            80.0  catalog
-    datasheet_file                  None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        60.0            60.0  catalog
-    freq_min                        30.0            30.0  catalog
-    gain_db                         None             9.0  catalog
-    input_return_loss_db            None            14.0  catalog
-    isolation_db                    None            45.0  catalog
-    mount_type                      None            None  catalog
-    nf_db                           10.0             4.2  catalog   <-- DIFFER
-    oip3_dbm                        None            10.0  catalog
-    output_return_loss_db           None            17.0  catalog
-    p1db_dbm                        None            11.0  catalog
-    package                         None            None  catalog
-    power_w                          1.0             1.0  datasheet
-    psat_dbm                        None            13.0  catalog
-    space_score_pct                  4.0             4.0  datasheet
-    supply_v                        None             2.0  catalog
-
-==============================================================================
-  ZX60-10223G+.pdf   [amplifier]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\ZX60-10223G+.pdf
-  type    : pdf   477,590 bytes on disk   4,455 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                          10 GHz   range    10 to 20 GHz
-  freq_max                          20 GHz   range
-  nf_db                            2.3       prose    noise figure, 2.3 dB
-  oip3_dbm                           0       prose    OIP3 measured with 0 dBm
-  power_w                       230914       prose    230914 w
-
-  space score : (no qualification wording found)
-
-  in the database as ZX60-10223G+ (Mini-Circuits, amplifier):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    current_ma                      None            75.0  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        20.0            20.0  catalog
-    freq_min                        10.0            10.0  catalog
-    gain_db                         None            26.0  catalog
-    nf_db                            2.3             2.3  catalog
-    oip3_dbm                         0.0            20.0  catalog   <-- DIFFER
-    output_vswr                     None             1.9  catalog
-    p1db_dbm                        None            10.0  catalog
-    package                         None            None  catalog
-    power_w                     230914.0            None  -
-    sparams_url                     None            None  catalog
-    supply_v                        None             5.0  catalog
-    vswr                            None             2.0  catalog
-
-==============================================================================
-  SHP-500+.pdf   [filter]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\SHP-500+.pdf
-  type    : pdf   153,216 bytes on disk   3,534 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                         0.5 GHz   range    500 to 3200 MHz
-  freq_max                         3.2 GHz   range
-  power_w                          0.5       prose    0.5W
-
-  space score : (no qualification wording found)
-
-  in the database as SHP-500+ (Mini-Circuits, filter):
-    spec                       datasheet        database  source
-    datasheet_url                   None            None  catalog
-    filter_type                     None            None  catalog
-    freq_max                         3.2             0.5  catalog   <-- DIFFER
-    freq_min                         0.5           0.099  catalog   <-- DIFFER
-    package                         None            None  catalog
-    power_w                          0.5            None  -
-    rejection_db                    None            40.0  catalog
-    sparams_url                     None            None  catalog
-    technology                      None            None  catalog
-
-==============================================================================
-  SIF-70+.pdf   [filter]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\SIF-70+.pdf
-  type    : pdf   163,265 bytes on disk   3,314 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                       0.058 GHz   range    58 to 82 MHz
-  freq_max                       0.082 GHz   range
-  power_w                          0.5       prose    0.5W
-
-  space score : (no qualification wording found)
-
-  in the database as SIF-70+ (Mini-Circuits, filter):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                       0.082           0.082  catalog
-    freq_min                       0.058           0.058  catalog
-    power_w                          0.5            None  -
-    sparams_url                     None            None  catalog
-
-==============================================================================
-  RC-8SPDT-A26.pdf   [switch]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\data\datasheets\Mini-Circuits\RC-8SPDT-A26.pdf
-  type    : pdf   1,213,455 bytes on disk   8,994 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                          18 GHz   range    18-26.5 GHz
-  freq_max                        26.5 GHz   range
-  isolation_db                      66       prose    Isolation1 8-18 GHz 60 66 dB
-  power_w                          0.1       prose    Input Power Hot switching3 0.1 W
-  switching_time_ns            2.5e+07       prose    Switching Time 25 ms
-  throw_config                    SPDT       other
-
-  space score : (no qualification wording found)
-
-  in the database as RC-8SPDT-A26 (Mini-Circuits, switch):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        26.5            26.5  catalog
-    freq_min                        18.0            26.5  catalog   <-- DIFFER
-    isolation_db                    66.0            None  -
-    package                         None            None  catalog
-    power_w                          0.1            None  -
-    sparams_url                     None            None  catalog
-    switching_time_ns         25000000.0            None  -
-    throw_config                    SPDT            None  -
-
-==============================================================================
-  MASW-011248.pdf   [switch]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\MACOM\MASW-011248.pdf
-  type    : pdf   1,688,430 bytes on disk   9,898 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                       9e-06 GHz   range    9 kHz - 13 GHz
-  freq_max                          13 GHz   range
-  isolation_db                       2       prose    Isolation, RFC to RF1/2 dB
-  oip3_dbm                          66       prose    IP3: 66 dBm
-  throw_config                    SPDT       other
-
-  space score : (no qualification wording found)
-
-  in the database as MASW-011248 (MACOM, switch):
-    spec                       datasheet        database  source
-    datasheet_url                   None            None  catalog
-    features                        None            None  catalog
-    freq_max                        13.0            13.0  catalog
-    freq_min                       9e-06 8.9999999999999  catalog
-    insertion_loss_db               None             0.7  catalog
-    isolation_db                     2.0            43.0  catalog   <-- DIFFER
-    oip3_dbm                        66.0            66.0  catalog
-    p1db_dbm                        None            39.0  catalog
-    package                         None            None  catalog
-    throw_config                    SPDT            None  -
-
-==============================================================================
-  M2B.pdf   [mixer]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\data\datasheets\MACOM\M2B.pdf
-  type    : pdf   586,945 bytes on disk   5,208 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                        0.02 GHz   range    0.02 to 0.6 GHz
-  freq_max                         0.6 GHz   range
-  isolation_db                      40       prose    ISOLATION: 40 dB
-  oip3_dbm                          22 dBm   table    IP3 dBm +22
-
-  space score : 20%   screened, MIL-STD (other)
-
-  in the database as M2B (MACOM, mixer):
-    spec                       datasheet        database  source
-    conversion_loss_db              None             7.5  catalog
-    datasheet_url                   None            None  catalog
-    features                        None            None  catalog
-    freq_ghz                        None             0.0  catalog
-    freq_max                         0.6            None  -
-    freq_min                        0.02            None  -
-    industry_application            None            None  catalog
-    isolation_db                    40.0            43.0  catalog   <-- DIFFER
-    oip3_dbm                        22.0            None  -
-    p1db_dbm                        None             7.0  catalog
-    package                         None            None  catalog
-    space_score_pct                 20.0            None  -
-
-==============================================================================
-  mm1a-1855hpsm-2.html   [mixer]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Marki-Microwave\mm1a-1855hpsm-2.html
-  type    : html   160,102 bytes on disk   11,852 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                          18 GHz   range    18 to 55 GHz
-  freq_max                          55 GHz   range
-  conversion_loss_db                 9       prose    Conversion Loss: 9 dB
-  nf_db                            0.5       prose    Noise Figure typically measures within 0.5 dB
-  power_w                            1       prose    1 w
-
-  space score : (no qualification wording found)
-
-  in the database as mm1a-1855hpsm-2 (Marki Microwave, mixer):
-    spec                       datasheet        database  source
-    absmax_current_ma               None           450.0  catalog
-    absmax_temp_max_c               None            85.0  catalog
-    absmax_temp_min_c               None           -40.0  catalog
-    conversion_loss_db               9.0             9.0  catalog
-    current_ma                      None           180.0  catalog
-    datasheet_file                  None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        55.0            None  -
-    freq_min                        18.0            None  -
-    if_freq_ghz                     None             0.0  catalog
-    isolation_db                    None            38.0  catalog
-    lo_freq_ghz                     None            18.0  catalog
-    mount_type                      None            None  catalog
-    nf_db                            0.5             9.0  catalog   <-- DIFFER
-    oip3_dbm                        None            20.0  catalog
-    p1db_dbm                        None             9.0  catalog
-    package                         None            None  catalog
-    power_w                          1.0             1.0  datasheet
-    rf_freq_ghz                     None            18.0  catalog
-    supply_v                        None            -0.5  catalog
-
-==============================================================================
-  atn20-10fl00wg.html   [attenuator]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Marki-Microwave\atn20-10fl00wg.html
-  type    : html   85,421 bytes on disk   5,269 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                          75 GHz   range    75-110 GHz
-  freq_max                         110 GHz   range
-  power_w                            1       prose    Power Handling 1 W
-
-  space score : 4%   Kovar/gold
-
-  in the database as atn20-10fl00wg (Marki Microwave, attenuator):
-    spec                       datasheet        database  source
-    attenuation_db                  None            20.0  catalog
-    datasheet_file                  None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                       110.0           110.0  catalog
-    freq_min                        75.0            75.0  catalog
-    mount_type                      None            None  catalog
-    package                         None            None  catalog
-    power_w                          1.0             1.0  datasheet
-    return_loss_db                  None            23.0  catalog
-    space_score_pct                  4.0             4.0  datasheet
-
-==============================================================================
-  BW-S15W2+.pdf   [attenuator]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\BW-S15W2+.pdf
-  type    : pdf   308,530 bytes on disk   3,377 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                           0 GHz   range    DC to 18 GHz
-  freq_max                          18 GHz   range
-  power_w                            2       prose    Input Power3 2.0 W
-
-  space score : 8%   outgassing/ASTM E595
-
-  in the database as BW-S15W2+ (Mini-Circuits, attenuator):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        18.0            18.0  catalog
-    freq_min                         0.0            18.0  catalog   <-- DIFFER
-    power_w                          2.0            None  -
-    space_score_pct                  8.0            None  -
-    sparams_url                     None            None  catalog
-
-==============================================================================
-  HMC1133.pdf   [phase_shifter]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Analog-Devices\HMC1133.pdf
-  type    : pdf   557,106 bytes on disk   9,003 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                           4 GHz   range    4.0 to 7 GHz
-  freq_max                           7 GHz   range
-  oip3_dbm                          46       prose    Third Order Intercept 46 dBm
-  p1db_dbm                          30       prose    1 dB Compression 30 dBm
-
-  space score : 15%   LTCC/ceramic, GaAs, MMIC
-
-  in the database as HMC1133 (Analog Devices, phase_shifter):
-    spec                       datasheet        database  source
-    availability                    None            None  catalog
-    datasheet_url                   None            None  catalog
-    device_type                     None            None  catalog
-    freq_max                         7.0             6.2  catalog   <-- DIFFER
-    freq_min                         4.0             4.8  catalog   <-- DIFFER
-    lifecycle                       None            None  catalog
-    oip3_dbm                        46.0            None  -
-    p1db_dbm                        30.0            None  -
-    package                         None            None  catalog
-    package_area_mm2                None            25.0  catalog
-    package_height_mm               None             1.0  catalog
-    phase_resolution                None             6.0  catalog
-    price_usd                       None           79.59  catalog
-    space_score_pct                 15.0            None  -
-    temp_max_c                      None            85.0  catalog
-    temp_min_c                      None           -40.0  catalog
-
-==============================================================================
-  MAPS-011019.pdf   [phase_shifter]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\data\datasheets\MACOM\MAPS-011019.pdf
-  type    : pdf   1,215,372 bytes on disk   11,210 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                         2.4 GHz   range    2.4 - 5.1 GHz
-  freq_max                         5.1 GHz   range
-  oip3_dbm                           5       prose    IP3 Two-tone inputs up to +5 dBm
-
-  space score : 5%   GaAs
-
-  in the database as MAPS-011019 (MACOM, phase_shifter):
-    spec                       datasheet        database  source
-    datasheet_url                   None            None  catalog
-    features                        None            None  catalog
-    freq_max                         5.1             5.1  catalog
-    freq_min                         2.4             2.4  catalog
-    industry_application            None            None  catalog
-    insertion_loss_db               None             4.5  catalog
-    oip3_dbm                         5.0            48.0  catalog   <-- DIFFER
-    package                         None            None  catalog
-    phase_balance_deg               None             4.0  catalog
-    space_score_pct                  5.0            None  -
-
-==============================================================================
-  JDC-10-2+.pdf   [coupler]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\JDC-10-2+.pdf
-  type    : pdf   366,137 bytes on disk   3,382 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                       0.005 GHz   range    5-50 MHz
-  freq_max                        0.05 GHz   range
-  power_w                            2       prose    2 W
-
-  space score : (no qualification wording found)
-
-  in the database as JDC-10-2+ (Mini-Circuits, coupler):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        0.05            0.75  catalog   <-- DIFFER
-    freq_min                       0.005           0.005  catalog
-    impedance_ohm                   None            50.0  catalog
-    power_w                          2.0            None  -
-    sparams_url                     None            None  catalog
-
-==============================================================================
-  2020-6616-06.pdf   [coupler]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\MACOM\2020-6616-06.pdf
-  type    : pdf   368,651 bytes on disk   6,461 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                        12.4 GHz   range    12.4 to 18.0 GHz
-  freq_max                          18 GHz   range
-
-  space score : 10%   screened
-
-  in the database as 2020-6616-06 (MACOM, coupler):
-    spec                       datasheet        database  source
-    coupling_db                     None             6.0  catalog
-    datasheet_url                   None            None  catalog
-    features                        None            None  catalog
-    freq_max                        18.0             8.0  catalog   <-- DIFFER
-    freq_min                        12.4             4.0  catalog   <-- DIFFER
-    industry_application            None            None  catalog
-    insertion_loss_db               None             0.3  catalog
-    isolation_db                    None            28.0  catalog
-    package                         None            None  catalog
-    space_score_pct                 10.0            None  -
-
-==============================================================================
-  PSC-4-6+.pdf   [divider]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\PSC-4-6+.pdf
-  type    : pdf   245,232 bytes on disk   3,922 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                       1e-05 GHz   range    0.01 to 40 MHz
-  freq_max                        0.04 GHz   range
-  isolation_db                      32       prose    isolation, 32 dB
-  power_w                            4       prose    4 W
-
-  space score : (no qualification wording found)
-
-  in the database as PSC-4-6+ (Mini-Circuits, divider):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        0.04            0.04  catalog
-    freq_min                       1e-05           1e-05  catalog
-    isolation_db                    32.0            None  -
-    power_w                          4.0            None  -
-    sparams_url                     None            None  catalog
-
-==============================================================================
-  PSC-3-13+.pdf   [divider]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\data\datasheets\Mini-Circuits\PSC-3-13+.pdf
-  type    : pdf   204,854 bytes on disk   3,931 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                       0.001 GHz   range    1 to 200 MHz
-  freq_max                         0.2 GHz   range
-  isolation_db                      45       prose    isolation, 45 dB
-  power_w                            3       prose    3 W
-
-  space score : (no qualification wording found)
-
-  in the database as PSC-3-13+ (Mini-Circuits, divider):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                         0.2             0.2  catalog
-    freq_min                       0.001           0.001  catalog
-    isolation_db                    45.0            None  -
-    power_w                          3.0            None  -
-    sparams_url                     None            None  catalog
-
-==============================================================================
-  MADL-000011-13880G.pdf   [limiter]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\MACOM\MADL-000011-13880G.pdf
-  type    : pdf   709,295 bytes on disk   11,736 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                        0.01 GHz   range    10 MHz to 18 GHz
-  freq_max                          18 GHz   range
-  power_w                         1340       prose    01340W
-
-  space score : 18%   extended temp -55/+125, LTCC/ceramic, Kovar/gold
-
-  in the database as MADL-000011-13880G (MACOM, limiter):
-    spec                       datasheet        database  source
-    datasheet_url                   None            None  catalog
-    features                        None            None  catalog
-    freq_max                        18.0            None  -
-    freq_min                        0.01            None  -
-    industry_application            None            None  catalog
-    p1db_dbm                        None             7.0  catalog
-    package                         None            None  catalog
-    power_w                       1340.0            49.0  catalog   <-- DIFFER
-    space_score_pct                 18.0            None  -
-
-==============================================================================
-  MA4L401-120.pdf   [limiter]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\MACOM\MA4L401-120.pdf
-  type    : pdf   709,295 bytes on disk   11,736 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                        0.01 GHz   range    10 MHz to 18 GHz
-  freq_max                          18 GHz   range
-  power_w                         1340       prose    01340W
-
-  space score : 18%   extended temp -55/+125, LTCC/ceramic, Kovar/gold
-
-  in the database as MA4L401-120 (MACOM, limiter):
-    spec                       datasheet        database  source
-    datasheet_url                   None            None  catalog
-    features                        None            None  catalog
-    freq_max                        18.0            None  -
-    freq_min                        0.01            None  -
-    industry_application            None            None  catalog
-    p1db_dbm                        None            32.0  catalog
-    package                         None            None  catalog
-    power_w                       1340.0            60.0  catalog   <-- DIFFER
-    space_score_pct                 18.0            None  -
-
-==============================================================================
-  CSFD26.pdf   [multiplier]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\MACOM\CSFD26.pdf
-  type    : pdf   464,719 bytes on disk   5,033 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                        0.05 GHz   range    50 to 3300 MHz
-  freq_max                         3.3 GHz   range
-
-  space score : 32%   MIL-STD-883, screened, MIL-STD (other)
-
-  in the database as CSFD26 (MACOM, multiplier):
-    spec                       datasheet        database  source
-    conversion_loss_db              None            13.5  catalog
-    datasheet_url                   None            None  catalog
-    features                        None            None  catalog
-    freq_max                         3.3            None  -
-    freq_min                        0.05            None  -
-    industry_application            None            None  catalog
-    package                         None            None  catalog
-    power_w                         None            0.01  catalog
-    space_score_pct                 32.0            None  -
-    vswr                            None             2.0  catalog
-
-==============================================================================
-  MMDB45-B11.pdf   [multiplier]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\MACOM\MMDB45-B11.pdf
-  type    : pdf   702,005 bytes on disk   6,762 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-
-  space score : 16%   screened, LTCC/ceramic
-
-  in the database as MMDB45-B11 (MACOM, multiplier):
-    spec                       datasheet        database  source
-    datasheet_url                   None            None  catalog
-    features                        None            None  catalog
-    industry_application            None            None  catalog
-    package                         None            None  catalog
-    space_score_pct                 16.0            None  -
-
-==============================================================================
-  POS-300+.pdf   [oscillator]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\POS-300+.pdf
-  type    : pdf   235,354 bytes on disk   5,508 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                        0.15 GHz   range    150 to 280 MHz
-  freq_max                        0.28 GHz   range
-  power_w                            2       prose    2 w
-
-  space score : 12%   hermetic
-
-  in the database as POS-300+ (Mini-Circuits, oscillator):
-    spec                       datasheet        database  source
-    current_ma                      None            20.0  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        0.28            0.15  catalog   <-- DIFFER
-    freq_min                        0.15            0.15  catalog
-    nf_db                           None          -140.0  catalog
-    package                         None            None  catalog
-    power_w                          2.0            10.0  catalog   <-- DIFFER
-    space_score_pct                 12.0            None  -
-    sparams_url                     None            None  catalog
-    supply_v                        None            12.0  catalog
-
-==============================================================================
-  ROS-2470-119+.pdf   [oscillator]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\data\datasheets\Mini-Circuits\ROS-2470-119+.pdf
-  type    : pdf   383,876 bytes on disk   7,468 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                        2.43 GHz   range    2430 to 2470 MHz
-  freq_max                        2.47 GHz   range
-  power_w                        11671       prose    11671 w
-
-  space score : (no qualification wording found)
-
-  in the database as ROS-2470-119+ (Mini-Circuits, oscillator):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        2.47            None  -
-    freq_min                        2.43            None  -
-    impedance_ohm                   None            50.0  catalog
-    power_w                      11671.0            None  -
-    sparams_url                     None            None  catalog
-
-==============================================================================
-  TCM2-452AX+.pdf   [transformer]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\TCM2-452AX+.pdf
-  type    : pdf   590,765 bytes on disk   6,614 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                           1 GHz   range    1000 to 4500 MHz
-  freq_max                         4.5 GHz   range
-  power_w                       251202       prose    251202 w
-
-  space score : 8%   outgassing/ASTM E595
-
-  in the database as TCM2-452AX+ (Mini-Circuits, transformer):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                         4.5             4.5  catalog
-    freq_min                         1.0             1.0  catalog
-    impedance_ohm                   None            50.0  catalog
-    package                         None            None  catalog
-    power_w                     251202.0            None  -
-    space_score_pct                  8.0            None  -
-    sparams_url                     None            None  catalog
-    technology                      None            None  catalog
-
-==============================================================================
-  SBTX2-113-2W+.pdf   [transformer]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\data\datasheets\Mini-Circuits\SBTX2-113-2W+.pdf
-  type    : pdf   279,564 bytes on disk   7,055 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                         2.6 GHz   range    2.6 to 11.0 GHz
-  freq_max                          11 GHz   range
-  power_w                            2       prose    2W
-
-  space score : (no qualification wording found)
-
-  in the database as SBTX2-113-2W+ (Mini-Circuits, transformer):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        11.0            11.0  catalog
-    freq_min                         2.6             2.6  catalog
-    impedance_ohm                   None            50.0  catalog
-    package                         None            None  catalog
-    power_w                          2.0            None  -
-    sparams_url                     None            None  catalog
-    technology                      None            None  catalog
-
-==============================================================================
-  185M-185F+.pdf   [adapter]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\185M-185F+.pdf
-  type    : pdf   349,541 bytes on disk   4,233 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                           0 GHz   range    DC — 67 GHz
-  freq_max                          67 GHz   range
-  power_w                       230117       prose    230117 w
-
-  space score : 8%   outgassing/ASTM E595
-
-  in the database as 185M-185F+ (Mini-Circuits, adapter):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        67.0            67.0  catalog
-    freq_min                         0.0             0.0  catalog
-    package                         None            None  catalog
-    power_w                     230117.0            None  -
-    space_score_pct                  8.0            None  -
-    sparams_url                     None            None  catalog
-    vswr                            None            1.04  catalog
-
-==============================================================================
-  NM-BF-6.pdf   [adapter]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\data\datasheets\Mini-Circuits\NM-BF-6.pdf
-  type    : pdf   173,458 bytes on disk   2,583 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                           0 GHz   range    DC to 2000 MHz
-  freq_max                           2 GHz   range
-  power_w                          0.5       prose    0.5W
-
-  space score : (no qualification wording found)
-
-  in the database as NM-BF-6 (Mini-Circuits, adapter):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                         2.0            None  -
-    freq_min                         0.0            None  -
-    power_w                          0.5            None  -
-    sparams_url                     None            None  catalog
-
-==============================================================================
-  TERM-2W-183S+.pdf   [termination]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\data\datasheets\Mini-Circuits\TERM-2W-183S+.pdf
-  type    : pdf   311,372 bytes on disk   3,458 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                           0 GHz   range    DC - 18 GHz
-  freq_max                          18 GHz   range
-  power_w                            2       prose    Input Power Handling, 2 W
-
-  space score : 8%   outgassing/ASTM E595
-
-  in the database as TERM-2W-183S+ (Mini-Circuits, termination):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        18.0            18.0  catalog
-    freq_min                         0.0            18.0  catalog   <-- DIFFER
-    impedance_ohm                   None            50.0  catalog
-    package                         None            None  catalog
-    power_w                          2.0             2.0  catalog
-    return_loss_db                  None            28.0  catalog
-    space_score_pct                  8.0            None  -
-    sparams_url                     None            None  catalog
-
-==============================================================================
-  ANNE-50V+.pdf   [termination]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\ANNE-50V+.pdf
-  type    : pdf   306,746 bytes on disk   4,083 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                           0 GHz   range    DC — 50 GHz
-  freq_max                          50 GHz   range
-  power_w                            1       prose    Input Power Handling up to 1W
-
-  space score : 8%   outgassing/ASTM E595
-
-  in the database as ANNE-50V+ (Mini-Circuits, termination):
-    spec                       datasheet        database  source
-    connector                       None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        50.0            None  -
-    freq_min                         0.0            None  -
-    impedance_ohm                   None            50.0  catalog
-    package                         None            None  catalog
-    power_w                          1.0             1.0  catalog
-    return_loss_db                  None            19.0  catalog
-    space_score_pct                  8.0            None  -
-    sparams_url                     None            None  catalog
-
-==============================================================================
-  EQY-2-24-D+.pdf   [equalizer]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\EQY-2-24-D+.pdf
-  type    : pdf   285,378 bytes on disk   11,434 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                           0 GHz   range    DC to 20 GHz
-  freq_max                          20 GHz   range
-  power_w                       190123       prose    190123 w
-
-  space score : 9%   GaAs, MMIC
-
-  in the database as EQY-2-24-D+ (Mini-Circuits, equalizer):
-    spec                       datasheet        database  source
-    connector                       None            50.0  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                        20.0          0.0021  catalog   <-- DIFFER
-    freq_min                         0.0          0.0009  catalog   <-- DIFFER
-    gain_db                         None            50.0  catalog
-    nf_db                           None             0.9  catalog
-    power_w                     190123.0             3.0  catalog   <-- DIFFER
-    space_score_pct                  9.0            None  -
-    sparams_url                     None            None  catalog
-
-==============================================================================
-  EQY-3-63-D+.pdf   [equalizer]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\EQY-3-63-D+.pdf
-  type    : pdf   261,919 bytes on disk   12,489 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                           0 GHz   range    DC to 6 GHz
-  freq_max                           6 GHz   range
-
-  space score : 9%   GaAs, MMIC
-
-  in the database as EQY-3-63-D+ (Mini-Circuits, equalizer):
-    spec                       datasheet        database  source
-    connector                       None            50.0  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                         6.0          0.0032  catalog   <-- DIFFER
-    freq_min                         0.0          0.0006  catalog   <-- DIFFER
-    gain_db                         None            50.0  catalog
-    nf_db                           None             0.6  catalog
-    power_w                         None             3.8  catalog
-    space_score_pct                  9.0            None  -
-    sparams_url                     None            None  catalog
-
-==============================================================================
-  MACP-010572.pdf   [detector]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\MACOM\MACP-010572.pdf
-  type    : pdf   947,865 bytes on disk   9,863 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                           6 GHz   range    6 - 18 GHz
-  freq_max                          18 GHz   range
-
-  space score : 0%   GaAs, NOT: plastic encapsulated
-
-  in the database as MACP-010572 (MACOM, detector):
-    spec                       datasheet        database  source
-    datasheet_url                   None            None  catalog
-    features                        None            None  catalog
-    freq_max                        18.0            18.0  catalog
-    freq_min                         6.0             6.0  catalog
-    industry_application            None            None  catalog
-    package                         None            None  catalog
-    power_w                         None            30.0  catalog
-    space_score_pct                  0.0            None  -
-
-==============================================================================
-  det-10pp00wg.html   [detector]
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\data\datasheets\Marki-Microwave\det-10pp00wg.html
-  type    : html   88,961 bytes on disk   5,504 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  freq_min                          75 GHz   range    75-110 GHz
-  freq_max                         110 GHz   range
-  power_w                            0       prose    00W
-
-  space score : (no qualification wording found)
-
-  in the database as det-10pp00wg (Marki Microwave, detector):
-    spec                       datasheet        database  source
-    absmax_temp_max_c               None            70.0  catalog
-    absmax_temp_min_c               None           -20.0  catalog
-    datasheet_file                  None            None  catalog
-    datasheet_url                   None            None  catalog
-    freq_max                       110.0           110.0  catalog
-    freq_min                        75.0            75.0  catalog
-    mount_type                      None            None  catalog
-    package                         None            None  catalog
-    power_w                          0.0             0.0  datasheet
-
-==============================================================================
-  What to check
-    - the frequency band matches the one on the front page of the datasheet
-    - values marked 'prose*' -- two extractors disagreed, one of them is wrong
-    - rows marked DIFFER -- the datasheet and the catalogue do not agree, which
-      is the case that decides whether datasheets should take precedence
-    - anything missing that the datasheet clearly states
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\dbg spec labels.py"
+library : 33906 datasheet(s)
+database: 23054 part(s) with a category
+available per category: amplifier 6177, mixer 3555, filter 6291, attenuator 2571, divider 1320, coupler 1269, switch 885, phase_shifter 135
+
+==========================================================================
+  AMPLIFIER   30 datasheet(s) read
+==========================================================================
+     n     %  label                             ports     maps to
+  ----------------------------------------------------------------------
+    15   50%  storage temperature                         -
+    12   40%  frequency                                   freq_ghz
+    12   40%  gain                                        gain_db
+    12   40%  output power                      output    psat_dbm
+     9   30%  operating temperature                       temp_min_c
+     7   23%  input return loss                 input     input_return_loss_db
+     7   23%  single                                      -
+     6   20%  output                            output    -
+     6   20%  output return loss                output    output_return_loss_db
+     6   20%  input power                       input     -
+     5   17%  input                             input     -
+     5   17%  dc voltage                                  -
+     5   17%  compression (p                              -
+     4   13%  oip3                                        oip3_dbm
+     4   13%  output p                          output    -
+     4   13%  device operating voltage                    supply_v
+     4   13%  high gain                                   -
+     4   13%  electrical specifications                   -
+     4   13%  operating temperature (ground lead          temp_min_c
+     4   13%  thermal resistance                          -
+     3   10%  minimum gain                                gain_db
+     3   10%  performance                                 -
+     3   10%  junction temperature                        -
+     3   10%  frequency (ghz) frequency                   -
+     3   10%  total power dissipation                     -
+
+==========================================================================
+  MIXER   30 datasheet(s) read
+==========================================================================
+     n     %  label                             ports     maps to
+  ----------------------------------------------------------------------
+    18   60%  storage temperature                         -
+    17   57%  operating temperature                       temp_min_c
+     7   23%  input p                           input     -
+     7   23%  forward current                             -
+     7   23%  maximum operating temperature               temp_min_c
+     7   23%  maximum storage temperature                 -
+     7   23%  minimum operating temperature               temp_min_c
+     7   23%  minimum storage temperature                 -
+     7   23%  rf power                          RF        -
+     7   23%  dbm lo                            LO        lo_freq_ghz
+     6   20%  soldering temperature (packaged)            -
+     6   20%  if current                        IF        -
+     5   17%  dbm +13                                     -
+     5   17%  level 13 (lo power                LO        -
+     5   17%  excellent l-r isolation           LO-RF     -
+     5   17%  if freq                           IF        if_freq_ghz
+     5   17%  low conversion loss                         conversion_loss_db
+     4   13%  lo power                          LO        -
+     4   13%  forward current 50                          -
+     4   13%  obtained with lo power            LO        -
+     4   13%  db comp                                     -
+     4   13%  input ip                          input     -
+     3   10%  reverse voltage                             -
+     3   10%  input power                       input     -
+     3   10%  level 13 (lo power +13            LO        -
+
+==========================================================================
+  FILTER   30 datasheet(s) read
+==========================================================================
+     n     %  label                             ports     maps to
+  ----------------------------------------------------------------------
+    22   73%  operating temperature                       temp_min_c
+    20   67%  storage temperature                         -
+    15   50%  frequency                                   freq_ghz
+    12   40%  performance data                            -
+     9   30%  rf power input                    RF,input  -
+     8   27%  electrical specifications                   -
+     6   20%  mhz)                                        -
+     5   17%  maximum operating temperature               temp_min_c
+     5   17%  maximum storage temperature                 -
+     5   17%  minimum operating temperature               temp_min_c
+     5   17%  minimum storage temperature                 -
+     5   17%  passband                          passband  freq_ghz
+     5   17%  mhz) (db)                                   -
+     5   17%  db) (loss                                   insertion_loss_db
+     4   13%  rejection point                             -
+     4   13%  group delay                                 -
+     4   13%  passband return loss              passband  return_loss_db
+     4   13%  aximum ratings5 frequency response          -
+     4   13%  input power6                      input     -
+     4   13%  y stop band rejection             stopband  -
+     4   13%  bandpass filter                             -
+     3   10%  passband rating derates linearly  passband  -
+     3   10%  stopband rating derates linearly  stopband  -
+     3   10%  electrical specifications1                  -
+     3   10%  return loss                                 return_loss_db
+
+==========================================================================
+  ATTENUATOR   30 datasheet(s) read
+==========================================================================
+     n     %  label                             ports     maps to
+  ----------------------------------------------------------------------
+    22   73%  operating temperature                       temp_min_c
+    21   70%  storage temperature                         -
+     8   27%  mhz) (db)                                   -
+     7   23%  electrical specifications                   -
+     6   20%  frequency range dc                          -
+     6   20%  junction temperature                        -
+     6   20%  forward current                             -
+     6   20%  attenuation                                 attenuation_db
+     5   17%  power                                       power_w
+     4   13%  reverse voltage                             -
+     4   13%  input power3                      input     -
+     4   13%  c. power                                    power_w
+     4   13%  storage temperature4                        -
+     4   13%  mated connectors. unmated                   -
+     4   13%  ct tested at 100                            -
+     4   13%  ma , ire                                    -
+     4   13%  t ( oper.)                                  switching_time_ns
+     4   13%  pin diodes specifications (t                -
+     4   13%  ct tested                                   -
+     4   13%  irev                                        -
+     4   13%  operating and storage                       -
+     4   13%  cycling                                     -
+     4   13%  applicatio                                  -
+     3   10%  forward voltage                             -
+     3   10%  mounting temperature                        -
+
+==========================================================================
+  DIVIDER   30 datasheet(s) read
+==========================================================================
+     n     %  label                             ports     maps to
+  ----------------------------------------------------------------------
+    23   77%  storage temperature                         -
+    22   73%  operating temperature                       temp_min_c
+    19   63%  insertion loss +                  on-state  insertion_loss_db
+    18   60%  way-0                                       -
+    18   60%  power input (as a splitter)       input     -
+    17   57%  internal dissipation                        -
+     8   27%  low insertion loss                on-state  insertion_loss_db
+     6   20%  excellent amplitude unbalance               amplitude_balance_db
+     5   17%  dc current                                  -
+     5   17%  isolation                                   isolation_db
+     5   17%  good isolation                              -
+     4   13%  insertion loss above              on-state  insertion_loss_db
+     4   13%  range (db) above                            -
+     3   10%  y excellent amplitude unbalance             amplitude_balance_db
+     3   10%  electrical specifications1                  -
+     3   10%  insertion loss above 3.0 db       on-state  insertion_loss_db
+     3   10%  amplitude unbalance                         amplitude_balance_db
+     3   10%  electrical specifications                   -
+     3   10%  class                                       -
+     3   10%  mhz) above                                  -
+     3   10%  frequency                                   freq_ghz
+     2    7%  excellent isolation                         -
+     2    7%  insertion loss 5                  on-state  insertion_loss_db
+     2    7%  amplitude unbalance 5                       amplitude_balance_db
+     2    7%  phase unbalance 5                           -
+
+==========================================================================
+  COUPLER   30 datasheet(s) read
+==========================================================================
+     n     %  label                             ports     maps to
+  ----------------------------------------------------------------------
+    16   53%  storage temperature                         -
+    15   50%  operating temperature                       temp_min_c
+    11   37%  dc current                                  -
+    10   33%  rf level                          RF        -
+     8   27%  rf level of -10                   RF        -
+     8   27%  electrical specifications                   -
+     8   27%  low mainline loss                 mainline  -
+     7   23%  frequency                                   freq_ghz
+     7   23%  input power                       input     -
+     5   17%  coupling                                    coupling_db
+     5   17%  high directivity                            -
+     5   17%  frequency range 5                           -
+     4   13%  coupler                                     -
+     4   13%  impedance                                   impedance_ohm
+     4   13%  isolation 5                                 -
+     3   10%  mhz, t                                      -
+     3   10%  all specifications apply                    -
+     3   10%  frequency range 5 1000                      -
+     3   10%  mainline loss1 50-500 1.4         mainline  -
+     3   10%  directivity 50-500 13                       -
+     3   10%  coupled port vswr above           coupled   -
+     3   10%  minimum operating temperature               temp_min_c
+     3   10%  maximum operating temperature               temp_min_c
+     3   10%  maximum storage temperature                 -
+     3   10%  minimum storage temperature                 -
+
+==========================================================================
+  SWITCH   30 datasheet(s) read
+==========================================================================
+     n     %  label                             ports     maps to
+  ----------------------------------------------------------------------
+    14   47%  operating temperature                       temp_min_c
+    14   47%  low insertion loss                on-state  insertion_loss_db
+    13   43%  storage temperature                         -
+    12   40%  high isolation                              -
+    10   33%  frequency                                   freq_ghz
+     9   30%  tone                                        -
+     9   30%  input p                           input     -
+     8   27%  input power                       input     -
+     7   23%  hot switching                               -
+     6   20%  through path                      mainline  -
+     6   20%  high                                        -
+     6   20%  insertion loss                    on-state  insertion_loss_db
+     5   17%  junction, t                                 -
+     5   17%  specifications                              -
+     5   17%  two tone                                    -
+     5   17%  positive supply voltage                     supply_v
+     5   17%  low v 0                                     -
+     5   17%  high v 1.2                                  -
+     5   17%  isolation                                   isolation_db
+     4   13%  compliant                                   -
+     4   13%  rf output                         RF,output -
+     4   13%  db power compression p                      -
+     4   13%  terminated path                             -
+     4   13%  input linearity1                  input     -
+     4   13%  input ip                          input     -
+
+==========================================================================
+  PHASE_SHIFTER   30 datasheet(s) read
+==========================================================================
+     n     %  label                             ports     maps to
+  ----------------------------------------------------------------------
+    19   63%  storage temperature                         -
+    17   57%  input power                       input     -
+    17   57%  operating temperature                       temp_min_c
+    13   43%  low insertion loss                on-state  insertion_loss_db
+    13   43%  rf input power                    RF,input  -
+    13   43%  control voltage                             -
+    13   43%  normalized at control voltage               -
+    13   43%  electrical schematic                        -
+    10   33%  frequency                                   freq_ghz
+     9   30%  rwsv                                        -
+     8   27%  maximum operating power                     -
+     7   23%  input p                           input     -
+     7   23%  good vswr                                   -
+     6   20%  phase shift                                 -
+     6   20%  insertion loss                    on-state  insertion_loss_db
+     6   20%  junction temperature                        -
+     6   20%  ghz, t                                      -
+     6   20%  input ip3 two-tone inputs up      input     iip3_dbm
+     5   17%  ew receivers low insertion loss   on-state  insertion_loss_db
+     5   17%  phase error                                 phase_balance_deg
+     5   17%  compression                                 -
+     5   17%  input third order intercept       input     oip3_dbm
+     5   17%  input power (rfin)                input     -
+     5   17%  storage temperature -65                     -
+     5   17%  reflow temperature                          -
+
+  How to read this
+    n / %        datasheets in that category carrying the label
+    ports        port or path qualifier found in the name -- RF/LO/IF, in/out,
+                 passband/stopband, mainline/coupled. These are SEPARATE specs
+                 and each needs its own key.
+    maps to      what the pipeline resolves the label to today; '-' means
+                 nothing does, so the spec is currently invisible.
+
+  Send this back and the per-category templates get built from it.
