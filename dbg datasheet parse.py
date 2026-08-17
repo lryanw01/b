@@ -60,6 +60,56 @@ def loose(s):
     return re.sub(r"[^A-Z0-9]", "", str(s or "").upper())
 
 
+# The basic component types worth spot-checking. A random sample of the library
+# is roughly a random sample of Mini-Circuits, because that is most of it -- so a
+# run can look thorough while never testing a phase shifter. Sampling per
+# CATEGORY is what makes the check cover the parser rather than the inventory.
+BASIC_CATEGORIES = ["amplifier", "filter", "switch", "mixer", "attenuator",
+                    "phase_shifter", "coupler", "divider", "limiter",
+                    "multiplier", "oscillator", "transformer", "adapter",
+                    "termination", "equalizer", "detector"]
+
+
+def category_index():
+    """{loose part number: category} for everything in the database.
+
+    Built once. The alternative -- a query per file -- turns a spot check of a
+    few dozen datasheets into thousands of round trips."""
+    out = {}
+    if partdb is None:
+        return out
+    try:
+        for r in partdb.db().execute(
+                "SELECT mpn, category FROM parts WHERE category IS NOT NULL "
+                "AND category != ''"):
+            out.setdefault(loose(r["mpn"]), r["category"])
+    except Exception:
+        pass
+    return out
+
+
+def pick_by_category(files, cats, per_cat, index):
+    """[(category, path)] sampled evenly across the requested categories."""
+    from collections import defaultdict
+    buckets = defaultdict(list)
+    unknown = []
+    for f in files:
+        cat = index.get(loose(f.stem))
+        if cat is None:
+            unknown.append(f)
+        else:
+            buckets[cat].append(f)
+    picked, missing = [], []
+    for cat in cats:
+        pool = buckets.get(cat) or []
+        if not pool:
+            missing.append(cat)
+            continue
+        for f in random.sample(pool, min(per_cat, len(pool))):
+            picked.append((cat, f))
+    return picked, missing, buckets, unknown
+
+
 def find_example_dir(explicit=None):
     if explicit:
         p = Path(explicit)
@@ -150,13 +200,23 @@ def band_hit(text):
     band = dsmine.freq_range_ghz(text)
     if not band:
         return None
+    # Find the snippet the SAME way the value was chosen. Taking the first match
+    # instead showed "10 GHz to 22.8 GHz" beside a reported 10.5-21, which is
+    # worse than showing nothing: the evidence contradicted the answer and the
+    # answer was the correct one.
     rx = getattr(dsmine, "_RANGE_RE", None)
+    scorer = getattr(dsmine, "_range_score", None)
     snippet = ""
     if rx is not None:
-        for chunk in (text[:2500], text):
-            m = rx.search(chunk or "")
-            if m:
-                snippet = re.sub(r"\s+", " ", m.group(0))[:70]
+        head = text[:getattr(dsmine, "_HEAD_CHARS", 6000)]
+        for chunk in (head, text):
+            best, best_s = None, -99
+            for m in rx.finditer(chunk or ""):
+                s = scorer(chunk, m) if scorer else 0
+                if s > best_s:
+                    best, best_s = m, s
+            if best is not None:
+                snippet = re.sub(r"\s+", " ", best.group(0))[:70]
                 break
     return band, snippet
 
@@ -197,9 +257,9 @@ def db_lookup(mpn):
     return None, {}
 
 
-def report(path, show_text=0):
+def report(path, show_text=0, category=None):
     print("\n" + "=" * 78)
-    print(f"  {path.name}")
+    print(f"  {path.name}" + (f"   [{category}]" if category else ""))
     print("=" * 78)
     kind = dsmine._sniff(path)
     size = path.stat().st_size
@@ -298,6 +358,12 @@ def main(argv=None):
                     help="how many from the EXAMPLE DATASHEETS folder")
     ap.add_argument("--random", type=int, default=2,
                     help="how many picked at random from the live library")
+    ap.add_argument("--per-category", type=int, default=1,
+                    help="datasheets to sample from EACH category (default 1); "
+                         "0 falls back to a plain random pick")
+    ap.add_argument("--categories", nargs="*", default=None,
+                    help="categories to cover (default: the basic component "
+                         "types)")
     ap.add_argument("--vendor", default=None,
                     help="restrict the random pick to one vendor folder")
     ap.add_argument("--example-dir", default=None)
@@ -315,7 +381,7 @@ def main(argv=None):
         for f in args.file:
             p = Path(f)
             if p.is_file():
-                picked.append(p)
+                picked.append((None, p))
             else:
                 print(f"! not a file: {f}")
     else:
@@ -324,22 +390,40 @@ def main(argv=None):
             ex = [f for f in sorted(ex_dir.rglob("*"))
                   if f.is_file() and f.name.lower() != "desktop.ini"]
             print(f"examples : {ex_dir}  ({len(ex)} file(s))")
-            picked += random.sample(ex, min(args.examples, len(ex)))
+            picked += [(None, f) for f in
+                       random.sample(ex, min(args.examples, len(ex)))]
         elif args.examples:
             print("! could not find the EXAMPLE DATASHEETS folder "
                   "(--example-dir to point at it)")
-        if args.random:
+        if args.random or args.per_category:
             lib = library_files(args.vendor)
             print(f"library  : {len(lib)} file(s)"
                   + (f" under {args.vendor}" if args.vendor else ""))
-            if lib:
-                picked += random.sample(lib, min(args.random, len(lib)))
+            if lib and args.per_category:
+                index = category_index()
+                cats = args.categories or BASIC_CATEGORIES
+                chosen, missing, buckets, unknown = pick_by_category(
+                    lib, cats, args.per_category, index)
+                have = {c: len(buckets.get(c) or []) for c in cats
+                        if buckets.get(c)}
+                print("  datasheets per category: "
+                      + ", ".join(f"{c} {n}" for c, n in
+                                  sorted(have.items(), key=lambda kv: -kv[1])))
+                if missing:
+                    print(f"  no datasheet for: {', '.join(missing)}")
+                if unknown:
+                    print(f"  {len(unknown)} file(s) whose part is not in the "
+                          f"database (filename does not match an MPN)")
+                picked += chosen
+            elif lib:
+                picked += [(None, f) for f in
+                           random.sample(lib, min(args.random, len(lib)))]
 
     if not picked:
         print("\nNothing to parse.")
         return 1
-    for p in picked:
-        report(p, args.show_text)
+    for cat, p in picked:
+        report(p, args.show_text, cat)
 
     print("\n" + "=" * 78)
     print("""  What to check
