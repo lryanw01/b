@@ -1,6 +1,143 @@
-PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\dbg datasheet parse.py" --example-dir "C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING"
-examples : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING  (15 file(s))
-library  : 33852 file(s)
+
+==============================================================================
+  MAC-60LH+.pdf
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\Minicircuits\MAC-60LH+.pdf
+  type    : pdf   1,096,233 bytes on disk   11,210 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  conversion_loss_db               6.5       prose    conversion loss, 6.5 dB
+  isolation_db                      35       prose    isolation, 35 dB
+  p1db_dbm                           5       prose    1 dB Compression 1600 - 6000 +5 dBm
+
+  space score : 62%   hermetic, MIL-STD-883, screened, MIL-STD (other), extended temp -55/+125, LTCC/ceramic, Ko
+
+  in the database as MAC-60LH+ (Mini-Circuits, uncategorized):
+    spec                       datasheet        database  source
+    connector                       None            None  catalog
+    conversion_loss_db               6.5            None  -
+    datasheet_url                   None            None  catalog
+    freq_max                        None             6.0  catalog
+    freq_min                        None             1.6  catalog
+    impedance_ohm                   None            50.0  catalog
+    isolation_db                    35.0            None  -
+    p1db_dbm                         5.0            None  -
+    space_score_pct                 62.0            None  -
+    sparams_url                     None            None  catalog
+
+==============================================================================
+  T16-1-X65+.pdf
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\Minicircuits\T16-1-X65+.pdf
+  type    : pdf   163,223 bytes on disk   2,585 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  power_w                         0.25       prose    0.25W
+
+  space score : (no qualification wording found)
+
+  in the database as T16-1-X65+ (Mini-Circuits, transformer):
+    spec                       datasheet        database  source
+    connector                       None            None  catalog
+    datasheet_url                   None            None  catalog
+    freq_max                        None            0.12  catalog
+    freq_min                        None          0.0003  catalog
+    power_w                         0.25            None  -
+    sparams_url                     None            None  catalog
+
+==============================================================================
+  SMPA38-2.pdf
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\MACOM\SMPA38-2.pdf
+  type    : pdf   660,062 bytes on disk   5,159 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  power_w                            1       prose    1 W
+
+  space score : 39%   hermetic, MIL-STD-883, screened, GaAs
+
+  in the database as SMPA38-2 (MACOM, amplifier):
+    spec                       datasheet        database  source
+    current_ma                      None           150.0  catalog
+    datasheet_file                  None            None  catalog
+    datasheet_url                   None            None  catalog
+    features                        None            None  catalog
+    freq_max                        None             2.6  catalog
+    freq_min                        None             0.2  catalog
+    gain_db                         None             8.5  catalog
+    industry_application            None            None  catalog
+    nf_db                           None             4.5  catalog
+    oip3_dbm                        None            33.0  catalog
+    p1db_dbm                        None            24.0  catalog
+    package                         None            None  catalog
+    power_w                          1.0             1.0  datasheet
+    space_score_pct                 39.0            39.0  datasheet
+    supply_v                        None            15.0  catalog
+
+==============================================================================
+  HMC882A.pdf
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\ADI\HMC882A.pdf
+  type    : pdf   477,950 bytes on disk   8,336 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  oip3_dbm                          41       prose    Third-Order Intercept 41 dBm
+
+  space score : 4%   MMIC
+
+  in the database as HMC882A (Analog Devices, filter):
+    spec                       datasheet        database  source
+    availability                    None            None  catalog
+    cutoff_range_ghz                None            3.95  catalog
+    datasheet_url                   None            None  catalog
+    device_type                     None            None  catalog
+    freq_max                        None             6.9  catalog
+    freq_min                        None             0.0  catalog
+    lifecycle                       None            None  catalog
+    oip3_dbm                        41.0            None  -
+    package                         None            None  catalog
+    package_area_mm2                None            25.0  catalog
+    package_height_mm               None             0.8  catalog
+    price_usd                       None           98.27  catalog
+    return_loss_db                  None            13.0  catalog
+    space_score_pct                  4.0            None  -
+    temp_max_c                      None            85.0  catalog
+    temp_min_c                      None           -40.0  catalog
+
+==============================================================================
+  mt3d-0113lsm-2.html
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\Marki-Microwave\mt3d-0113lsm-2.html
+  type    : html   192,120 bytes on disk   13,167 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  nf_db                            0.5       prose    Noise Figure typically measures within 0.5 dB
+  oip3_dbm                          19       prose    IP3 data shown for a +19 dBm
+  power_w                            1       prose    1 w
+
+  space score : 9%   GaAs, MMIC
+
+  in the database as mt3d-0113lsm-2 (Marki Microwave, mixer):
+    spec                       datasheet        database  source
+    absmax_temp_max_c               None           100.0  catalog
+    absmax_temp_min_c               None           -40.0  catalog
+    conversion_loss_db              None             7.5  catalog
+    datasheet_file                  None            None  catalog
+    datasheet_url                   None            None  catalog
+    isolation_db                    None            43.0  catalog
+    lo_freq_ghz                     None             1.5  catalog
+    mount_type                      None            None  catalog
+    nf_db                            0.5             7.5  catalog   <-- DIFFER
+    oip3_dbm                        19.0            27.0  catalog   <-- DIFFER
+    package                         None            None  catalog
+    power_w                          1.0             1.0  datasheet
+    rf_freq_ghz                     None             1.5  catalog
+    space_score_pct                  9.0             9.0  datasheet
 
 ==============================================================================
   SYM-R252HW+.pdf
@@ -28,6 +165,207 @@ library  : 33852 file(s)
     sparams_url                     None            None  catalog
 
 ==============================================================================
+  HMC900.pdf
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\ADI\HMC900.pdf
+  type    : pdf   1,713,365 bytes on disk   16,389 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  isolation_db                      80       prose    Isolation 60 80 dB
+  nf_db                             12       prose    Noise Figure: 12 dB
+  oip3_dbm                          30       prose    IP3 +30 dBm
+  power_w                            0       prose    0 w
+
+  space score : (no qualification wording found)
+
+  in the database as HMC900 (Analog Devices, filter):
+    spec                       datasheet        database  source
+    availability                    None            None  catalog
+    datasheet_url                   None            None  catalog
+    device_type                     None            None  catalog
+    freq_max                        None            0.05  catalog
+    freq_min                        None          0.0035  catalog
+    isolation_db                    80.0            None  -
+    lifecycle                       None            None  catalog
+    nf_db                           12.0            None  -
+    oip3_dbm                        30.0            None  -
+    package                         None            None  catalog
+    package_area_mm2                None            25.0  catalog
+    package_height_mm               None             1.0  catalog
+    power_w                          0.0            None  -
+    temp_max_c                      None            85.0  catalog
+    temp_min_c                      None           -40.0  catalog
+
+==============================================================================
+  mmiq-0416lch-2.html
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\Marki-Microwave\mmiq-0416lch-2.html
+  type    : html   231,407 bytes on disk   13,005 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  nf_db                            0.5       prose    Noise Figure typically measures within 0.5 dB
+  power_w                            1       prose    1 w
+
+  space score : 9%   GaAs, MMIC
+
+  in the database as mmiq-0416lch-2 (Marki Microwave, mixer):
+    spec                       datasheet        database  source
+    absmax_temp_max_c               None           100.0  catalog
+    absmax_temp_min_c               None           -55.0  catalog
+    amplitude_balance_db            None             0.2  catalog
+    conversion_loss_db              None            13.0  catalog
+    datasheet_file                  None            None  catalog
+    datasheet_url                   None            None  catalog
+    freq_max                        None            16.0  catalog
+    freq_min                        None             4.0  catalog
+    if_freq_ghz                     None             0.0  catalog
+    isolation_db                    None            40.0  catalog
+    lo_freq_ghz                     None             4.0  catalog
+    mount_type                      None            None  catalog
+    nf_db                            0.5            13.0  catalog   <-- DIFFER
+    oip3_dbm                        None            16.0  catalog
+    p1db_dbm                        None             6.5  catalog
+    package                         None            None  catalog
+    phase_balance_deg               None             3.0  catalog
+    power_w                          1.0             1.0  datasheet
+    rf_freq_ghz                     None             4.0  catalog
+    space_score_pct                  9.0             9.0  datasheet
+
+==============================================================================
+  SW-313-PIN.pdf
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\MACOM\SW-313-PIN.pdf
+  type    : pdf   552,352 bytes on disk   7,845 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  power_w                           40       prose    40 W
+  switching_time_ns                  7       prose    Switching Speed: 7 ns
+  throw_config                    SPDT       other
+
+  space score : 53%   hermetic, MIL-STD-883, screened, extended temp -55/+125, LTCC/ceramic, GaAs
+
+  in the database as SW-313-PIN (MACOM, switch):
+    spec                       datasheet        database  source
+    configuration                   None            None  catalog
+    datasheet_url                   None            None  catalog
+    features                        None            None  catalog
+    freq_max                        None             3.0  catalog
+    freq_min                        None            0.05  catalog
+    industry_application            None            None  catalog
+    insertion_loss_db               None             0.8  catalog
+    isolation_db                    None            52.0  catalog
+    oip3_dbm                        None            46.0  catalog
+    p1db_dbm                        None            30.0  catalog
+    package                         None            None  catalog
+    power_w                         40.0            None  -
+    space_score_pct                 53.0            None  -
+    switching_time_ns                7.0            None  -
+    throw_config                    SPDT            None  -
+
+==============================================================================
+  ADMV8420CHIPS.pdf
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\ADI\ADMV8420CHIPS.pdf
+  type    : pdf   630,450 bytes on disk   7,333 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  oip3_dbm                          26       prose    IP3) 26 dBm
+  power_w                            4       prose    4 W
+
+  space score : 4%   MMIC
+
+  in the database as ADMV8420CHIPS (Analog Devices, filter):
+    spec                       datasheet        database  source
+    bandwidth_ghz                   None            20.0  catalog
+    datasheet_url                   None            None  catalog
+    device_type                     None            None  catalog
+    freq_max                        None            22.8  catalog
+    freq_min                        None            10.0  catalog
+    lifecycle                       None            None  catalog
+    oip3_dbm                        26.0            None  -
+    package                         None            None  catalog
+    package_area_mm2                None            16.0  catalog
+    package_height_mm               None             0.8  catalog
+    power_w                          4.0            None  -
+    price_usd                       None          121.64  catalog
+    return_loss_db                  None            11.0  catalog
+    space_score_pct                  4.0            None  -
+    temp_max_c                      None            85.0  catalog
+    temp_min_c                      None           -40.0  catalog
+
+==============================================================================
+  apm-6849sm.html
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\Marki-Microwave\apm-6849sm.html
+  type    : html   180,839 bytes on disk   13,852 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  power_w                            1       prose    1 w
+
+  space score : 5%   GaAs
+
+  in the database as apm-6849sm (Marki Microwave, amplifier):
+    spec                       datasheet        database  source
+    absmax_current_ma               None             4.0  catalog
+    absmax_supply_v                 None             7.0  catalog
+    absmax_temp_max_c               None            85.0  catalog
+    absmax_temp_min_c               None           -40.0  catalog
+    current_ma                      None            21.0  catalog
+    datasheet_file                  None            None  catalog
+    datasheet_url                   None            None  catalog
+    freq_max                        None            30.0  catalog
+    freq_min                        None             2.0  catalog
+    gain_db                         None             7.5  catalog
+    input_return_loss_db            None            15.0  catalog
+    isolation_db                    None            42.0  catalog
+    mount_type                      None            None  catalog
+    nf_db                           None             5.0  catalog
+    oip3_dbm                        None            11.0  catalog
+    output_return_loss_db           None             8.0  catalog
+    p1db_dbm                        None            14.0  catalog
+    package                         None            None  catalog
+    power_w                          1.0             1.0  datasheet
+    psat_dbm                        None            21.0  catalog
+    space_score_pct                  5.0             5.0  datasheet
+
+==============================================================================
+  ws-190010swg.html
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\Marki-Microwave\ws-190010swg.html
+  type    : corrupt   442,724 bytes on disk   0 characters extracted
+  ! rejected as corrupt -- a text-mangled download. Re-fetch it in binary;
+    no amount of parsing recovers this.
+
+==============================================================================
+  TAK-3H+.pdf
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\Minicircuits\TAK-3H+.pdf
+  type    : pdf   281,931 bytes on disk   5,629 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  conversion_loss_db              4.82       prose    conversion loss, 4.82 dB
+  isolation_db                      40       prose    isolation, 40 dB
+
+  space score : 12%   hermetic
+
+  in the database as TAK-3H+ (Mini-Circuits, mixer):
+    spec                       datasheet        database  source
+    connector                       None            None  catalog
+    conversion_loss_db              4.82            None  -
+    datasheet_url                   None            None  catalog
+    freq_max                        None             0.3  catalog
+    freq_min                        None           5e-05  catalog
+    isolation_db                    40.0            None  -
+    space_score_pct                 12.0            None  -
+    sparams_url                     None            None  catalog
+
+==============================================================================
   SYM-2500+.pdf
 ==============================================================================
   file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\Minicircuits\SYM-2500+.pdf
@@ -52,61 +390,82 @@ library  : 33852 file(s)
     sparams_url                     None            None  catalog
 
 ==============================================================================
-  mm1-0726hsm-2.html
+  XX1000-QT.pdf
 ==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\data\datasheets\Marki-Microwave\mm1-0726hsm-2.html
-  type    : html   149,011 bytes on disk   9,563 characters extracted
-
-  spec                           value unit  from     matched text
-  --------------------------------------------------------------------------
-  power_w                            1       prose    1 w
-
-  space score : 9%   GaAs, MMIC
-
-  in the database as mm1-0726hsm-2 (Marki Microwave, mixer):
-    spec                       datasheet        database  source
-    absmax_temp_max_c               None           100.0  catalog
-    absmax_temp_min_c               None           -55.0  catalog
-    conversion_loss_db              None             6.5  catalog
-    datasheet_file                  None            None  catalog
-    datasheet_url                   None            None  catalog
-    if_freq_ghz                     None             0.0  catalog
-    isolation_db                    None            27.0  catalog
-    lo_freq_ghz                     None             7.0  catalog
-    mount_type                      None            None  catalog
-    oip3_dbm                        None            17.0  catalog
-    p1db_dbm                        None             9.0  catalog
-    package                         None            None  catalog
-    power_w                          1.0             1.0  datasheet
-    rf_freq_ghz                     None             7.0  catalog
-    space_score_pct                  9.0             9.0  datasheet
-
-==============================================================================
-  TT1.5-1-KK81+.pdf
-==============================================================================
-  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\TT1.5-1-KK81+.pdf
-  type    : pdf   155,281 bytes on disk   2,610 characters extracted
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\MACOM\XX1000-QT.pdf
+  type    : pdf   579,663 bytes on disk   6,867 characters extracted
 
   spec                           value unit  from     matched text
   --------------------------------------------------------------------------
 
-  space score : (no qualification wording found)
+  space score : 0%   GaAs, NOT: plastic encapsulated
 
-  in the database as TT1.5-1-KK81+ (Mini-Circuits, transformer):
+  in the database as XX1000-QT (MACOM, amplifier):
     spec                       datasheet        database  source
-    connector                       None            None  catalog
+    conversion_loss_db              None           -11.0  catalog
     datasheet_url                   None            None  catalog
-    freq_max                        None             0.5  catalog
-    freq_min                        None         7.5e-05  catalog
-    impedance_ohm                   None            50.0  catalog
+    features                        None            None  catalog
+    industry_application            None            None  catalog
     package                         None            None  catalog
+    space_score_pct                  0.0            None  -
+
+==============================================================================
+  PMA-5456+.pdf
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\PMA-5456+.pdf
+  type    : pdf   487,962 bytes on disk   9,127 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  nf_db                            0.8       prose    Noise Figure, 0.8 dB
+  oip3_dbm                          34       prose    IP3, 34 dBm
+  power_w                       211203       prose    211203 w
+
+  space score : 0%   MMIC, NOT: plastic encapsulated
+
+  in the database as PMA-5456+ (Mini-Circuits, amplifier):
+    spec                       datasheet        database  source
+    current_ma                      None            60.0  catalog
+    datasheet_url                   None            None  catalog
+    freq_max                        None             6.0  catalog
+    freq_min                        None            0.05  catalog
+    gain_db                         None            14.4  catalog
+    nf_db                            0.8             0.8  catalog
+    oip3_dbm                        34.0            36.0  catalog   <-- DIFFER
+    output_vswr                     None             1.3  catalog
+    p1db_dbm                        None            21.5  catalog
+    package                         None            None  catalog
+    power_w                     211203.0            None  -
+    space_score_pct                  0.0            None  -
     sparams_url                     None            None  catalog
-    technology                      None            None  catalog
+    supply_v                        None             5.0  catalog
+    vswr                            None             2.6  catalog
 
 ==============================================================================
-  What to check
-    - the frequency band matches the one on the front page of the datasheet
-    - values marked 'prose*' -- two extractors disagreed, one of them is wrong
-    - rows marked DIFFER -- the datasheet and the catalogue do not agree, which
-      is the case that decides whether datasheets should take precedence
-    - anything missing that the datasheet clearly states
+  SMMD805-SOT23-0S.pdf
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\MACOM\SMMD805-SOT23-0S.pdf
+  type    : pdf   702,005 bytes on disk   6,762 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+
+  space score : 16%   screened, LTCC/ceramic
+
+  in the database as SMMD805-SOT23-0S (MACOM, multiplier):
+    spec                       datasheet        database  source
+    datasheet_url                   None            None  catalog
+    package                         None            None  catalog
+    space_score_pct                 16.0            None  -
+
+==============================================================================
+
+
+Notes:
+For all of the minicircuits parts, I only found mixer datasheets, these have different freq values so it can get complex, ignore those for now.
+
+The macom amplifier is not properly parsed at all, even with the table from the datasheet there. it is only able to get the power.
+
+The HMZ882A is not properly parsed at all only finding the OIP3 (which is wrong, in the datasheet it says Input Third-Order Intercept, this is the IIP3)
+
+In summary, the datasheet parsing is terrible, shown by how little data is being collected. I need you to open the datasheets and look at their structure that I sent in my intial .zip and compare to whats being parsed. Find out how to parse the missing specs from this output that are clearly present in each datasheet.
