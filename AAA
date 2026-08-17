@@ -1,41 +1,112 @@
-https://www.macom.com/products/product-detail/MAAM-011252-CQ3 is a working link, but:
-  [10/1661] MACOM          MAAM-011252-CQ3      FAIL fetch blocked: TypeError: Failed to fetch  eta 26m
+PS C:\Users\lane.white> python "C:\Users\lane.white\Downloads\rfparts\dbg datasheet parse.py" --example-dir "C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING"
+examples : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING  (15 file(s))
+library  : 33852 file(s)
 
- [10/1661] MACOM          MAAM-011252-CQ3      FAIL fetch blocked: TypeError: Failed to fetch  eta 26m
-  [11/1661] MACOM          MAAM-010651          FAIL fetch blocked: TypeError: Failed to fetch  eta 28m
-  [12/1661] MACOM          MAAM-011357          FAIL fetch blocked: TypeError: Failed to fetch  eta 30m
-  [13/1661] MACOM          MAAM-009286          FAIL fetch blocked: TypeError: Failed to fetch  eta 31m
-  [14/1661] MACOM          MAAM-011326-DIE      FAIL fetch blocked: TypeError: Failed to fetch  eta 32m
-  [15/1661] MACOM          MAAM-011206          FAIL fetch blocked: TypeError: Failed to fetch  eta 33m
-  [16/1661] MACOM          MAAM-010513-000000   FAIL fetch blocked: TypeError: Failed to fetch  eta 34m
-  [17/1661] MACOM          MAAM-011100          FAIL fetch blocked: TypeError: Failed to fetch  eta 35m
-  [18/1661] MACOM          MAAM-011252          FAIL fetch blocked: TypeError: Failed to fetch  eta 35m
-  [19/1661] MACOM          MAAM28000            FAIL fetch blocked: TypeError: Failed to fetch  eta 36m
-  [20/1661] MACOM          XB1014-QT            FAIL fetch blocked: TypeError: Failed to fetch  eta 37m
-  [21/1661] MACOM          MAAM-011326          FAIL fetch blocked: TypeError: Failed to fetch  eta 37m
-  [22/1661] MACOM          MAAM-011290-DIE      FAIL fetch blocked: TypeError: Failed to fetch  eta 38m
-  [23/1661] MACOM          MAAM-011101          FAIL fetch blocked: TypeError: Failed to fetch  eta 38m
-  [24/1661] MACOM          MAAM-011305-DIE      FAIL fetch blocked: TypeError: Failed to fetch  eta 39m
-  [25/1661] MACOM          XB1004-BD            FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [26/1661] MACOM          MAAM02350-A2         FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [27/1661] MACOM          MAAM-011132          FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [28/1661] MACOM          XB1006-BD            FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [29/1661] MACOM          XB1008-BD            FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [30/1661] MACOM          MAAM-009560          FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [31/1661] MACOM          MAAM-011289-DIE      FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [32/1661] MACOM          XB1005-BD            FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [33/1661] MACOM          MAAM-011112          FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [34/1661] MACOM          MAAM-011305          FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [35/1661] MACOM          XB1007-QT            FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [36/1661] MACOM          XB1008-QT            FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [37/1661] MACOM          MAAM-011252-DIE      FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [38/1661] MACOM          MAAM28000-A1G        FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [39/1661] MACOM          MAAM-011290          FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [40/1661] MACOM          MAAM28000-A1         FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [41/1661] MACOM          MAAM-011289          FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [42/1661] MACOM          XB1007-BD            FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
-  [43/1661] MACOM          CMM0511-QT           FAIL TargetClosedError: Page.evaluate: Target page, context or browser has been closed  eta 39m
+==============================================================================
+  SYM-R252HW+.pdf
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\Minicircuits\SYM-R252HW+.pdf
+  type    : pdf   437,005 bytes on disk   5,411 characters extracted
 
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  isolation_db                      40       prose    isolation, 40 dB
+  oip3_dbm                          23       prose    IP3, 23 dBm
 
+  space score : 18%   hermetic, LTCC/ceramic
 
-I imagine the rest of these are just having the wrong links being used.
+  in the database as SYM-R252HW+ (Mini-Circuits, mixer):
+    spec                       datasheet        database  source
+    connector                       None            None  catalog
+    datasheet_url                   None            None  catalog
+    freq_max                        None             2.5  catalog
+    freq_min                        None            0.01  catalog
+    impedance_ohm                   None            50.0  catalog
+    isolation_db                    40.0            None  -
+    oip3_dbm                        23.0            None  -
+    space_score_pct                 18.0            None  -
+    sparams_url                     None            None  catalog
+
+==============================================================================
+  SYM-2500+.pdf
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\EXAMPLE DATASHEETS TO TUNE PARSING\Minicircuits\SYM-2500+.pdf
+  type    : pdf   326,565 bytes on disk   5,496 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  conversion_loss_db               6.5       prose    conversion loss, 6.5 dB
+  isolation_db                      50       prose    isolation, 50 dB
+
+  space score : (no qualification wording found)
+
+  in the database as SYM-2500+ (Mini-Circuits, mixer):
+    spec                       datasheet        database  source
+    connector                       None            None  catalog
+    conversion_loss_db               6.5            None  -
+    datasheet_url                   None            None  catalog
+    freq_max                        None             2.5  catalog
+    freq_min                        None           0.001  catalog
+    impedance_ohm                   None            50.0  catalog
+    isolation_db                    50.0            None  -
+    sparams_url                     None            None  catalog
+
+==============================================================================
+  mm1-0726hsm-2.html
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\rfparts\data\datasheets\Marki-Microwave\mm1-0726hsm-2.html
+  type    : html   149,011 bytes on disk   9,563 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+  power_w                            1       prose    1 w
+
+  space score : 9%   GaAs, MMIC
+
+  in the database as mm1-0726hsm-2 (Marki Microwave, mixer):
+    spec                       datasheet        database  source
+    absmax_temp_max_c               None           100.0  catalog
+    absmax_temp_min_c               None           -55.0  catalog
+    conversion_loss_db              None             6.5  catalog
+    datasheet_file                  None            None  catalog
+    datasheet_url                   None            None  catalog
+    if_freq_ghz                     None             0.0  catalog
+    isolation_db                    None            27.0  catalog
+    lo_freq_ghz                     None             7.0  catalog
+    mount_type                      None            None  catalog
+    oip3_dbm                        None            17.0  catalog
+    p1db_dbm                        None             9.0  catalog
+    package                         None            None  catalog
+    power_w                          1.0             1.0  datasheet
+    rf_freq_ghz                     None             7.0  catalog
+    space_score_pct                  9.0             9.0  datasheet
+
+==============================================================================
+  TT1.5-1-KK81+.pdf
+==============================================================================
+  file    : C:\Users\lane.white\Downloads\rfparts\Data\datasheets\Mini-Circuits\TT1.5-1-KK81+.pdf
+  type    : pdf   155,281 bytes on disk   2,610 characters extracted
+
+  spec                           value unit  from     matched text
+  --------------------------------------------------------------------------
+
+  space score : (no qualification wording found)
+
+  in the database as TT1.5-1-KK81+ (Mini-Circuits, transformer):
+    spec                       datasheet        database  source
+    connector                       None            None  catalog
+    datasheet_url                   None            None  catalog
+    freq_max                        None             0.5  catalog
+    freq_min                        None         7.5e-05  catalog
+    impedance_ohm                   None            50.0  catalog
+    package                         None            None  catalog
+    sparams_url                     None            None  catalog
+    technology                      None            None  catalog
+
+==============================================================================
+  What to check
+    - the frequency band matches the one on the front page of the datasheet
+    - values marked 'prose*' -- two extractors disagreed, one of them is wrong
+    - rows marked DIFFER -- the datasheet and the catalogue do not agree, which
+      is the case that decides whether datasheets should take precedence
+    - anything missing that the datasheet clearly states
