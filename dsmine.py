@@ -213,6 +213,210 @@ _PATTERNS = {k: [re.compile(p, re.I) for p in m["patterns"]]
              for k, m in PARAM_SPECS.items() if m.get("patterns")}
 
 
+
+# ------------------------------------------------- space-qualification hint
+# Weighted evidence for how space-capable a datasheet SOUNDS. This is a hint for
+# the many parts where no source states a qualification, not a replacement for
+# the `space` field -- a stated qualification always wins, and this is stored
+# under its own key so the two can never be confused.
+#
+# It is deliberately rule-based and explainable: every score comes with the list
+# of terms that produced it, so a number can always be argued with. spacequal.py
+# remains the statistical view; this is the cheap one that runs during a rebuild.
+_SPACE_EVIDENCE = [
+    # (weight, label, pattern)  -- strong: an actual qualification standard
+    (30, "MIL-PRF-38534 Class K", r"38534.{0,20}class\s*k|class\s*k.{0,20}38534"),
+    (30, "MIL-PRF-38535 Class V/QML-V", r"38535|qml-?\s*v\b|class\s*v\b"),
+    (28, "JANS", r"\bjans\b"),
+    (26, "ESCC", r"\bescc\b|european space components"),
+    (26, "radiation hardened", r"radiation[- ]hardened|rad[- ]?hard\b"),
+    (22, "TID rating", r"\btid\b.{0,24}\d+\s*k?rad|\d+\s*krad"),
+    (22, "SEL/SEE rating", r"\bsel\b.{0,24}mev|mev\s*[\u00b7*x]?\s*cm|single event"),
+    (20, "space qualified", r"space[- ]qualified|qualified for space|space[- ]grade"),
+    (18, "Class S", r"\bclass\s*s\b"),
+    # moderate: screening and construction that space parts require
+    (12, "hermetic", r"\bhermetic|hermetically sealed"),
+    (12, "MIL-STD-883", r"mil-?std-?883|method\s*20\d\d"),
+    (10, "screened", r"\bscreen(?:ed|ing)\b|\bburn-?in\b|\b100%\s*test"),
+    (10, "MIL-STD (other)", r"mil-?std-?(?!883)\d{3}"),
+    (8,  "outgassing/ASTM E595", r"outgassing|astm\s*e-?595|tml\b"),
+    (8,  "extended temp -55/+125", r"-\s*55\s*\u00b0?\s*c.{0,18}\+?\s*12[05]"),
+    # weak: materials common in space parts but also in ordinary ones
+    (6,  "LTCC/ceramic", r"\bltcc\b|\bceramic\b|\balumina\b"),
+    (5,  "GaAs", r"\bgaas\b|gallium arsenide"),
+    (5,  "GaN", r"\bgan\b|gallium nitride"),
+    (4,  "Kovar/gold", r"\bkovar\b|gold[- ]plated|au plated"),
+    (4,  "MMIC", r"\bmmic\b"),
+    # negative: statements that rule it out
+    (-30, "commercial only", r"commercial\s*(use|grade)\s*only|not\s*for\s*space"),
+    (-14, "plastic encapsulated", r"plastic\s*(encapsulat|package)"),
+    (-10, "consumer/automotive", r"\bconsumer\b|\bautomotive\b|aec-?q\d+"),
+]
+_SPACE_EVIDENCE = [(w, lbl, re.compile(pat, re.I)) for w, lbl, pat in _SPACE_EVIDENCE]
+
+# Above this, calling it a strong hint is fair; the cap keeps one very wordy
+# datasheet from scoring higher than a genuinely qualified part.
+_SPACE_MAX = 100
+
+
+def space_score(text):
+    """(percent 0-100, [evidence labels]) for how space-capable a datasheet reads.
+
+    Returns (None, []) when nothing at all fires, because "no evidence" and
+    "evidence for zero" are different things and storing 0 for the first would
+    look like a judgement that was never made.
+    """
+    if not text:
+        return None, []
+    hits, score = [], 0
+    for weight, label, rx in _SPACE_EVIDENCE:
+        if rx.search(text):
+            score += weight
+            hits.append(label if weight > 0 else f"NOT: {label}")
+    if not hits:
+        return None, []
+    pct = max(0, min(_SPACE_MAX, score))
+    return pct, hits
+
+
+
+# ------------------------------------------------------------ frequency band
+# Not one of the PARAM_SPECS patterns, because a band is a PAIR and those
+# patterns capture a single number. Every example datasheet states its range and
+# none of them were being read: the wordings in the wild are
+#
+#   "7.5 - 22.5 GHz"      "2-30 GHz"        "1 to 2500 MHz"
+#   "3.5 MHz to 50 MHz"   "DC - 18 GHz"     "0.5 to 6 GHz"
+#
+# with the unit on the second number, on both, or attached to neither.
+_FREQ_UNIT = {"thz": 1e3, "ghz": 1.0, "mhz": 1e-3, "khz": 1e-6, "hz": 1e-9}
+_RANGE_RE = re.compile(
+    r"(?<![\w.])(DC|\d+(?:\.\d+)?)\s*(thz|ghz|mhz|khz)?\s*"
+    r"(?:-|\u2013|\u2014|to|through)\s*"
+    r"(\d+(?:\.\d+)?)\s*(thz|ghz|mhz|khz)\b", re.I)
+# An RF part lives inside this window; anything outside is a page number, a part
+# number fragment or a temperature that happened to sit beside a unit.
+_MIN_GHZ, _MAX_GHZ = 1e-6, 500.0
+
+
+# Words that mark a range as belonging to THIS part, and words that mark it as
+# belonging to something else. MAC-60LH+ is a 1600-6000 MHz mixer whose front
+# page advertises "MAC Series Key Features 300 MHz to 12 GHz" -- the family's
+# span, not the part's. Taking the first range near the top reads the marketing
+# line and gets the part wrong by a factor of four at both ends.
+# "RF" earns a range its place; "IF" and "LO" disqualify it as THE band. An IQ
+# mixer reads "4 to 16 GHz on the RF and LO ports with an IF from DC to 6 GHz" --
+# every one of those is a real range, and only the RF one is the part's band.
+_FREQ_GOOD = re.compile(
+    r"\b(rf\s*(?:frequency|range|port|input)?|frequency\s*range|"
+    r"operating\s*frequency|passband|freq(?:uency)?)\b", re.I)
+_FREQ_PORT_OTHER = re.compile(r"\b(if|lo|local\s*oscillator|"
+                              r"intermediate\s*frequency)\b\s*(from|:|range)?",
+                              re.I)
+# "typical" spans are wider than the specified band and are advertised as such.
+# 200-2800 MHz (TYP.) sits beside a spec'd 200-2600, and the spec is the answer.
+_FREQ_LOOSE = re.compile(r"\b(typ\.?|typical|wide\s*bandwidth|up to|nominal)\b",
+                         re.I)
+_FREQ_BAD = re.compile(
+    r"\b(series|family|portfolio|key features|product line|catalog|"
+    r"other models|selection guide|available in|models? from)\b", re.I)
+_FREQ_UNIT_ONLY = re.compile(r"\b(temperature|storage|humidity|altitude)\b", re.I)
+
+
+def _range_score(text, m):
+    """How likely this range describes the part rather than something near it."""
+    before = text[max(0, m.start() - 90):m.start()]
+    after = text[m.end():m.end() + 40]
+    score = 0
+    if _FREQ_BAD.search(before):
+        score -= 6              # a family span, not this part
+    if _FREQ_GOOD.search(before):
+        score += 3
+    # An IF or LO label immediately before the range means this is that port's
+    # span, not the part's headline band.
+    tail = text[max(0, m.start() - 26):m.start()]
+    if _FREQ_PORT_OTHER.search(tail):
+        score -= 5
+    if _FREQ_LOOSE.search(before) or _FREQ_LOOSE.search(after):
+        score -= 2
+    if _FREQ_UNIT_ONLY.search(before):
+        score -= 8
+    # A range inside a spec table usually has more numbers around it than a
+    # sentence does.
+    if sum(c.isdigit() for c in after) >= 3:
+        score += 1
+    return score
+
+
+def freq_range_ghz(text, head_chars=6000):
+    """(low, high) in GHz for the part's own band, or None.
+
+    Candidates are SCORED rather than taken in order: a datasheet's front page
+    carries the family's span, the operating temperature and sometimes a
+    competitor comparison, all of which look like ranges. Wording nearby is what
+    separates the part's band from the rest.
+    """
+    best, best_score = None, -99
+    for chunk in (text[:head_chars], text):
+        for m in _RANGE_RE.finditer(chunk or ""):
+            lo_raw, lo_u, hi_raw, hi_u = m.groups()
+            hi_scale = _FREQ_UNIT.get((hi_u or "").lower())
+            if hi_scale is None:
+                continue
+            # A unit given only on the second number governs both: "1 to 2500
+            # MHz" is megahertz at each end, not 1 GHz to 2.5 GHz.
+            lo_scale = _FREQ_UNIT.get((lo_u or "").lower(), hi_scale)
+            lo = 0.0 if lo_raw.lower() == "dc" else float(lo_raw) * lo_scale
+            hi = float(hi_raw) * hi_scale
+            if hi <= lo or hi > _MAX_GHZ or lo < 0 or hi < _MIN_GHZ:
+                continue
+            s = _range_score(chunk, m)
+            if s > best_score:
+                best, best_score = (round(lo, 9), round(hi, 9)), s
+        if best is not None:
+            # ANY candidate in the head wins over the rest of the document. The
+            # break used to require a positive score, so a correctly-chosen band
+            # that merely scored zero fell through to a full-text scan and was
+            # overridden by a stray range from deep in the tables.
+            break
+    return best
+
+
+# Table rows put the number AFTER the unit -- "Small Signal Gain (min) dB 8.5" --
+# while the PARAM_SPECS patterns expect "Gain 8.5 dB". Neither ordering is more
+# correct, and datasheets use both, so the reversed form is read here rather
+# than doubling every pattern in the registry.
+_TABLE_ROW = [
+    ("gain_db", r"(?:small\s*signal\s*)?gain(?:\s*\((?:min|typ|max)\))?", "dB"),
+    ("nf_db", r"noise\s*figure(?:\s*\((?:min|typ|max)\))?|\bNF\b", "dB"),
+    ("p1db_dbm", r"(?:output\s*)?P\s*1\s*-?\s*dB(?:\s*\((?:min|typ|max)\))?", "dBm"),
+    ("oip3_dbm", r"(?:output\s*)?(?:OIP3|IP3)(?:\s*\((?:min|typ|max)\))?", "dBm"),
+    ("isolation_db", r"isolation(?:\s*\((?:min|typ|max)\))?", "dB"),
+    ("insertion_loss_db", r"insertion\s*loss(?:\s*\((?:min|typ|max)\))?", "dB"),
+    ("conversion_loss_db", r"conversion\s*loss(?:\s*\((?:min|typ|max)\))?", "dB"),
+    ("psat_dbm", r"(?:saturated\s*)?output\s*power(?:\s*\((?:min|typ|max)\))?", "dBm"),
+]
+# The label must be wrapped: an un-grouped alternation like "noise figure|NF"
+# binds only its last branch to what follows, so a match on the first branch
+# leaves the value group unset and float(None) raises.
+_TABLE_ROW = [(k, re.compile(rf"(?:{pat})\s*{unit}\s+([-+]?\d+(?:\.\d+)?)",
+                             re.I), unit) for k, pat, unit in _TABLE_ROW]
+
+
+def mine_table_rows(text):
+    """Specs written as 'Label unit value', the way spec tables flatten."""
+    out = {}
+    for key, rx, unit in _TABLE_ROW:
+        m = rx.search(text or "")
+        if not m:
+            continue
+        try:
+            out[key] = (float(m.group(1)), unit)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def mine_text(text):
     """{spec key: (value, unit)} from datasheet prose."""
     out = {}
@@ -241,9 +445,21 @@ def mine_text(text):
                 value *= factor
             out[key] = (value, meta.get("unit", ""))
             break
+    # Table-row form fills in what the prose patterns missed; setdefault, so a
+    # prose match (usually the headline figure) keeps precedence.
+    for k, v in mine_table_rows(text).items():
+        out.setdefault(k, v)
+    band = freq_range_ghz(text)
+    if band:
+        out["freq_min"] = (band[0], "GHz")
+        out["freq_max"] = (band[1], "GHz")
     cfg = specmatch.parse_throw_config(text[:4000])
     if cfg:
         out["throw_config"] = (cfg, "")
+    pct, why = space_score(text)
+    if pct is not None:
+        out["space_score_pct"] = (float(pct), "%")
+        out["space_evidence"] = (", ".join(why)[:180], "")
     return out
 
 
