@@ -65,13 +65,20 @@ UNITS = (r"dBm|dBc/Hz|dBc|dB|GHz|MHz|kHz|Hz|nsec|ns|psec|ps|usec|us|msec|ms|"
 # Rows in a flattened spec table: a label, then a unit, then numbers. PDF text
 # extraction collapses columns onto one line, so the unit is the anchor that
 # survives -- the column headers do not.
+# A label may legitimately contain digits -- P1dB, IP3, OIP3, 1 dB compression --
+# so stopping at the first digit truncated them to "input p" and "db comp".
+# Digits are allowed inside the label when glued to letters.
+_LABEL = r"[A-Za-z][A-Za-z0-9 ,()/&'.\-\u2013+]{2,44}?"
 _ROW_UNIT_FIRST = re.compile(
-    rf"([A-Za-z][A-Za-z0-9 ,()/&'.\-\u2013+]{{2,44}}?)\s*"
-    rf"[\(\[]?\s*({UNITS})\s*[\)\]]?\s*[:=]?\s+[-+]?\d", re.I)
+    rf"({_LABEL})\s*[\(\[]?\s*({UNITS})\s*[\)\]]?\s*[:=]?\s+[-+]?\d",
+    re.I)
 # and the other order: "Gain 22 dB"
 _ROW_VALUE_FIRST = re.compile(
-    rf"([A-Za-z][A-Za-z0-9 ,()/&'.\-\u2013+]{{2,44}}?)\s*[:=]?\s*"
-    rf"[-+]?\d+(?:\.\d+)?\s*({UNITS})\b", re.I)
+    rf"({_LABEL})\s*[:=]?\s*[-+]?\d+(?:\.\d+)?\s*({UNITS})\b", re.I)
+# Compound spec names that must survive intact rather than being cut at a digit.
+_KEEP_WHOLE = re.compile(
+    r"\b((?:input|output|in|out)?\s*(?:P\s*1\s*-?\s*dB|1\s*dB\s*"
+    r"compression|I?IP\s*[23]|OIP\s*[23]|P\s*sat))\b", re.I)
 
 # Qualifiers that describe the measurement, not the spec. Stripped so "Gain
 # (min)", "Gain (typ.)" and "Gain" count as one label.
@@ -113,12 +120,63 @@ _NOT_A_SPEC = re.compile(
 _PROSE = re.compile(
     r"\b(the|this|that|these|those|is|are|was|were|be|been|it|its|which|"
     r"includes?|provides?|allows?|offers?|designed|available|shown|see|"
-    r"when|where|while|from|into|drive|street|road|suite|inc|ltd|corp)\b",
-    re.I)
+    r"when|where|while|from|into|drive|street|road|suite|inc|ltd|corp|"
+    r"must|should|may|can|will|have|has|less|more|than|release|initial|"
+    r"tape|reel|please|contact|refer|consult)\b", re.I)
 # Trailing connectives left behind when a row is cut mid-phrase: "at IF freq of".
 _TRAIL = re.compile(r"\s+(at|of|for|to|in|on|with|per|and|or|vs|versus|by)$",
                     re.I)
 _LEAD = re.compile(r"^(at|of|for|to|in|on|with|per|and|or|the|a|an)\s+", re.I)
+
+
+# ----------------------------------------------------------------- sections
+# Which TABLE a label came from decides what it means. Absolute-maximum blocks
+# are clean and uniform, so a unit-anchored scan locks onto them and reports
+# storage temperature as the most common "spec" in every category -- while the
+# performance table, which is messier and is the one that matters, gets read
+# only in part. Segmenting first means every table is read AND each label is
+# attributed, so the two are never confused.
+_SECTIONS = [
+    ("abs-max", r"absolute\s+maximum(?:\s+ratings?)?|maximum\s+ratings?|"
+                r"stress\s+ratings?|damage\s+threshold"),
+    ("perf", r"electrical\s+specifications?|performance\s+(?:data|"
+             r"specifications?|characteristics?)|specifications?\s*(?:table)?|"
+             r"typical\s+performance|electrical\s+characteristics?|"
+             r"parametric|key\s+specifications?|rf\s+specifications?"),
+    ("features", r"^\s*(?:key\s+)?features\b|product\s+features"),
+    ("apps", r"^\s*applications?\b"),
+    ("pins", r"pin\s+(?:configuration|description|out|assignments?)|"
+             r"functional\s+block"),
+    ("ordering", r"ordering\s+information|part\s+number\s+designation|"
+                 r"how\s+to\s+order|available\s+models"),
+    ("env", r"environmental\s+(?:specifications?|ratings?)|"
+            r"qualification|screening|reliability"),
+]
+_SECTIONS = [(name, re.compile(pat, re.I | re.M)) for name, pat in _SECTIONS]
+
+
+def split_sections(text):
+    """[(block name, text)] for every table/section found, in order.
+
+    Anything before the first recognised heading, or between them when nothing
+    matches, is returned as 'other' rather than dropped -- a datasheet that uses
+    headings this scan does not know must still be read.
+    """
+    marks = []
+    for name, rx in _SECTIONS:
+        for m in rx.finditer(text or ""):
+            marks.append((m.start(), name))
+    if not marks:
+        return [("other", text)]
+    marks.sort()
+    out = []
+    if marks[0][0] > 200:
+        out.append(("other", text[:marks[0][0]]))
+    for i, (pos, name) in enumerate(marks):
+        end = marks[i + 1][0] if i + 1 < len(marks) else len(text)
+        if end - pos > 40:
+            out.append((name, text[pos:end]))
+    return out
 
 
 def clean_label(raw):
@@ -154,6 +212,21 @@ def clean_label(raw):
     return s.lower()
 
 
+_BULLET = re.compile(r"^(low|high|excellent|good|wide|ultra|very|superior|"
+                     r"outstanding|minimal|fast|broadband)\s+", re.I)
+
+
+def strip_bullet(label):
+    """('insertion loss', True) for a Features bullet like 'low insertion loss'.
+
+    Those come from the marketing list, not a table. The spec name is real and
+    worth counting, but the value beside it is a headline typ figure, so the two
+    sources should not be pooled without knowing which is which.
+    """
+    m = _BULLET.match(label)
+    return (label[m.end():].strip(), True) if m else (label, False)
+
+
 def ports_in(label):
     tags = []
     for rx, tag in _PORTS:
@@ -177,14 +250,23 @@ def resolved_key(label):
 
 
 def labels_in(text):
-    """{clean label: raw form} for every spec-table row in a datasheet."""
+    """{clean label: (raw form, block)} across EVERY table in the datasheet.
+
+    Compound names are recovered first, so "Output P1dB" is not reduced to
+    "output p" by a scan that stops at the digit.
+    """
     found = {}
-    for rx in (_ROW_UNIT_FIRST, _ROW_VALUE_FIRST):
-        for m in rx.finditer(text or ""):
-            raw = m.group(1).strip()
-            lab = clean_label(raw)
+    for block, chunk in split_sections(text):
+        for m in _KEEP_WHOLE.finditer(chunk or ""):
+            lab = clean_label(m.group(1))
             if lab:
-                found.setdefault(lab, raw)
+                found.setdefault(lab, (m.group(1).strip(), block))
+        for rx in (_ROW_UNIT_FIRST, _ROW_VALUE_FIRST):
+            for m in rx.finditer(chunk or ""):
+                raw = m.group(1).strip()
+                lab = clean_label(raw)
+                if lab:
+                    found.setdefault(lab, (raw, block))
     return found
 
 
@@ -254,6 +336,7 @@ def main(argv=None):
             continue
         sample = random.sample(pool, min(args.per_category, len(pool)))
         counts, raws, read, empty = Counter(), {}, 0, 0
+        blocks = defaultdict(Counter)
         for f in sample:
             try:
                 text = dsmine.datasheet_text(f)
@@ -263,15 +346,22 @@ def main(argv=None):
                 empty += 1
                 continue
             read += 1
-            for lab, raw in labels_in(text).items():
+            for lab, (raw, block) in labels_in(text).items():
+                lab, was_bullet = strip_bullet(lab)
+                if len(lab) < 4:
+                    continue
                 counts[lab] += 1
                 raws.setdefault(lab, raw)
+                blocks[lab][block] += 1
+                if was_bullet:
+                    blocks[lab]["features"] += 0
         print(f"\n{'=' * 74}")
         print(f"  {cat.upper()}   {read} datasheet(s) read"
               + (f", {empty} unreadable" if empty else ""))
         print(f"{'=' * 74}")
-        print(f"  {'n':>4}  {'%':>4}  {'label':<34}{'ports':<10}maps to")
-        print("  " + "-" * 70)
+        print(f"  {'n':>4}  {'%':>4}  {'label':<32}{'ports':<10}"
+              f"{'table':<10}maps to")
+        print("  " + "-" * 78)
         shown = 0
         for lab, n in counts.most_common():
             if n < args.min_count or shown >= args.top:
@@ -281,8 +371,10 @@ def main(argv=None):
                 continue
             pct = 100 * n / max(1, read)
             ports = ",".join(ports_in(lab))
-            print(f"  {n:>4}  {pct:>3.0f}%  {lab[:34]:<34}{ports[:10]:<10}"
-                  f"{key or '-'}")
+            top = blocks[lab].most_common(1)
+            where = top[0][0] if top else "-"
+            print(f"  {n:>4}  {pct:>3.0f}%  {lab[:32]:<32}{ports[:10]:<10}"
+                  f"{where[:10]:<10}{key or '-'}")
             if args.show_raw:
                 print(f"        raw: {raws.get(lab, '')[:60]!r}")
             shown += 1
@@ -302,6 +394,11 @@ def main(argv=None):
     print("""
   How to read this
     n / %        datasheets in that category carrying the label
+    table        which block the label came from: perf (performance),
+                 abs-max (absolute maximum ratings), features (marketing
+                 bullets), env, pins, ordering, other. perf is the one that
+                 matters; abs-max dominates by volume and should be handled
+                 separately rather than mixed in.
     ports        port or path qualifier found in the name -- RF/LO/IF, in/out,
                  passband/stopband, mainline/coupled. These are SEPARATE specs
                  and each needs its own key.
