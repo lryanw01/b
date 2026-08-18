@@ -71,59 +71,121 @@ _SPECWORD = re.compile(
     re.I)
 
 
-def _indent_levels(path, pages=2, tol=6.0):
-    """Distinct left-edge x positions of first cells, as indentation levels.
+_WITH_STYLE = [False]
 
-    Indentation is the only reliable sign of hierarchy: ADI indent "Low-Side
-    IP3" under "Input Third-Order Intercept" with no other marker. Column
-    ORDER and header WORDING vary constantly within one house style and say
-    nothing about how to read the table, so neither belongs in the archetype.
+
+def table_fills(path, pages=2):
+    """Distinct fill colours used behind table cells, and how they repeat.
+
+    Vendors reuse a house table style, and the shading is the most stable part
+    of it: a shaded header band, alternating row stripes, or nothing. Two
+    datasheets with the same shading almost always want the same reader, which
+    makes it a better grouping key than anything in the text.
     """
-    # Only rows whose first cell NAMES A SPEC. Measuring every row measured the
-    # page -- headers, footers, side captions -- and reported three or four
-    # levels for a perfectly flat table, so almost everything looked
-    # hierarchical.
-    xs = []
-    for pno in range(1, pages + 1):
-        try:
-            rows = dsmine.cells_xy(path, pno)
-        except Exception:
+    try:
+        import pdfplumber
+    except ImportError:
+        return "?", 0
+    fills, striped = [], False
+    try:
+        with pdfplumber.open(str(path)) as pdf:
+            for page in pdf.pages[:pages]:
+                ys = []
+                for r in page.rects:
+                    col = r.get("non_stroking_color")
+                    if col is None:
+                        continue
+                    if isinstance(col, (int, float)):
+                        col = (col,)
+                    key = tuple(round(float(c), 2) for c in col)
+                    if key in ((1.0,), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0, 0.0)):
+                        continue        # white / unset
+                    if float(r.get("height") or 0) > 2:
+                        fills.append(key)
+                        ys.append(round(float(r["top"]), 0))
+                ys.sort()
+                gaps = [b - a for a, b in zip(ys, ys[1:]) if 4 < b - a < 40]
+                if len(gaps) >= 4:
+                    striped = True
+    except Exception:
+        return "?", 0
+    n = len(set(fills))
+    if not fills:
+        return "unshaded", 0
+    if striped:
+        return "striped", n
+    return ("banded-header" if n <= 2 else "multi-colour"), n
+
+
+def rows_per_spec(rows, max_rows=400):
+    """(mode, mean rows per spec) -- the thing that decides how to read a row.
+
+    A table with one row per spec is read straight; a table where a spec owns
+    four rows is piecewise and every one of those rows is part of the same
+    answer. That difference changes the reader; where the condition column sits
+    does not.
+    """
+    rows = rows[:max_rows]
+    owners, cur, counts = [], None, []
+    for _p, cells in rows:
+        toks = [str(c or "").strip() for c in (cells or [])]
+        if not toks:
             continue
-        for r in rows:
-            cells = r.get("cells") or []
-            if not cells:
-                continue
-            first = str(cells[0].get("t") or "").strip()
-            if first and _SPECWORD.search(first):
-                xs.append(round(float(cells[0]["x0"]), 1))
-    if len(xs) < 4:
-        return 1
-    xs.sort()
-    tiers, cur, counts = [xs[0]], xs[0], [1]
-    for x in xs[1:]:
-        if x - cur > tol:
-            tiers.append(x)
-            counts.append(1)
-            cur = x
-        else:
-            counts[-1] += 1
-    # A tier with only one or two rows is noise, not an indent level.
-    real = [c for c in counts if c >= 3]
-    return min(max(1, len(real)), 4)
+        named = bool(_SPECWORD.search(toks[0] or ""))
+        has_band = any(dsmine.parse_band_cell(x) for x in toks[:3])
+        numeric = sum(1 for x in toks if dsmine._cell_num(x) is not None)
+        if named:
+            if cur is not None:
+                counts.append(cur)
+            cur = 1
+        elif cur is not None and (has_band or numeric >= 2):
+            cur += 1                    # a continuation row of the same spec
+        elif cur is not None:
+            counts.append(cur)
+            cur = None
+    if cur is not None:
+        counts.append(cur)
+    if not counts:
+        return "unknown", 0.0
+    mean = sum(counts) / len(counts)
+    multi = sum(1 for c in counts if c >= 2)
+    share = multi / len(counts)
+    if share >= 0.4:
+        return "multi-row", mean
+    if share >= 0.12:
+        return "mixed", mean
+    return "single-row", mean
+
+
+def repeats_across_tables(rows, max_rows=400):
+    """Does the same spec name appear in two or more separate tables?
+
+    Some vendors publish one table per condition -- 25 C, then -55 C, then
+    +125 C -- so a spec is piecewise ACROSS tables rather than down rows. A
+    reader that stops at the first table silently reports the best case.
+    """
+    seen, blocks, gap = defaultdict(set), 0, 0
+    for _p, cells in rows[:max_rows]:
+        toks = [str(c or "").strip() for c in (cells or [])]
+        if not toks or not any(toks):
+            gap += 1
+            if gap == 2:
+                blocks += 1
+            continue
+        gap = 0
+        first = (toks[0] or "").lower()
+        if _SPECWORD.search(first):
+            seen[re.sub(r"[^a-z]", "", first)[:18]].add(blocks)
+    return sum(1 for v in seen.values() if len(v) >= 2) >= 3
 
 
 def archetype(path, max_rows=400):
-    """A COARSE table archetype: how specs sit relative to their conditions.
+    """A COARSE archetype: how many rows a spec occupies, and the table style.
 
-    Deliberately blind to header wording, column order and which specs appear.
-    Those differ constantly inside one house style and are handled case by case
-    in a reader; what decides WHICH reader is the geometry:
-
-        matrix        spec names run across the header, rows are variants
-        banded        one spec spans several rows, one per condition/band
-        hierarchical  sub-rows indented beneath a parent label
-        flat          one row per spec, values in columns
-        keyvalue      label/value pairs with no column grid
+    Blind to header wording, column order and where the conditions sit -- those
+    are case-by-case details inside a reader. What selects the reader is whether
+    a spec is one row or several, whether it continues into another table, and
+    which house table style it is drawn in.
     """
     try:
         rows = dsmine.rows_for(path)
@@ -135,56 +197,44 @@ def archetype(path, max_rows=400):
         except Exception:
             txt = ""
         return ("NO-TEXT" if not txt.strip() else "NO-TABLE"), {}
-    rows = rows[:max_rows]
 
-    spec_rows = band_rows = wide_rows = 0
-    multi_band_blocks = 0
-    run = 0
-    matrix_hdr = False
-    for _p, cells in rows:
-        toks = [str(c or "").strip() for c in cells]
-        if not toks:
-            continue
-        if len(toks) >= 3:
-            wide_rows += 1
-        if sum(1 for x in toks if _SPECWORD.search(x)) >= 3:
-            matrix_hdr = True
-        has_band = any(dsmine.parse_band_cell(x) for x in toks[:3])
-        if has_band:
-            band_rows += 1
-            run += 1
-        else:
-            if run >= 2:
-                multi_band_blocks += 1
-            run = 0
-            if _SPECWORD.search(toks[0] or ""):
-                spec_rows += 1
-    if run >= 2:
-        multi_band_blocks += 1
+    shape, mean = rows_per_spec(rows, max_rows)
+    style, ncol = table_fills(path) if path.suffix.lower() == ".pdf" \
+        else ("html", 0)
+    across = repeats_across_tables(rows, max_rows)
+    conds = has_conditions(rows)
 
-    levels = _indent_levels(path)
+    # Shading is reported but NOT part of the signature by default: measured
+    # across these files it varies page to page inside one vendor, so it split
+    # groups instead of clustering them. --style folds it in if it turns out to
+    # be stable on a larger sample.
+    band = ("1" if mean < 1.3 else "2-3" if mean < 3.5 else "4+")
+    sig = f"{shape:<10} rows/spec~{band}"
+    if across:
+        sig += " | repeats-across-tables"
+    if not conds:
+        sig += " | no-condition-column"
+    if _WITH_STYLE[0]:
+        sig += f" | style:{style}"
+    return sig, {"shape": shape, "mean_rows_per_spec": round(mean, 2),
+                 "style": style, "fills": ncol, "across": across,
+                 "conditions": conds}
 
-    if matrix_hdr and band_rows <= 2:
-        kind = "matrix"
-    elif multi_band_blocks >= 2:
-        kind = "banded"
-    elif levels >= 2 and spec_rows >= 6:
-        kind = "hierarchical"
-    elif wide_rows >= 4:
-        kind = "flat"
-    else:
-        kind = "keyvalue"
 
-    # Where the test conditions live -- the other thing a reader must know.
-    cond = ("in-rows" if multi_band_blocks >= 2 or band_rows >= 3
-            else "in-column" if _has_cond_column(rows)
-            else "in-label" if _cond_in_labels(rows)
-            else "none")
+def has_conditions(rows):
+    """Is there a conditions column at all, by any of its names?
 
-    return f"{kind}  (conditions {cond})", {
-        "kind": kind, "cond": cond, "indent_levels": levels,
-        "band_rows": band_rows, "blocks": multi_band_blocks,
-        "spec_rows": spec_rows}
+    "Comments", "Test Conditions", "Conditions", "Notes" and "Test Level" all
+    mean the same column. Matching only the exact phrase reported "no
+    conditions" for tables that plainly had one.
+    """
+    pat = re.compile(r"test\s*cond|condition|comment|remark|note|test\s*level",
+                     re.I)
+    for _p, cells in rows[:80]:
+        for c in (cells or [])[:6]:
+            if pat.search(str(c or "")):
+                return True
+    return False
 
 
 def _has_cond_column(rows):
@@ -268,11 +318,16 @@ def main(argv=None):
                     help="example files per format")
     ap.add_argument("--min-share", type=float, default=1.0,
                     help="hide formats below this %% of the vendor")
+    ap.add_argument("--style", action="store_true",
+                    help="fold the table shading into the signature (it varies "
+                         "page to page on a small sample, so it is reported "
+                         "but not grouped on by default)")
     ap.add_argument("--csv", default=None)
     ap.add_argument("--seed", type=int, default=1)
     args = ap.parse_args(argv)
 
     random.seed(args.seed)
+    _WITH_STYLE[0] = args.style
     dirs = vendor_dirs()
     if args.vendor:
         dirs = [(n, ds) for n, ds in dirs if args.vendor.lower() in n.lower()]
