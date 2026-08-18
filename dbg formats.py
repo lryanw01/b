@@ -161,6 +161,15 @@ def classify_table(tbl):
     cond_cols = [i for i, k in enumerate(kinds)
                  if k == "cond" or (k == "text" and i != pcol)]
     val_cols = [i for i, k in enumerate(kinds) if k == "value"]
+    # A spec table names its parameters. A grid of bare numbers is a plot's
+    # axis labels or a pin-out; those were producing most of the "distinct
+    # layouts" while being nothing anyone would write a reader for.
+    if "text" not in kinds:
+        return None
+    if sum(1 for k in kinds if k == "blank") > len(kinds) / 2:
+        return None
+    if len(rows) < 3:
+        return None
     if not val_cols:
         # A table of pure prose (ordering info, pin descriptions) is not a spec
         # table. Anything with numbers is, even if the columns are ragged --
@@ -206,9 +215,17 @@ def classify_table(tbl):
     # inside one house style, the sequence of column roles does not.
     roles = "".join({"text": "P", "cond": "C", "unit": "U", "value": "V",
                      "blank": ".", "other": "?"}[k] for k in kinds)
-    return (f"{shape:<12} | grid:{grid:<11} | cols:{roles}",
+    # The SIGNATURE is deliberately coarse. Column count, column order and the
+    # exact role sequence vary table to table inside one house style -- keying
+    # on them produced 32 "formats" from 52 tables, which is a list of tables,
+    # not a list of formats. Only two things change how a row is read: whether
+    # a spec carries several condition-keyed values, and whether the values are
+    # a min/typ/max triple or a single column. The rest is reported as detail.
+    values = "min/typ/max" if grid == "min/typ/max" else "single-value"
+    conds = "with-conditions" if cond_cols else "no-conditions"
+    return (f"{shape:<11} | {values:<12} | {conds}",
             {"shape": shape, "grid": grid, "roles": roles,
-             "rows": len(rows), "width": width})
+             "rows": len(rows), "width": width, "cond_cols": len(cond_cols)})
 
 
 def tables_in(path, pages=4):
