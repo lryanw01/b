@@ -72,264 +72,177 @@ _SPECWORD = re.compile(
 
 
 _WITH_STYLE = [False]
+_EXAMPLES = {}
+
+# ---------------------------------------------------------------- per table
+# The unit of analysis is a TABLE, not a datasheet. A single datasheet routinely
+# carries an electrical table, an absolute-maximum table and an ordering table,
+# and they have nothing structurally in common -- classifying the file as a
+# whole averaged three different layouts into one meaningless answer.
+_UNIT_TOK = re.compile(
+    r"^\(?\s*(dB|dBm|dBc|GHz|MHz|kHz|Hz|ns|ps|us|ms|mA|uA|A|mW|W|kW|mV|V|"
+    r"Ohms?|\u03a9|deg|degrees|\u00b0|%|:1|dBc/Hz|\u00b0C)\s*\)?$", re.I)
+_MINMAXTYP = re.compile(r"^(min|typ|max|nom)(imum|ical)?\.?$", re.I)
 
 
-def table_fills(path, pages=2):
-    """Distinct fill colours used behind table cells, and how they repeat.
+def _col_kind(vals):
+    """What a column holds: param, cond, unit, value or blank.
 
-    Vendors reuse a house table style, and the shading is the most stable part
-    of it: a shaded header band, alternating row stripes, or nothing. Two
-    datasheets with the same shading almost always want the same reader, which
-    makes it a better grouping key than anything in the text.
+    Stacked cells are split first. "0.34\n0.61\n0.78" is three values, but as
+    one string it is not numeric and not a unit, so the column read as prose --
+    and with no value column at all the whole table was discarded. Every real
+    multi-band electrical table was being thrown away on exactly this.
     """
-    try:
-        import pdfplumber
-    except ImportError:
-        return "?", 0
-    fills, striped = [], False
-    try:
-        with pdfplumber.open(str(path)) as pdf:
-            for page in pdf.pages[:pages]:
-                ys = []
-                for r in page.rects:
-                    col = r.get("non_stroking_color")
-                    if col is None:
-                        continue
-                    if isinstance(col, (int, float)):
-                        col = (col,)
-                    key = tuple(round(float(c), 2) for c in col)
-                    if key in ((1.0,), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0, 0.0)):
-                        continue        # white / unset
-                    if float(r.get("height") or 0) > 2:
-                        fills.append(key)
-                        ys.append(round(float(r["top"]), 0))
-                ys.sort()
-                gaps = [b - a for a, b in zip(ys, ys[1:]) if 4 < b - a < 40]
-                if len(gaps) >= 4:
-                    striped = True
-    except Exception:
-        return "?", 0
-    n = len(set(fills))
-    if not fills:
-        return "unshaded", 0
-    if striped:
-        return "striped", n
-    return ("banded-header" if n <= 2 else "multi-colour"), n
+    flat = []
+    for v in vals:
+        for part in str(v or "").split("\n"):
+            part = part.strip()
+            if part:
+                flat.append(part)
+    vals = flat or [str(v or "").strip() for v in vals]
+    filled = [v for v in vals if v]
+    if not filled:
+        return "blank"
+    unit = sum(1 for v in filled if _UNIT_TOK.match(v))
+    num = sum(1 for v in filled if dsmine._cell_num(v) is not None)
+    band = sum(1 for v in filled if dsmine.parse_band_cell(v))
+    prose = sum(1 for v in filled if dsmine._cell_num(v) is None and len(v) > 3)
+    n = len(filled)
+    if unit >= 0.5 * n:
+        return "unit"
+    if band >= 0.4 * n:
+        return "cond"          # a frequency-range column IS the condition
+    if num >= 0.6 * n:
+        return "value"
+    if prose >= 0.5 * n:
+        return "text"
+    return "other"
 
 
-def column_profile(path, pages=2, tol=6.0):
-    """Column x-positions and what each column mostly holds.
+def _stacked(cell):
+    """How many values are stacked inside one cell.
 
-    Everything below is decided positionally. Word-matching a header failed
-    repeatedly -- a conditions column headed "Comments", or a header that never
-    made it into the extracted rows at all, both read as "no conditions" when
-    the column was plainly there. What a column CONTAINS does not lie.
+    pdfplumber merges a vertically-spanned group into a SINGLE cell whose text
+    is newline-separated:
+
+        Insertion Loss | "DC - 2\n2 - 6\n6 - 10" | "0.34\n0.61\n0.78" | dB
+
+    So a multi-row spec never appears as several rows at all -- it is one row
+    with stacked cells. Looking for empty continuation rows could never have
+    found it, which is why every table classified as single-row.
     """
-    cols = defaultdict(list)
-    for pno in range(1, pages + 1):
-        try:
-            rows = dsmine.cells_xy(path, pno)
-        except Exception:
-            continue
-        for r in rows:
-            for c in (r.get("cells") or []):
-                txt = str(c.get("t") or "").strip()
-                if not txt:
-                    continue
-                x = round(float(c.get("x0", 0)) / tol) * tol
-                cols[x].append(txt)
+    s = str(cell or "")
+    parts = [x.strip() for x in s.split("\n") if x.strip()]
+    return len(parts)
+
+
+def classify_table(tbl):
+    """(signature, facts) for ONE table.
+
+    multi-row means: the same parameter has SEVERAL value rows, distinguished
+    by a frequency range or a test condition. That is the property worth
+    grouping on -- those rows are one answer in pieces, and being able to
+    collect them is the whole point.
+    """
+    rows = [[("" if c is None else str(c).strip()) for c in r] for r in tbl
+            if r and any(c for c in r)]
+    if len(rows) < 2:
+        return None
+    width = max(len(r) for r in rows)
+    rows = [r + [""] * (width - len(r)) for r in rows]
+    cols = list(zip(*rows))
+    kinds = [_col_kind(c) for c in cols]
+
+    # The parameter column is the leftmost text column.
+    try:
+        pcol = next(i for i, k in enumerate(kinds) if k == "text")
+    except StopIteration:
+        pcol = 0
+    cond_cols = [i for i, k in enumerate(kinds)
+                 if k == "cond" or (k == "text" and i != pcol)]
+    val_cols = [i for i, k in enumerate(kinds) if k == "value"]
+    if not val_cols:
+        # A table of pure prose (ordering info, pin descriptions) is not a spec
+        # table. Anything with numbers is, even if the columns are ragged --
+        # requiring a clean text column skipped most real electrical tables.
+        return None
+
+    # Bands as COLUMN HEADINGS: the header row holds two or more ranges.
+    header = rows[0]
+    band_hdr = sum(1 for c in header if dsmine.parse_band_cell(c))
+    if band_hdr >= 2 and not dsmine.parse_band_cell(header[pcol] or ""):
+        shape = "band-columns"
+    else:
+        # A continuation row: no parameter, but a condition and a value.
+        # Multi-row shows up three ways, all meaning the same thing: one spec,
+        # several values keyed by condition.
+        stacked = 0
+        for r in rows[1:]:
+            if _stacked(r[pcol]) > 1:
+                continue        # a stacked PARAMETER cell is several specs
+            depth = max([_stacked(r[i]) for i in val_cols] or [1])
+            cdepth = max([_stacked(r[i]) for i in cond_cols] or [1])
+            if depth > 1 and (cdepth > 1 or cond_cols):
+                stacked += 1
+        conts = 0
+        for r in rows[1:]:
+            if r[pcol].strip():
+                continue
+            if any(r[i].strip() for i in val_cols):
+                conts += 1
+        from collections import Counter as _C
+        names = _C(r[pcol].strip().lower() for r in rows[1:] if r[pcol].strip())
+        repeated = bool(names) and max(names.values()) >= 2
+        shape = ("multi-row" if (stacked >= 1 or conts >= 2 or repeated)
+                 else "single-row")
+
+    # min/typ/max triple vs a single value column
+    hdr_mtm = sum(1 for c in header if _MINMAXTYP.match(c))
+    grid = ("min/typ/max" if hdr_mtm >= 2
+            else f"{len(val_cols)}-value" if len(val_cols) <= 2
+            else f"{len(val_cols)}-cols")
+
+    # The ROLE ORDER is the stable key: names and wording vary constantly
+    # inside one house style, the sequence of column roles does not.
+    roles = "".join({"text": "P", "cond": "C", "unit": "U", "value": "V",
+                     "blank": ".", "other": "?"}[k] for k in kinds)
+    return (f"{shape:<12} | grid:{grid:<11} | cols:{roles}",
+            {"shape": shape, "grid": grid, "roles": roles,
+             "rows": len(rows), "width": width})
+
+
+def tables_in(path, pages=4):
+    """Every table on the first few pages, as row lists."""
     out = []
-    for x in sorted(cols):
-        vals = cols[x]
-        if len(vals) < 3:
-            continue
-        numeric = sum(1 for v in vals if dsmine._cell_num(v) is not None)
-        unitish = sum(1 for v in vals
-                      if re.fullmatch(r"\(?\s*(dB|dBm|GHz|MHz|kHz|ns|ps|mA|"
-                                      r"uA|V|W|mW|deg|\u00b0|%|:1|Ohms?)\s*\)?",
-                                      v, re.I))
-        prose = sum(1 for v in vals
-                    if dsmine._cell_num(v) is None and len(v) > 4)
-        kind = ("unit" if unitish >= 0.5 * len(vals)
-                else "value" if numeric >= 0.6 * len(vals)
-                else "text")
-        out.append({"x": x, "n": len(vals), "kind": kind,
-                    "prose": prose / len(vals), "vals": vals})
-    return out
-
-
-def has_conditions(rows_or_path, path=None):
-    """Is there a conditions/comments column?
-
-    Positional: a column of mostly prose that is NOT the leftmost (parameter)
-    column is a conditions or comments column, whatever its heading says.
-    """
-    p = path or (rows_or_path if isinstance(rows_or_path, Path) else None)
-    if p is None:
-        return False
-    prof = column_profile(p)
-    text_cols = [c for c in prof if c["kind"] == "text" and c["prose"] > 0.5]
-    return len(text_cols) >= 2          # parameter column, plus one more
-
-
-def band_columns(path, pages=2):
-    """True when the frequency bands are COLUMNS, not rows.
-
-    A header row of two or more band cells means each spec row carries one
-    value per band:
-
-        Frequency      | DC - 2 | 2 - 6 | 6 - 10 | 10 - 18
-        Insertion Loss |  0.34  | 0.61  |  0.78  |  1.22
-
-    That is piecewise ACROSS the row, and a reader that takes the first number
-    reports only the easiest band.
-    """
-    for pno in range(1, pages + 1):
+    if path.suffix.lower() != ".pdf":
         try:
-            rows = dsmine.cells_xy(path, pno)
+            rows = dsmine.rows_for(path)
         except Exception:
-            continue
-        for r in rows:
-            toks = [str(c.get("t") or "").strip() for c in (r.get("cells") or [])]
-            if not toks:
-                continue
-            # A band HEADER names no spec: its first cell is blank or a column
-            # title. SMA88's "Frequency MHz 2-500 5-500 5-500" is a spec ROW
-            # measured at three temperatures, and reading it as a band header
-            # inverted the whole table.
-            if _SPECWORD.search(toks[0] or ""):
-                continue
-            bands = [x for x in toks if dsmine.parse_band_cell(x)]
-            if len(bands) >= 2 and len(set(bands)) >= 2:
-                return True
-    return False
-
-
-def is_multirow(path, pages=2, tol=6.0):
-    """Does any spec span more than one row?
-
-    Judged the way you read it: a CONTINUATION row has nothing at the parameter
-    column's x position, but still carries a unit or a value on the same line.
-    Counting rows per spec was the wrong measure -- the exact number never
-    mattered, and averaging it over a whole document buried the multi-row specs
-    among the single-row ones.
-    """
-    prof = column_profile(path, pages, tol)
-    if not prof:
-        return False
-    param_x = prof[0]["x"]
-    value_xs = {c["x"] for c in prof if c["kind"] in ("value", "unit")}
-    if not value_xs:
-        return False
-    conts = 0
-    for pno in range(1, pages + 1):
-        try:
-            rows = dsmine.cells_xy(path, pno)
-        except Exception:
-            continue
-        for r in rows:
-            cells = r.get("cells") or []
+            return out
+        # HTML rows arrive already split; treat a run of equal width as a table.
+        cur, w = [], None
+        for _p, cells in rows:
             if not cells:
                 continue
-            xs = {round(float(c.get("x0", 0)) / tol) * tol: str(c.get("t") or "")
-                  for c in cells}
-            at_param = str(xs.get(param_x, "")).strip()
-            on_line = any(x in value_xs and str(v).strip() for x, v in xs.items())
-            if on_line and not at_param:
-                conts += 1
-                if conts >= 3:
-                    return True
-    return False
-
-
-def repeats_across_tables(rows, max_rows=400):
-    """Does the same spec name appear in two or more separate tables?
-
-    Some vendors publish one table per condition -- 25 C, then -55 C, then
-    +125 C -- so a spec is piecewise ACROSS tables rather than down rows. A
-    reader that stops at the first table silently reports the best case.
-    """
-    seen, blocks, gap = defaultdict(set), 0, 0
-    for _p, cells in rows[:max_rows]:
-        toks = [str(c or "").strip() for c in (cells or [])]
-        if not toks or not any(toks):
-            gap += 1
-            if gap == 2:
-                blocks += 1
-            continue
-        gap = 0
-        first = (toks[0] or "").lower()
-        if _SPECWORD.search(first):
-            seen[re.sub(r"[^a-z]", "", first)[:18]].add(blocks)
-    return sum(1 for v in seen.values() if len(v) >= 2) >= 3
-
-
-def archetype(path, max_rows=400):
-    """A COARSE archetype: how a spec's values are laid out relative to its row.
-
-    Three things decide which reader a datasheet needs, and nothing else does:
-      * are the frequency bands COLUMNS (piecewise across the row)?
-      * does a spec span more than one ROW (piecewise down the table)?
-      * does the same spec continue into another TABLE?
-    Column order, header wording and where the conditions sit are case-by-case
-    details inside a reader, not different formats.
-    """
+            if w is None or len(cells) == w:
+                cur.append(list(cells)); w = len(cells)
+            else:
+                if len(cur) >= 2:
+                    out.append(cur)
+                cur, w = [list(cells)], len(cells)
+        if len(cur) >= 2:
+            out.append(cur)
+        return out
     try:
-        rows = dsmine.rows_for(path)
-    except Exception as e:
-        return "ERROR", {"note": type(e).__name__}
-    if not rows:
-        try:
-            txt = dsmine.datasheet_text(path)
-        except Exception:
-            txt = ""
-        return ("NO-TEXT" if not txt.strip() else "NO-TABLE"), {}
-
-    pdf = path.suffix.lower() == ".pdf"
-    bandcols = band_columns(path) if pdf else False
-    multirow = is_multirow(path) if pdf else False
-    across = repeats_across_tables(rows, max_rows)
-    conds = has_conditions(rows, path) if pdf else True
-    style, ncol = table_fills(path) if pdf else ("html", 0)
-
-    if bandcols:
-        shape = "band-columns"
-    elif multirow:
-        shape = "multi-row"
-    else:
-        shape = "single-row"
-
-    sig = shape
-    if across:
-        sig += " | repeats-across-tables"
-    if not conds:
-        sig += " | no-conditions-col"
-    if _WITH_STYLE[0]:
-        sig += f" | style:{style}"
-    return sig, {"shape": shape, "band_columns": bandcols,
-                 "multirow": multirow, "across": across, "conditions": conds,
-                 "style": style, "fills": ncol}
-
-
-def _has_cond_column(rows):
-    for _p, cells in rows[:60]:
-        for c in cells[:4]:
-            if _COND.match(str(c or "").strip()):
-                return True
-    return False
-
-
-def _cond_in_labels(rows):
-    """Conditions written into the label itself: 'Gain @ 2 GHz', 'IL, 25C'."""
-    hits = 0
-    for _p, cells in rows:
-        first = str((cells or [""])[0] or "")
-        if _SPECWORD.search(first) and re.search(
-                r"@|\bat\b|,\s*\d|\d\s*(GHz|MHz|\u00b0?C)\b", first, re.I):
-            hits += 1
-            if hits >= 3:
-                return True
-    return False
+        import pdfplumber
+        with pdfplumber.open(str(path)) as pdf:
+            for page in pdf.pages[:pages]:
+                for tb in page.extract_tables() or []:
+                    if tb and len(tb) >= 2:
+                        out.append(tb)
+    except Exception:
+        pass
+    return out
 
 
 def vendor_dirs():
@@ -392,6 +305,9 @@ def main(argv=None):
                     help="example files per format")
     ap.add_argument("--min-share", type=float, default=1.0,
                     help="hide formats below this %% of the vendor")
+    ap.add_argument("--dump", type=int, default=0,
+                    help="print this many raw table grids per layout, so the "
+                         "classification can be checked against the table")
     ap.add_argument("--style", action="store_true",
                     help="fold the table shading into the signature (it varies "
                          "page to page on a small sample, so it is reported "
@@ -418,32 +334,53 @@ def main(argv=None):
         print(f"  {name}   {len(files)} datasheet(s) sampled")
         print(f"{'=' * 76}")
         groups = defaultdict(list)
+        n_tables = skipped = 0
         for i, f in enumerate(files, 1):
-            sig, _feats = archetype(f)
-            groups[sig].append(f)
-            if i % 200 == 0:
-                print(f"    ...{i}/{len(files)}")
-        total = sum(len(v) for v in groups.values())
-        print(f"  {len(groups)} distinct layout(s)\n")
+            for tb in tables_in(f):
+                res = classify_table(tb)
+                if res is None:
+                    skipped += 1
+                    continue
+                sig, _facts = res
+                groups[sig].append(f)
+                _EXAMPLES.setdefault(sig, []).append((f.name, tb))
+                n_tables += 1
+            if i % 100 == 0:
+                print(f"    ...{i}/{len(files)} files, {n_tables} tables")
+        total = max(1, n_tables)
+        print(f"  {n_tables} table(s), {len(groups)} distinct layout(s)"
+              + (f", {skipped} not spec tables" if skipped else "") + "\n")
         print(f"  {'n':>5} {'share':>7}  layout")
         print("  " + "-" * 72)
         cumulative = 0
         for sig, hits in sorted(groups.items(), key=lambda kv: -len(kv[1])):
-            share = 100 * len(hits) / max(1, total)
+            share = 100 * len(hits) / total
             if share < args.min_share:
                 continue
             cumulative += share
             print(f"  {len(hits):>5} {share:>6.1f}%  {sig}")
+            if args.dump:
+                for tb in _EXAMPLES.get(sig, [])[:args.dump]:
+                    print(f"        ---- {tb[0]} ----")
+                    for row in tb[1][:8]:
+                        cells = ["" if c is None else str(c).strip()[:16]
+                                 for c in row]
+                        print("        | " + " | ".join(cells)[:96])
             if args.show:
-                print(f"        e.g. " + ", ".join(p.name for p in
-                                                   hits[:args.show]))
+                seen, ex = set(), []
+                for pth in hits:
+                    if pth.name not in seen:
+                        seen.add(pth.name); ex.append(pth.name)
+                    if len(ex) >= args.show:
+                        break
+                print(f"        e.g. " + ", ".join(ex))
             rows_out.append({"vendor": name, "n": len(hits),
                              "share_pct": f"{share:.1f}", "layout": sig,
-                             "examples": ", ".join(p.name
-                                                   for p in hits[:3])})
+                             "examples": ", ".join(
+                                 sorted({p.name for p in hits})[:3])})
         print(f"\n  the listed layouts cover {cumulative:.0f}% of the sample")
         top3 = sorted(groups.items(), key=lambda kv: -len(kv[1]))[:3]
-        cov3 = 100 * sum(len(v) for _s, v in top3) / max(1, total)
+        cov3 = 100 * sum(len(v) for _s, v in top3) / total
         print(f"  the top 3 alone cover {cov3:.0f}%"
               + ("  <- worth hardcoding" if cov3 >= 70 else
                  "  <- too fragmented to hardcode cheaply"))
