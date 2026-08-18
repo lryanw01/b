@@ -73,6 +73,7 @@ _SPECWORD = re.compile(
 
 _WITH_STYLE = [False]
 _EXAMPLES = {}
+_ALL_GROUPS = {}
 
 # ---------------------------------------------------------------- per table
 # The unit of analysis is a TABLE, not a datasheet. A single datasheet routinely
@@ -144,6 +145,27 @@ def _stacked(cell):
     return len(parts)
 
 
+_SYMBOLIC = re.compile(
+    r"^(?:[A-Za-z]{1,6}\d{0,3}|[A-Za-z]{1,3}[-_]?[A-Za-z0-9]{1,4}|"
+    r"P\s?1\s?dB|I?IP\s?[23]|V?I?[A-Z]{2,4})$")
+
+
+def _looks_symbolic(vals):
+    """Is this column of short symbols a parameter column?
+
+    "f", "P1dB", "IP3", "IDD", "VDD" name specs as compactly as prose does; a
+    column of them is the parameter column even though nothing in it is long
+    enough to read as text.
+    """
+    flat = [x.strip() for v in vals for x in str(v or "").split("\n")
+            if x.strip()]
+    if len(flat) < 3:
+        return False
+    sym = sum(1 for v in flat
+              if dsmine._cell_num(v) is None and _SYMBOLIC.match(v))
+    return sym >= 0.6 * len(flat)
+
+
 def _span_header_rows(rows, width):
     """Indices of rows that LABEL the columns beneath rather than hold data.
 
@@ -169,7 +191,7 @@ def _span_header_rows(rows, width):
     return out
 
 
-def classify_table(tbl):
+def classify_table(tbl, ruling="ruled"):
     """(signature, facts) for ONE table.
 
     multi-row means: the same parameter has SEVERAL value rows, distinguished
@@ -183,6 +205,20 @@ def classify_table(tbl):
         return None
     width = max(len(r) for r in rows)
     rows = [r + [""] * (width - len(r)) for r in rows]
+    # Drop columns that are blank everywhere. Text-aligned extraction leaves a
+    # lot of them -- a header split across two columns, a gutter read as a
+    # column -- and they carried no information while tripping the "mostly
+    # blank" rejection, so ADI's newer tables were being thrown away as
+    # non-spec tables when they are the most structured tables in the set.
+    keep = [i for i in range(width)
+            if any(str(r[i] or "").strip() for r in rows)]
+    if len(keep) >= 2:
+        rows = [[r[i] for i in keep] for r in rows]
+        width = len(keep)
+    rows = [r for r in rows if any(str(c or "").strip() for c in r)]
+    if len(rows) < 3:
+        return None
+
     span_rows = _span_header_rows(rows, width)
     data_rows = [r for i, r in enumerate(rows) if i not in span_rows]
     if len(data_rows) < 2:
@@ -190,19 +226,34 @@ def classify_table(tbl):
     cols = list(zip(*data_rows))
     kinds = [_col_kind(c) for c in cols]
 
-    # The parameter column is the leftmost text column.
-    try:
-        pcol = next(i for i, k in enumerate(kinds) if k == "text")
-    except StopIteration:
-        pcol = 0
-    cond_cols = [i for i, k in enumerate(kinds)
-                 if k == "cond" or (k == "text" and i != pcol)]
+    # The parameter column is the leftmost text column -- UNLESS its heading
+    # says otherwise. ADRF6520 extracts with only two columns and the leftmost
+    # is headed "Test Conditions/Comments": taking it as the parameter consumed
+    # the conditions column and left the table reporting no conditions at all.
+    hdr_txt = [str(c or "").strip() for c in rows[0]]
+    cond_named = {i for i, h in enumerate(hdr_txt)
+                  if re.search(r"test\s*cond|condition|comment|remark",
+                               h, re.I)}
+    text_cols = [i for i, k in enumerate(kinds) if k == "text"]
+    pcol = next((i for i in text_cols if i not in cond_named),
+                text_cols[0] if text_cols else 0)
+    cond_cols = sorted(set(
+        [i for i, k in enumerate(kinds)
+         if k == "cond" or (k == "text" and i != pcol)]) | cond_named)
     val_cols = [i for i, k in enumerate(kinds) if k == "value"]
     # A spec table names its parameters. A grid of bare numbers is a plot's
     # axis labels or a pin-out; those were producing most of the "distinct
     # layouts" while being nothing anyone would write a reader for.
+    # A parameter column need not be prose. ADI's newer style carries a SYMBOL
+    # column -- f, P1dB, IP3, IDD -- and those tokens are too short to type as
+    # text, so no parameter column was found and the whole table was discarded.
+    # That is the difference between the two ADI families, not a reason to
+    # throw one of them away.
     if "text" not in kinds:
-        return None
+        sym = [i for i, c in enumerate(cols) if _looks_symbolic(c)]
+        if not sym:
+            return None
+        kinds[sym[0]] = "text"
     if sum(1 for k in kinds if k == "blank") > len(kinds) / 2:
         return None
     if len(rows) < 3:
@@ -253,7 +304,11 @@ def classify_table(tbl):
         shape = ("multi-row" if (stacked >= 1 or conts >= 2 or repeated)
                  else "single-row")
 
-    # min/typ/max triple vs a single value column
+    # min/typ/max is ONE value set, not several: a spec quoted min/typ/max has a
+    # single answer expressed three ways. What matters is how many SETS a spec
+    # carries -- one, several keyed by a condition, or several spread across
+    # separate tables. Grouping on the column structure instead put a table with
+    # frequency-keyed values in with one that merely has a conditions column.
     hdr_mtm = sum(1 for c in header if _MINMAXTYP.match(c))
     grid = ("min/typ/max" if hdr_mtm >= 2
             else f"{len(val_cols)}-value" if len(val_cols) <= 2
@@ -269,19 +324,29 @@ def classify_table(tbl):
     # not a list of formats. Only two things change how a row is read: whether
     # a spec carries several condition-keyed values, and whether the values are
     # a min/typ/max triple or a single column. The rest is reported as detail.
-    values = "min/typ/max" if grid == "min/typ/max" else "single-value"
-    # If a spec has several values, something distinguishes them -- so calling
-    # the table "no-conditions" would contradict its own shape. Where no column
-    # was recognised as conditions, the discriminator is inside a cell.
-    if cond_cols:
-        conds = "with-conditions"
-    elif shape == "multi-row":
-        conds = "conditions-in-cell"
+    values = "multi-value" if shape == "multi-row" else "single-value"
+    # What distinguishes the sets, when there is more than one. A frequency
+    # range and a test condition are different enough to need different
+    # handling: one is a band the spec is valid over, the other a setting it
+    # was measured at.
+    band_like = any(k == "cond" for k in kinds) or any(
+        dsmine.parse_band_cell(c) for r in data_rows for c in r)
+    if values == "single-value":
+        conds = "conditions-present" if cond_cols else "no-conditions"
+    elif band_like:
+        conds = "keyed-by-frequency"
+    elif cond_cols:
+        conds = "keyed-by-condition"
     else:
-        conds = "no-conditions"
+        conds = "keyed-in-cell"
     if grouped:
         conds += " | grouped-header"
-    return (f"{shape:<11} | {values:<12} | {conds}",
+    # Ruled vs banded is the first thing a reader must know: it decides which
+    # extraction strategy recovers the cells at all.
+    symbolic = any(_looks_symbolic(c) for c in cols)
+    if symbolic:
+        conds += " | symbol-col"
+    return (f"{ruling:<7} | {values:<12} | {conds}",
             {"shape": shape, "grid": grid, "roles": roles,
              "rows": len(rows), "width": width, "cond_cols": len(cond_cols)})
 
@@ -303,18 +368,43 @@ def tables_in(path, pages=4):
                 cur.append(list(cells)); w = len(cells)
             else:
                 if len(cur) >= 2:
-                    out.append(cur)
+                    out.append((cur, "html"))
                 cur, w = [list(cells)], len(cells)
         if len(cur) >= 2:
-            out.append(cur)
+            out.append((cur, "html"))
         return out
+    # Two extraction strategies, because ADI publish two kinds of table and the
+    # difference is whether the table is RULED:
+    #
+    #   ruled   -- cell borders drawn as lines. pdfplumber's default,
+    #              line-based strategy finds these.
+    #   banded  -- no borders at all, structure conveyed by alternating fill
+    #              colour. The line strategy returns NOTHING for these, which
+    #              is why an entire family of ADI datasheets produced no tables
+    #              and no layout -- they were invisible, not unclassifiable.
+    #
+    # Columns in a banded table have to be inferred from text alignment.
+    TEXT_SETTINGS = {"vertical_strategy": "text",
+                     "horizontal_strategy": "text",
+                     "intersection_tolerance": 5,
+                     "text_x_tolerance": 2}
     try:
         import pdfplumber
         with pdfplumber.open(str(path)) as pdf:
             for page in pdf.pages[:pages]:
-                for tb in page.extract_tables() or []:
-                    if tb and len(tb) >= 2:
-                        out.append(tb)
+                found = [tb for tb in (page.extract_tables() or [])
+                         if tb and len(tb) >= 2]
+                if found:
+                    for tb in found:
+                        out.append((tb, "ruled"))
+                    continue
+                try:
+                    alt = page.extract_tables(TEXT_SETTINGS) or []
+                except Exception:
+                    alt = []
+                for tb in alt:
+                    if tb and len(tb) >= 3:
+                        out.append((tb, "banded"))
     except Exception:
         pass
     return out
@@ -416,6 +506,13 @@ def main(argv=None):
                     help="fold the table shading into the signature (it varies "
                          "page to page on a small sample, so it is reported "
                          "but not grouped on by default)")
+    ap.add_argument("--zip", default=None,
+                    help="bundle a few datasheets per layout into this .zip, "
+                         "so the classification can be checked against the "
+                         "real files")
+    ap.add_argument("--per-format", type=int, default=3,
+                    help="datasheets to bundle per layout (default 3)")
+    ap.add_argument("--max-zip-mb", type=float, default=20.0)
     ap.add_argument("--csv", default=None)
     ap.add_argument("--seed", type=int, default=1)
     args = ap.parse_args(argv)
@@ -458,14 +555,15 @@ def main(argv=None):
         groups = defaultdict(list)
         n_tables = skipped = 0
         for i, f in enumerate(files, 1):
-            for tb in tables_in(f):
-                res = classify_table(tb)
+            for tb, ruling in tables_in(f):
+                res = classify_table(tb, ruling)
                 if res is None:
                     skipped += 1
                     continue
                 sig, _facts = res
                 groups[sig].append(f)
                 _EXAMPLES.setdefault(sig, []).append((f.name, tb))
+                _ALL_GROUPS.setdefault((name, sig), []).append(f)
                 n_tables += 1
             if i % 100 == 0:
                 print(f"    ...{i}/{len(files)} files, {n_tables} tables")
@@ -507,6 +605,52 @@ def main(argv=None):
               + ("  <- worth hardcoding" if cov3 >= 70 else
                  "  <- too fragmented to hardcode cheaply"))
 
+    if args.zip and _ALL_GROUPS:
+        import zipfile, io as _io
+        out = Path(args.zip)
+        budget = args.max_zip_mb * 1024 * 1024
+        used, added, left_out = 0, 0, 0
+        manifest = _io.StringIO()
+        w = csv.writer(manifest)
+        w.writerow(["vendor", "layout", "file"])
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+            for (vend, sig), paths in _ALL_GROUPS.items():
+                # Distinct FILES: the same datasheet often contributes several
+                # tables of one layout, and three copies of it teaches nothing.
+                uniq, seen = [], set()
+                for pth in paths:
+                    if pth.name in seen:
+                        continue
+                    seen.add(pth.name)
+                    uniq.append(pth)
+                    if len(uniq) >= args.per_format:
+                        break
+                safe = re.sub(r"[^A-Za-z0-9]+", "_", sig).strip("_")[:60]
+                for pth in uniq:
+                    try:
+                        size = pth.stat().st_size
+                    except OSError:
+                        continue
+                    w.writerow([vend, sig, pth.name])
+                    if used + size > budget:
+                        left_out += 1
+                        continue
+                    z.write(pth, arcname=f"{vend}/{safe}/{pth.name}")
+                    used += size
+                    added += 1
+            z.writestr("MANIFEST.csv", manifest.getvalue())
+            z.writestr("README.txt",
+                       "Datasheets grouped by the table layout dbg_formats.py "
+                       "assigned them.\n\nEach folder is one layout. Check "
+                       "whether the files inside really do\nshare a table "
+                       "structure -- if two obviously different tables sit in "
+                       "one\nfolder, the signature is still too coarse; if one "
+                       "layout is split across\nfolders, it is too fine.\n\n"
+                       "MANIFEST.csv lists every file, including any left out "
+                       "for size.\n")
+        print(f"\n  wrote {out}  ({used / 1e6:.1f} MB, {added} file(s)"
+              + (f", {left_out} left out for size" if left_out else "") + ")")
+
     if args.csv and rows_out:
         with open(args.csv, "w", newline="", encoding="utf-8") as fh:
             w = csv.DictWriter(fh, fieldnames=list(rows_out[0]))
@@ -516,17 +660,23 @@ def main(argv=None):
 
     print("""
   Reading a layout string
-    header     what the column headings look like: param/min/typ/max,
-               temperature-columns, symbol-row, spec-names-as-columns
-    label      where a spec's name sits relative to its numbers: col0,
-               heading-above, in-row (centred in a merged cell), or mixed
-    cond       what the condition column holds: a frequency band, free text,
-               or nothing
-    order      "Gain 22 dB" (value-first) vs "Gain dB 22" (unit-first)
-    subports   the table subdivides a spec by port (S1, P1/P2, RF1)
+    single-value        one value (or one min/typ/max set) per spec
+    multi-value         several values per spec, and what keys them:
+                          keyed-by-frequency   a band the spec is valid over
+                          keyed-by-condition   a stated test condition
+                          keyed-in-cell        the discriminator is inside a
+                                               cell, not a column of its own
+    conditions-present  a conditions column exists but each spec still has one
+                        value -- worth reading, but it does not change the shape
+    grouped-header      a heading spans several columns and labels the numbers
+                        beneath it
 
-  A vendor whose top three layouts cover most of its library is a good
-  candidate for exact readers. One spread across a dozen is not.""")
+  min/typ/max is ONE value set, not several: a spec quoted three ways still has
+  a single answer. What decides the reader is how many SETS a spec carries.
+
+  --zip bundles a few datasheets per layout so the grouping can be checked
+  against the real files.
+""")
     return 0
 
 
