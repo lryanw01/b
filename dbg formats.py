@@ -117,44 +117,129 @@ def table_fills(path, pages=2):
     return ("banded-header" if n <= 2 else "multi-colour"), n
 
 
-def rows_per_spec(rows, max_rows=400):
-    """(mode, mean rows per spec) -- the thing that decides how to read a row.
+def column_profile(path, pages=2, tol=6.0):
+    """Column x-positions and what each column mostly holds.
 
-    A table with one row per spec is read straight; a table where a spec owns
-    four rows is piecewise and every one of those rows is part of the same
-    answer. That difference changes the reader; where the condition column sits
-    does not.
+    Everything below is decided positionally. Word-matching a header failed
+    repeatedly -- a conditions column headed "Comments", or a header that never
+    made it into the extracted rows at all, both read as "no conditions" when
+    the column was plainly there. What a column CONTAINS does not lie.
     """
-    rows = rows[:max_rows]
-    owners, cur, counts = [], None, []
-    for _p, cells in rows:
-        toks = [str(c or "").strip() for c in (cells or [])]
-        if not toks:
+    cols = defaultdict(list)
+    for pno in range(1, pages + 1):
+        try:
+            rows = dsmine.cells_xy(path, pno)
+        except Exception:
             continue
-        named = bool(_SPECWORD.search(toks[0] or ""))
-        has_band = any(dsmine.parse_band_cell(x) for x in toks[:3])
-        numeric = sum(1 for x in toks if dsmine._cell_num(x) is not None)
-        if named:
-            if cur is not None:
-                counts.append(cur)
-            cur = 1
-        elif cur is not None and (has_band or numeric >= 2):
-            cur += 1                    # a continuation row of the same spec
-        elif cur is not None:
-            counts.append(cur)
-            cur = None
-    if cur is not None:
-        counts.append(cur)
-    if not counts:
-        return "unknown", 0.0
-    mean = sum(counts) / len(counts)
-    multi = sum(1 for c in counts if c >= 2)
-    share = multi / len(counts)
-    if share >= 0.4:
-        return "multi-row", mean
-    if share >= 0.12:
-        return "mixed", mean
-    return "single-row", mean
+        for r in rows:
+            for c in (r.get("cells") or []):
+                txt = str(c.get("t") or "").strip()
+                if not txt:
+                    continue
+                x = round(float(c.get("x0", 0)) / tol) * tol
+                cols[x].append(txt)
+    out = []
+    for x in sorted(cols):
+        vals = cols[x]
+        if len(vals) < 3:
+            continue
+        numeric = sum(1 for v in vals if dsmine._cell_num(v) is not None)
+        unitish = sum(1 for v in vals
+                      if re.fullmatch(r"\(?\s*(dB|dBm|GHz|MHz|kHz|ns|ps|mA|"
+                                      r"uA|V|W|mW|deg|\u00b0|%|:1|Ohms?)\s*\)?",
+                                      v, re.I))
+        prose = sum(1 for v in vals
+                    if dsmine._cell_num(v) is None and len(v) > 4)
+        kind = ("unit" if unitish >= 0.5 * len(vals)
+                else "value" if numeric >= 0.6 * len(vals)
+                else "text")
+        out.append({"x": x, "n": len(vals), "kind": kind,
+                    "prose": prose / len(vals), "vals": vals})
+    return out
+
+
+def has_conditions(rows_or_path, path=None):
+    """Is there a conditions/comments column?
+
+    Positional: a column of mostly prose that is NOT the leftmost (parameter)
+    column is a conditions or comments column, whatever its heading says.
+    """
+    p = path or (rows_or_path if isinstance(rows_or_path, Path) else None)
+    if p is None:
+        return False
+    prof = column_profile(p)
+    text_cols = [c for c in prof if c["kind"] == "text" and c["prose"] > 0.5]
+    return len(text_cols) >= 2          # parameter column, plus one more
+
+
+def band_columns(path, pages=2):
+    """True when the frequency bands are COLUMNS, not rows.
+
+    A header row of two or more band cells means each spec row carries one
+    value per band:
+
+        Frequency      | DC - 2 | 2 - 6 | 6 - 10 | 10 - 18
+        Insertion Loss |  0.34  | 0.61  |  0.78  |  1.22
+
+    That is piecewise ACROSS the row, and a reader that takes the first number
+    reports only the easiest band.
+    """
+    for pno in range(1, pages + 1):
+        try:
+            rows = dsmine.cells_xy(path, pno)
+        except Exception:
+            continue
+        for r in rows:
+            toks = [str(c.get("t") or "").strip() for c in (r.get("cells") or [])]
+            if not toks:
+                continue
+            # A band HEADER names no spec: its first cell is blank or a column
+            # title. SMA88's "Frequency MHz 2-500 5-500 5-500" is a spec ROW
+            # measured at three temperatures, and reading it as a band header
+            # inverted the whole table.
+            if _SPECWORD.search(toks[0] or ""):
+                continue
+            bands = [x for x in toks if dsmine.parse_band_cell(x)]
+            if len(bands) >= 2 and len(set(bands)) >= 2:
+                return True
+    return False
+
+
+def is_multirow(path, pages=2, tol=6.0):
+    """Does any spec span more than one row?
+
+    Judged the way you read it: a CONTINUATION row has nothing at the parameter
+    column's x position, but still carries a unit or a value on the same line.
+    Counting rows per spec was the wrong measure -- the exact number never
+    mattered, and averaging it over a whole document buried the multi-row specs
+    among the single-row ones.
+    """
+    prof = column_profile(path, pages, tol)
+    if not prof:
+        return False
+    param_x = prof[0]["x"]
+    value_xs = {c["x"] for c in prof if c["kind"] in ("value", "unit")}
+    if not value_xs:
+        return False
+    conts = 0
+    for pno in range(1, pages + 1):
+        try:
+            rows = dsmine.cells_xy(path, pno)
+        except Exception:
+            continue
+        for r in rows:
+            cells = r.get("cells") or []
+            if not cells:
+                continue
+            xs = {round(float(c.get("x0", 0)) / tol) * tol: str(c.get("t") or "")
+                  for c in cells}
+            at_param = str(xs.get(param_x, "")).strip()
+            on_line = any(x in value_xs and str(v).strip() for x, v in xs.items())
+            if on_line and not at_param:
+                conts += 1
+                if conts >= 3:
+                    return True
+    return False
 
 
 def repeats_across_tables(rows, max_rows=400):
@@ -180,12 +265,14 @@ def repeats_across_tables(rows, max_rows=400):
 
 
 def archetype(path, max_rows=400):
-    """A COARSE archetype: how many rows a spec occupies, and the table style.
+    """A COARSE archetype: how a spec's values are laid out relative to its row.
 
-    Blind to header wording, column order and where the conditions sit -- those
-    are case-by-case details inside a reader. What selects the reader is whether
-    a spec is one row or several, whether it continues into another table, and
-    which house table style it is drawn in.
+    Three things decide which reader a datasheet needs, and nothing else does:
+      * are the frequency bands COLUMNS (piecewise across the row)?
+      * does a spec span more than one ROW (piecewise down the table)?
+      * does the same spec continue into another TABLE?
+    Column order, header wording and where the conditions sit are case-by-case
+    details inside a reader, not different formats.
     """
     try:
         rows = dsmine.rows_for(path)
@@ -198,43 +285,30 @@ def archetype(path, max_rows=400):
             txt = ""
         return ("NO-TEXT" if not txt.strip() else "NO-TABLE"), {}
 
-    shape, mean = rows_per_spec(rows, max_rows)
-    style, ncol = table_fills(path) if path.suffix.lower() == ".pdf" \
-        else ("html", 0)
+    pdf = path.suffix.lower() == ".pdf"
+    bandcols = band_columns(path) if pdf else False
+    multirow = is_multirow(path) if pdf else False
     across = repeats_across_tables(rows, max_rows)
-    conds = has_conditions(rows)
+    conds = has_conditions(rows, path) if pdf else True
+    style, ncol = table_fills(path) if pdf else ("html", 0)
 
-    # Shading is reported but NOT part of the signature by default: measured
-    # across these files it varies page to page inside one vendor, so it split
-    # groups instead of clustering them. --style folds it in if it turns out to
-    # be stable on a larger sample.
-    band = ("1" if mean < 1.3 else "2-3" if mean < 3.5 else "4+")
-    sig = f"{shape:<10} rows/spec~{band}"
+    if bandcols:
+        shape = "band-columns"
+    elif multirow:
+        shape = "multi-row"
+    else:
+        shape = "single-row"
+
+    sig = shape
     if across:
         sig += " | repeats-across-tables"
     if not conds:
-        sig += " | no-condition-column"
+        sig += " | no-conditions-col"
     if _WITH_STYLE[0]:
         sig += f" | style:{style}"
-    return sig, {"shape": shape, "mean_rows_per_spec": round(mean, 2),
-                 "style": style, "fills": ncol, "across": across,
-                 "conditions": conds}
-
-
-def has_conditions(rows):
-    """Is there a conditions column at all, by any of its names?
-
-    "Comments", "Test Conditions", "Conditions", "Notes" and "Test Level" all
-    mean the same column. Matching only the exact phrase reported "no
-    conditions" for tables that plainly had one.
-    """
-    pat = re.compile(r"test\s*cond|condition|comment|remark|note|test\s*level",
-                     re.I)
-    for _p, cells in rows[:80]:
-        for c in (cells or [])[:6]:
-            if pat.search(str(c or "")):
-                return True
-    return False
+    return sig, {"shape": shape, "band_columns": bandcols,
+                 "multirow": multirow, "across": across, "conditions": conds,
+                 "style": style, "fills": ncol}
 
 
 def _has_cond_column(rows):
