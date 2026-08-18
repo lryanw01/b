@@ -1,0 +1,112 @@
+library : 33906 datasheet(s)
+database: 23054 part(s) with a category
+
+==============================================================================
+  AVERAGE HARD SPECS PER DATASHEET   (bad/total in brackets)
+==============================================================================
+  vendor                   amplifier         mixer        filter    attenuator       divider       coupler        switch  phase_shifte
+  ------------------------------------------------------------------------------------------------------------------------------------
+  Analog Devices          6.0 (3/3)    7.3 (1/3)    3.3 (1/3)    6.0 (3/3)             -             -    4.3 (1/3)    5.0 (0/3)
+  MACOM                   5.0 (1/3)    0.3 (3/3)    4.7 (3/3)    0.3 (3/3)    3.0 (2/3)    3.7 (2/3)    5.7 (3/3)    2.7 (3/3)
+  Marki Microwave         6.3 (3/3)    2.0 (3/3)    0.7 (3/3)    3.0 (2/3)    1.7 (3/3)    1.0 (3/3)    2.3 (3/3)             -
+  Mini-Circuits           6.0 (1/3)    4.7 (2/3)    2.3 (3/3)    3.0 (3/3)    4.7 (1/3)    0.0 (3/3)    6.0 (3/3)    3.3 (3/3)
+
+  verdict          n   what it means
+  ------------------------------------------------------------------
+  OK              19   parsed cleanly
+  NO-SPECS        12   text fine, zero specs -- the layout is not being read
+  FEW-SPECS        9   under 3 hard specs -- partially read
+  CONFLICT        47   specs disagree with the catalogue by >15%
+
+  worst cells
+  ------------------------------------------------------------------
+  Mini-Circuits      coupler        3/3 bad (NO-SPECS 3); pool 600
+  MACOM              mixer          3/3 bad (NO-SPECS 2, FEW-SPECS 1); pool 1614
+  MACOM              attenuator     3/3 bad (NO-SPECS 2, FEW-SPECS 1); pool 1302
+  Marki Microwave    filter         3/3 bad (NO-SPECS 2, FEW-SPECS 1); pool 1284
+  Marki Microwave    coupler        3/3 bad (FEW-SPECS 3); pool 204
+  Marki Microwave    divider        3/3 bad (FEW-SPECS 2, CONFLICT 1); pool 204
+  Marki Microwave    mixer          3/3 bad (CONFLICT 3); pool 843
+  Marki Microwave    switch         3/3 bad (CONFLICT 3); pool 18
+  Mini-Circuits      filter         3/3 bad (NO-SPECS 1, CONFLICT 2); pool 4797
+  MACOM              phase_shifter  3/3 bad (FEW-SPECS 1, CONFLICT 2); pool 69
+
+  vendor        category      part                verdict    detail
+  --------------------------------------------------------------------------
+  Analog Device amplifier     HMC311SC70          CONFLICT   gain_db=0.004 vs 15
+  Analog Device amplifier     ADL5611             CONFLICT   gain_db=14.3 vs 22.2
+  Analog Device amplifier     ADL5611             CONFLICT   gain_db=14.3 vs 22.2
+  Analog Device attenuator    ADRF5703            CONFLICT   freq_min=9e-06 vs 9e-09
+  Analog Device attenuator    ADRF5716            CONFLICT   insertion_loss_db=1.6 vs 2.1
+  Analog Device attenuator    HMC346ALP3E         CONFLICT   insertion_loss_db=3.2 vs 2.7; atte
+  Analog Device filter        ADMV8818            NO-SPECS   13377 chars, no hard specs
+  Analog Device mixer         HMC329ALC3B         CONFLICT   conversion_loss_db=13.5 vs 10.5
+  Analog Device switch        HMC345A             CONFLICT   insertion_loss_db=2.9 vs 2; isolat
+  MACOM         amplifier     XB1004-BD           CONFLICT   p1db_dbm=3 vs 19
+  MACOM         attenuator    MA4P303-1088        NO-SPECS   11107 chars, no hard specs
+  MACOM         attenuator    MA4P4002B-402       FEW-SPECS  only 1 hard spec(s)
+  MACOM         attenuator    MADP-000015-000030  NO-SPECS   11107 chars, no hard specs
+  MACOM         coupler       JH-141-PIN          CONFLICT   insertion_loss_db=0.3 vs 0.2; isol
+  MACOM         coupler       JH-141-PIN          CONFLICT   insertion_loss_db=0.3 vs 0.2; isol
+  MACOM         divider       2089-6206-00        NO-SPECS   8606 chars, no hard specs
+  MACOM         divider       MAPD-010424-C20C80  CONFLICT   phase_balance_deg=2400 vs 5
+  MACOM         filter        MAFL-011018         CONFLICT   freq_min=1.125 vs 0.005
+  MACOM         filter        MAFL-011024         CONFLICT   insertion_loss_db=1.1 vs 0.5; freq
+  MACOM         filter        MAFL-009217-CD0AC0  CONFLICT   insertion_loss_db=2 vs 1; freq_min
+  MACOM         mixer         MSS40-B53-B45       NO-SPECS   6809 chars, no hard specs
+  MACOM         mixer         MY51                FEW-SPECS  only 1 hard spec(s)
+  MACOM         mixer         MA4E929B-119        NO-SPECS   2138 chars, no hard specs
+  MACOM         phase_shifter MAPS-010163-DIE     FEW-SPECS  only 2 hard spec(s)
+  MACOM         phase_shifter MAPS-010166         CONFLICT   insertion_loss_db=9 vs 6.5
+  MACOM         phase_shifter MAPS-010143         CONFLICT   insertion_loss_db=5.8 vs 3.2
+  MACOM         switch        MASW-007813-000000  CONFLICT   insertion_loss_db=1 vs 0.8; freq_m
+  MACOM         switch        MASW-000825-12770T  CONFLICT   isolation_db=28 vs 35
+  MACOM         switch        MSW2022-202         CONFLICT   isolation_db=20 vs 52; freq_min=0.
+  Marki Microwa amplifier     adm3-0022pa-h       CONFLICT   current_ma=15 vs 155; nf_db=7 vs 5
+  Marki Microwa amplifier     apm-7099ch          CONFLICT   current_ma=8 vs 72; nf_db=20 vs 5;
+  Marki Microwa amplifier     amm-9852psm         CONFLICT   psat_dbm=2 vs 21; current_ma=5 vs
+  Marki Microwa attenuator    atn06-0040bh        CONFLICT   attenuation_db=40 vs 6.45; impedan
+  Marki Microwa attenuator    atn06-0040ch        CONFLICT   attenuation_db=40 vs 5.8
+  Marki Microwa coupler       c10-0226            FEW-SPECS  only 1 hard spec(s)
+  Marki Microwa coupler       c20-0r518           FEW-SPECS  only 1 hard spec(s)
+  Marki Microwa coupler       ce16-0240           FEW-SPECS  only 1 hard spec(s)
+  Marki Microwa divider       pd-0440             FEW-SPECS  only 1 hard spec(s)
+  Marki Microwa divider       mpdw-0670csp2       CONFLICT   isolation_db=10 vs 24; return_loss
+  Marki Microwa divider       pd-0465             FEW-SPECS  only 1 hard spec(s)
+  Marki Microwa filter        mfbp-00055ch        NO-SPECS   7718 chars, no hard specs
+  Marki Microwa filter        FH-2600             NO-SPECS   6462 chars, no hard specs
+  Marki Microwa filter        mflp-00045gsm2      FEW-SPECS  only 2 hard spec(s)
+  Marki Microwa mixer         mmiqa-1040hpsm      CONFLICT   freq_min=10 vs 0; freq_max=40 vs 1
+  Marki Microwa mixer         mmiq-40100hm        CONFLICT   conversion_loss_db=10 vs 12
+  Marki Microwa mixer         mmiq-0520lch-2      CONFLICT   conversion_loss_db=20 vs 14; nf_db
+  Marki Microwa switch        MSW2-1001ELGA       CONFLICT   insertion_loss_db=18 vs 1.5; isola
+  Marki Microwa switch        MSW2-1001ELGA       CONFLICT   insertion_loss_db=18 vs 1.5; isola
+  Marki Microwa switch        msw2-00002ch        CONFLICT   return_loss_db=4 vs 22
+  Mini-Circuits amplifier     ZVA-1W-103+         CONFLICT   gain_db=33 vs 39; nf_db=6 vs 4; oi
+  Mini-Circuits attenuator    HAT-20-75+          CONFLICT   freq_min=0 vs 2
+  Mini-Circuits attenuator    BW-S1-2W263+        CONFLICT   freq_min=0 vs 26
+  Mini-Circuits attenuator    BW-N10W50+          CONFLICT   freq_min=0 vs 18
+  Mini-Circuits coupler       SYBD-30-62HP+       NO-SPECS   3652 chars, no hard specs
+  Mini-Circuits coupler       SYBD-28-62HP+       NO-SPECS   3655 chars, no hard specs
+  Mini-Circuits coupler       SYBD-16-272HP+      NO-SPECS   3779 chars, no hard specs
+  Mini-Circuits divider       AD3PS-1+            CONFLICT   isolation_db=18 vs 35
+  Mini-Circuits filter        SXBP-140+           NO-SPECS   3440 chars, no hard specs
+  Mini-Circuits filter        SXLP-16+            CONFLICT   freq_min=0 vs 0.0183
+  Mini-Circuits filter        BBFCG2-3275+        CONFLICT   rejection_db=5 vs 10; freq_min=2.8
+  Mini-Circuits mixer         ADE-30W+            CONFLICT   isolation_db=35 vs 12; conversion_
+  Mini-Circuits mixer         ADE-13+             CONFLICT   isolation_db=55 vs 11; conversion_
+  Mini-Circuits phase_shifter SCPHS-180+          CONFLICT   vswr=1.7 vs 3; freq_min=90 vs 0.09
+  Mini-Circuits phase_shifter JSPHS-446+          CONFLICT   freq_max=0.446 vs 0.366
+  Mini-Circuits phase_shifter JSPHS-1000+         CONFLICT   freq_max=1 vs 0.7
+  Mini-Circuits switch        TTL-1SP8T-183       CONFLICT   isolation_db=60 vs 50
+  Mini-Circuits switch        ZTM-4SP8T-26        CONFLICT   freq_min=0 vs 26.5
+  Mini-Circuits switch        RCM-6SPDT-18        CONFLICT   freq_min=0 vs 18
+
+  wrote problems.zip  (2.1 MB, 9 file(s), 59 left out for size)
+  MANIFEST.csv inside lists all 68 flagged part(s).
+
+  Reading the matrix
+    A low average in ONE cell while its neighbours are fine is a vendor layout
+    problem, not a data gap. A whole row low means that vendor's datasheets are
+    not being read at all. A whole column low means the category's specs are
+    not in the registry yet.
