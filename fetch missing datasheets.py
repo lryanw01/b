@@ -68,6 +68,61 @@ if partdb is None:
 # everythingRF is deliberately absent: it is an aggregator, its "datasheet"
 # links point back at manufacturers, and its parts are covered by the vendors
 # below wherever the manufacturer is one of them.
+# Where a vendor publishes its datasheets, keyed by part number. 464 of the
+# 1400 ADI parts were skipped for having no datasheet_url in the database --
+# not because the datasheet does not exist, but because the row that created
+# the part never carried a link. ADI's URLs are entirely predictable from the
+# part number, so they can be built rather than looked up.
+#
+# Several forms are tried per part: vendors are inconsistent about case, and
+# ADI file a suffixed order code (HMC284AMS8GE) under its base part (HMC284A).
+URL_TEMPLATES = {
+    "adi": [
+        "https://www.analog.com/media/en/technical-documentation/"
+        "data-sheets/{pn}.pdf",
+        "https://www.analog.com/media/en/technical-documentation/"
+        "data-sheets/{pn_lower}.pdf",
+        "https://www.analog.com/media/en/technical-documentation/"
+        "data-sheets/{pn_base}.pdf",
+    ],
+    "hittite": [
+        "https://www.analog.com/media/en/technical-documentation/"
+        "data-sheets/{pn}.pdf",
+        "https://www.analog.com/media/en/technical-documentation/"
+        "data-sheets/{pn_base}.pdf",
+    ],
+    "minicircuits": ["https://www.minicircuits.com/pdfs/{pn}.pdf"],
+}
+
+# Order-code suffixes ADI append to a base part number. Stripped to build the
+# fallback URL: the datasheet is filed under the base part.
+_SUFFIX_RE = re.compile(
+    r"(?:-?(?:TR|R7|R2|P7|EP|Z|E|LP\d\w*|MS\d\w*|CC\d*|BC\d*|SC\d*|"
+    r"DIE|CHIPS?|WP|SMB|EVALZ?|ACC?Z?)\d*)+$", re.I)
+
+
+def url_candidates(vendor_key, mpn, stored=""):
+    """Every URL worth trying for this part, best first."""
+    out = []
+    s = str(stored or "").strip()
+    if s.startswith("http") and not url_problem(s):
+        out.append(s)
+    pn = str(mpn or "").strip()
+    if not pn:
+        return out
+    base = _SUFFIX_RE.sub("", pn) or pn
+    fields = {"pn": pn, "pn_lower": pn.lower(), "pn_upper": pn.upper(),
+              "pn_base": base}
+    for tmpl in URL_TEMPLATES.get(vendor_key, []):
+        try:
+            u = tmpl.format(**fields)
+        except (KeyError, IndexError):
+            continue
+        if u not in out and not url_problem(u):
+            out.append(u)
+    return out
+
+
 VENDOR_MATCH = {
     "minicircuits": "%mini%circuit%",
     # ADI's datasheet URLs come from the parametric export, which states them
@@ -139,9 +194,12 @@ def find_targets(vendors, limit, include_qualified=False, state=None,
             if not include_qualified and (specs.get("space")
                                           or specs.get("space_variant")):
                 continue
+            # (--all sets include_qualified: a full-coverage fetch wants every
+            # part's datasheet, not only the ones whose qualification is
+            # unknown.)
             url = str(specs.get("datasheet_url") or "").strip()
-            if not url.startswith("http"):
-                continue
+            if not url.startswith("http") and key not in URL_TEMPLATES:
+                continue        # nothing stored and no way to build one
             have_file = False
             forced = key in force
             have = index.get(loose(r["mpn"])) if index else None
@@ -554,8 +612,16 @@ def main(argv=None):
                     help="re-attempt EVERY part for these vendors, ignoring "
                          "existing files, recorded failures and the resume "
                          "point (e.g. --force macom)")
+    ap.add_argument("--resume-position", action="store_true",
+                    help="skip everything before the furthest part that "
+                         "already has a file. Only correct when a folder is "
+                         "being filled from empty.")
     ap.add_argument("--from-start", action="store_true",
-                    help="ignore the resume point and walk from the top")
+                    help="(kept for compatibility; positional resume is now "
+                         "off by default)")
+    ap.add_argument("--all", dest="include_qualified", action="store_true",
+                    help="fetch every part, including ones that already state "
+                         "a space qualification")
     ap.add_argument("--retry-dead", action="store_true",
                     help="re-attempt URLs a previous run recorded as dead")
     ap.add_argument("--test-url", default=None,
@@ -564,8 +630,6 @@ def main(argv=None):
                     help="print the reason for each failure")
     ap.add_argument("--dry-run", action="store_true",
                     help="list what would be fetched and stop")
-    ap.add_argument("--include-qualified", action="store_true",
-                    help="also fetch parts that already state a qualification")
     args = ap.parse_args(argv)
 
     roots = dsmine.default_roots() if dsmine else []
@@ -614,7 +678,14 @@ def main(argv=None):
     # Positional resume: pick up after the furthest part that already has a
     # file, rather than walking the whole vendor from the top every time.
     held = sum(1 for x in targets if x.get("have"))
-    if not args.from_start and targets:
+    # Positional resume is now OPT-IN. It assumes files are acquired in order,
+    # which was true when a folder was being filled from empty. It is false
+    # once the library is partly full from other runs: ADI had 559 files
+    # scattered through the list, the furthest sat at position 932 of 936, and
+    # resuming after it skipped ~400 parts that have no file at all.
+    # Per-part state already prevents redundant work, so ordering is not needed
+    # for that.
+    if args.resume_position and targets:
         last = -1
         for i, tgt in enumerate(targets):
             if tgt.get("have"):
@@ -679,13 +750,20 @@ def main(argv=None):
             if reopened:
                 print("  (page had closed -- opened a new tab)")
                 current_origin = None
-            bad = url_problem(t["url"])
-            if bad:
+            # Try every URL this part could live at, not only the stored one.
+            # A 404 on the order code is routine -- ADI file HMC284AMS8GE under
+            # HMC284A -- and giving up after the first attempt is what left
+            # hundreds of ADI parts without a datasheet that plainly exists.
+            cands = url_candidates(t["vendor_key"], t["mpn"], t.get("url"))
+            if not cands:
                 failed += 1
-                remember(state, t["mpn"], t["url"], 0, bad)
-                print(f"  [{i}/{len(targets)}] {VENDOR_FOLDER.get(t['vendor_key'], '?')[:14]:<14} "
-                      f"{t['mpn']:<20} SKIP {bad}")
+                remember(state, t["mpn"], t.get("url") or "", 0,
+                         "no usable URL")
+                print(f"  [{i}/{len(targets)}] {_vlabel(t):<14} "
+                      f"{t['mpn']:<20} SKIP no usable URL")
                 continue
+            t["_candidates"] = cands
+            t["url"] = cands[0]
             org = origin_of(t["url"])
             if org and org != current_origin:
                 try:
@@ -696,7 +774,16 @@ def main(argv=None):
                 except Exception as e:
                     print(f"  ! could not open {org}: {type(e).__name__}")
                     current_origin = None
-            blob, status, why = fetch_via_page(page, t["url"], args.debug)
+            blob = status = None
+            why = ""
+            for attempt_url in t.get("_candidates", [t["url"]]):
+                blob, status, why = fetch_via_page(page, attempt_url,
+                                                   args.debug)
+                if blob is not None:
+                    t["url"] = attempt_url
+                    break
+                if args.debug:
+                    print(f"      {attempt_url[-46:]} -> {why}")
             if args.debug:
                 print(f"      {why}  status={status}  "
                       f"bytes={len(blob) if blob else 0}")
