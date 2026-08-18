@@ -116,6 +116,14 @@ def _col_kind(vals):
         return "value"
     if prose >= 0.5 * n:
         return "text"
+    # A conditions column is mostly EMPTY -- ADI state a condition on some rows
+    # and leave the rest blank, so "mostly prose" never fires and the column
+    # read as "other". A few long non-numeric entries and no numbers is a
+    # conditions/comments column, however sparse.
+    longish = sum(1 for v in filled
+                  if dsmine._cell_num(v) is None and len(v) >= 10)
+    if longish >= 2 and num <= 0.2 * n:
+        return "text"
     return "other"
 
 
@@ -136,6 +144,31 @@ def _stacked(cell):
     return len(parts)
 
 
+def _span_header_rows(rows, width):
+    """Indices of rows that LABEL the columns beneath rather than hold data.
+
+    Two shapes, both common:
+      * a section band -- one text cell across an otherwise empty row
+        ("BASEBAND AMPLIFIER", "Frequency Range")
+      * a group header -- a cell spanning the min/typ/max columns, with the
+        second tier ("Min Typ Max") on the row below
+
+    Counting either as a data row makes the table look like it has a spec with
+    no values, and hides the two-tier header that says which columns the
+    numbers underneath belong to.
+    """
+    out = set()
+    for i, r in enumerate(rows):
+        filled = [c for c in r if str(c or "").strip()]
+        if not filled:
+            continue
+        numeric = sum(1 for c in filled
+                      if dsmine._cell_num(str(c)) is not None)
+        if len(filled) <= max(1, width // 3) and numeric == 0 and width >= 3:
+            out.add(i)
+    return out
+
+
 def classify_table(tbl):
     """(signature, facts) for ONE table.
 
@@ -150,7 +183,11 @@ def classify_table(tbl):
         return None
     width = max(len(r) for r in rows)
     rows = [r + [""] * (width - len(r)) for r in rows]
-    cols = list(zip(*rows))
+    span_rows = _span_header_rows(rows, width)
+    data_rows = [r for i, r in enumerate(rows) if i not in span_rows]
+    if len(data_rows) < 2:
+        data_rows = rows
+    cols = list(zip(*data_rows))
     kinds = [_col_kind(c) for c in cols]
 
     # The parameter column is the leftmost text column.
@@ -178,6 +215,7 @@ def classify_table(tbl):
 
     # Bands as COLUMN HEADINGS: the header row holds two or more ranges.
     header = rows[0]
+    grouped = len(span_rows) >= 1 and len(rows) - len(span_rows) >= 2
     band_hdr = sum(1 for c in header if dsmine.parse_band_cell(c))
     if band_hdr >= 2 and not dsmine.parse_band_cell(header[pcol] or ""):
         shape = "band-columns"
@@ -193,23 +231,24 @@ def classify_table(tbl):
         # Two values for one spec is multi-row whether or not the thing telling
         # them apart sits in a column this code recognised as "conditions".
         stacked = 0
-        for r in rows[1:]:
+        for r in data_rows[1:]:
             if _stacked(r[pcol]) > 1:
                 continue        # a stacked PARAMETER cell is several specs
             if max([_stacked(r[i]) for i in val_cols] or [1]) > 1:
                 stacked += 1
         conts = 0
-        for r in rows[1:]:
+        for r in data_rows[1:]:
             if r[pcol].strip():
                 continue
             if any(r[i].strip() for i in val_cols):
                 conts += 1
         # A blank parameter with a value beneath a named one is the same shape
         # even when it is only ONE extra row.
-        if conts == 1 and any(r[pcol].strip() for r in rows[1:]):
+        if conts == 1 and any(r[pcol].strip() for r in data_rows[1:]):
             conts = 2
         from collections import Counter as _C
-        names = _C(r[pcol].strip().lower() for r in rows[1:] if r[pcol].strip())
+        names = _C(r[pcol].strip().lower() for r in data_rows[1:]
+                   if r[pcol].strip())
         repeated = bool(names) and max(names.values()) >= 2
         shape = ("multi-row" if (stacked >= 1 or conts >= 2 or repeated)
                  else "single-row")
@@ -240,6 +279,8 @@ def classify_table(tbl):
         conds = "conditions-in-cell"
     else:
         conds = "no-conditions"
+    if grouped:
+        conds += " | grouped-header"
     return (f"{shape:<11} | {values:<12} | {conds}",
             {"shape": shape, "grid": grid, "roles": roles,
              "rows": len(rows), "width": width, "cond_cols": len(cond_cols)})
