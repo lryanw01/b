@@ -85,12 +85,6 @@ URL_TEMPLATES = {
         "https://www.analog.com/media/en/technical-documentation/"
         "data-sheets/{pn_base}.pdf",
     ],
-    "hittite": [
-        "https://www.analog.com/media/en/technical-documentation/"
-        "data-sheets/{pn}.pdf",
-        "https://www.analog.com/media/en/technical-documentation/"
-        "data-sheets/{pn_base}.pdf",
-    ],
     "minicircuits": ["https://www.minicircuits.com/pdfs/{pn}.pdf"],
 }
 
@@ -123,21 +117,22 @@ def url_candidates(vendor_key, mpn, stored=""):
     return out
 
 
+# Several SQL patterns per key, because one manufacturer is spelled several
+# ways in the database. Hittite was a separate key, so "--vendors adi" matched
+# only "%analog devices%" and missed the Hittite rows -- the GUI's Browse folds
+# them into Analog Devices and shows 1213 parts, while the fetcher saw 936.
+# The same fold has to happen here or the two disagree about what exists.
 VENDOR_MATCH = {
-    "minicircuits": "%mini%circuit%",
-    # ADI's datasheet URLs come from the parametric export, which states them
-    # outright. Hittite is matched too: the parts were folded into ADI but the
-    # vendor string on older rows still says Hittite.
-    "adi": "%analog devices%",
-    "hittite": "%hittite%",
-    "marki":        "%marki%",
-    "qorvo":        "%qorvo%",
-    "macom":        "%macom%",
+    "minicircuits": ["%mini%circuit%"],
+    "adi":          ["%analog devices%", "%hittite%", "%linear tech%",
+                     "%maxim integrated%"],
+    "marki":        ["%marki%"],
+    "qorvo":        ["%qorvo%"],
+    "macom":        ["%macom%", "%m/a-com%"],
 }
 VENDOR_FOLDER = {
     "minicircuits": "Mini-Circuits", "marki": "Marki-Microwave",
-    "qorvo": "Qorvo", "macom": "MACOM",
-    "adi": "Analog-Devices", "hittite": "Analog-Devices",
+    "qorvo": "Qorvo", "macom": "MACOM", "adi": "Analog-Devices",
 }
 
 CHROME_CANDIDATES = {
@@ -177,10 +172,13 @@ def find_targets(vendors, limit, include_qualified=False, state=None,
     index = dsmine.build_index() if dsmine else {}
     out, seen = [], set()
     for key in vendors:
-        like = VENDOR_MATCH[key]
+        pats = VENDOR_MATCH[key]
+        if isinstance(pats, str):
+            pats = [pats]
+        where = " OR ".join("lower(p.vendor) LIKE ?" for _ in pats)
         rows = conn.execute(
-            "SELECT p.id, p.mpn, p.vendor, p.category "
-            "FROM parts p WHERE lower(p.vendor) LIKE ?", (like,)).fetchall()
+            f"SELECT p.id, p.mpn, p.vendor, p.category "
+            f"FROM parts p WHERE {where}", tuple(pats)).fetchall()
         for r in rows:
             if r["id"] in seen:
                 continue
