@@ -185,13 +185,18 @@ def classify_table(tbl):
         # A continuation row: no parameter, but a condition and a value.
         # Multi-row shows up three ways, all meaning the same thing: one spec,
         # several values keyed by condition.
+        # A stacked VALUE cell is multi-row on its own. Requiring a separate
+        # conditions column missed the common case where the condition is text
+        # in an ordinary column:
+        #     Slew Rate | max gain | 1100
+        #               | min gain | 1500
+        # Two values for one spec is multi-row whether or not the thing telling
+        # them apart sits in a column this code recognised as "conditions".
         stacked = 0
         for r in rows[1:]:
             if _stacked(r[pcol]) > 1:
                 continue        # a stacked PARAMETER cell is several specs
-            depth = max([_stacked(r[i]) for i in val_cols] or [1])
-            cdepth = max([_stacked(r[i]) for i in cond_cols] or [1])
-            if depth > 1 and (cdepth > 1 or cond_cols):
+            if max([_stacked(r[i]) for i in val_cols] or [1]) > 1:
                 stacked += 1
         conts = 0
         for r in rows[1:]:
@@ -199,6 +204,10 @@ def classify_table(tbl):
                 continue
             if any(r[i].strip() for i in val_cols):
                 conts += 1
+        # A blank parameter with a value beneath a named one is the same shape
+        # even when it is only ONE extra row.
+        if conts == 1 and any(r[pcol].strip() for r in rows[1:]):
+            conts = 2
         from collections import Counter as _C
         names = _C(r[pcol].strip().lower() for r in rows[1:] if r[pcol].strip())
         repeated = bool(names) and max(names.values()) >= 2
@@ -222,7 +231,15 @@ def classify_table(tbl):
     # a spec carries several condition-keyed values, and whether the values are
     # a min/typ/max triple or a single column. The rest is reported as detail.
     values = "min/typ/max" if grid == "min/typ/max" else "single-value"
-    conds = "with-conditions" if cond_cols else "no-conditions"
+    # If a spec has several values, something distinguishes them -- so calling
+    # the table "no-conditions" would contradict its own shape. Where no column
+    # was recognised as conditions, the discriminator is inside a cell.
+    if cond_cols:
+        conds = "with-conditions"
+    elif shape == "multi-row":
+        conds = "conditions-in-cell"
+    else:
+        conds = "no-conditions"
     return (f"{shape:<11} | {values:<12} | {conds}",
             {"shape": shape, "grid": grid, "roles": roles,
              "rows": len(rows), "width": width, "cond_cols": len(cond_cols)})
@@ -257,6 +274,29 @@ def tables_in(path, pages=4):
                 for tb in page.extract_tables() or []:
                     if tb and len(tb) >= 2:
                         out.append(tb)
+    except Exception:
+        pass
+    return out
+
+
+RF_CATEGORIES = ["amplifier", "mixer", "filter", "attenuator", "divider",
+                 "coupler", "switch", "phase_shifter", "limiter", "multiplier",
+                 "oscillator", "transformer", "termination", "equalizer",
+                 "detector", "adapter", "cable", "dc_block", "bias_tee"]
+
+
+def category_index():
+    """{loose part number: category} from the database."""
+    out = {}
+    partdb = _opt("partdb")
+    if partdb is None:
+        return out
+    try:
+        for r in partdb.db().execute(
+                "SELECT mpn, category FROM parts WHERE category IS NOT NULL "
+                "AND category != ''"):
+            out.setdefault(re.sub(r"[^A-Z0-9]", "", r["mpn"].upper()),
+                           r["category"])
     except Exception:
         pass
     return out
@@ -322,6 +362,12 @@ def main(argv=None):
                     help="example files per format")
     ap.add_argument("--min-share", type=float, default=1.0,
                     help="hide formats below this %% of the vendor")
+    ap.add_argument("--categories", nargs="*", default=None,
+                    help="categories to survey (default: the RF component "
+                         "types; transistors, eval boards and the like are "
+                         "left out)")
+    ap.add_argument("--any-category", action="store_true",
+                    help="do not filter by category at all")
     ap.add_argument("--dump", type=int, default=0,
                     help="print this many raw table grids per layout, so the "
                          "classification can be checked against the table")
@@ -343,12 +389,30 @@ def main(argv=None):
         return 1
 
     rows_out = []
+    index = category_index() if not args.any_category else {}
+    allowed = {c.lower() for c in (args.categories or RF_CATEGORIES)}
     for name, dset in dirs:
-        files = files_in(dset, args.sample)
+        files = files_in(dset, 0)
+        if index:
+            # A transistor or an evaluation board tells us nothing about how RF
+            # spec tables are laid out, and there are enough of them to skew the
+            # shares. Parts outside the working categories are left out.
+            kept = [f for f in files
+                    if index.get(re.sub(r"[^A-Z0-9]", "", f.stem.upper()), "")
+                    .lower() in allowed]
+            dropped = len(files) - len(kept)
+            files = kept
+        else:
+            dropped = 0
+        if args.sample and len(files) > args.sample:
+            files = random.sample(files, args.sample)
+            files.sort()
         if not files:
             continue
         print(f"\n{'=' * 76}")
-        print(f"  {name}   {len(files)} datasheet(s) sampled")
+        print(f"  {name}   {len(files)} datasheet(s) sampled"
+              + (f", {dropped} outside the working categories" if dropped
+                 else ""))
         print(f"{'=' * 76}")
         groups = defaultdict(list)
         n_tables = skipped = 0
