@@ -54,14 +54,12 @@ PS C:\Users\lane.white\Downloads\rfparts> python "C:\Users\lane.white\Downloads\
 
   no piecewise bands found (single-value specs only, or the table did not parse)
 
-  STORED VALUES (5)
+  STORED VALUES (3)
     spec                           value  from
     ------------------------------------------------------------
     freq_max                        2.15  prose-vote
     freq_min                        0.95  prose-vote
-    group_delay_ns                  1.39  table-columns
-    insertion_loss_db              10.23  table-columns
-    return_loss_db                  5.26  table-columns
+    group_delay_ns                   1.0  prose
 
   What to look for
     - every band of a piecewise spec present, with the right numbers
@@ -193,12 +191,12 @@ PS C:\Users\lane.white\Downloads\rfparts> python "C:\Users\lane.white\Downloads\
   STORED VALUES (10)
     spec                           value  from
     ------------------------------------------------------------
-    current_ma                      79.0  table-header
+    current_ma                      87.0  table-temp
     freq_max                       500.0  table
     freq_min                         2.0  table
-    gain_db                         18.0  table-header
+    gain_db                         17.0  table-temp
     isolation_db                    19.0  table-text
-    nf_db                            3.5  table-header
+    nf_db                            5.5  table-temp
     oip3_dbm                        30.0  table-text
     power_dissipation_w            0.742  prose
     psat_dbm                        20.5  prose
