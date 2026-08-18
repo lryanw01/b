@@ -71,127 +71,189 @@ _SPECWORD = re.compile(
     re.I)
 
 
-def fingerprint(path, max_rows=400):
-    """A short structural signature, plus the facts behind it."""
+def _indent_levels(path, pages=2, tol=6.0):
+    """Distinct left-edge x positions of first cells, as indentation levels.
+
+    Indentation is the only reliable sign of hierarchy: ADI indent "Low-Side
+    IP3" under "Input Third-Order Intercept" with no other marker. Column
+    ORDER and header WORDING vary constantly within one house style and say
+    nothing about how to read the table, so neither belongs in the archetype.
+    """
+    # Only rows whose first cell NAMES A SPEC. Measuring every row measured the
+    # page -- headers, footers, side captions -- and reported three or four
+    # levels for a perfectly flat table, so almost everything looked
+    # hierarchical.
+    xs = []
+    for pno in range(1, pages + 1):
+        try:
+            rows = dsmine.cells_xy(path, pno)
+        except Exception:
+            continue
+        for r in rows:
+            cells = r.get("cells") or []
+            if not cells:
+                continue
+            first = str(cells[0].get("t") or "").strip()
+            if first and _SPECWORD.search(first):
+                xs.append(round(float(cells[0]["x0"]), 1))
+    if len(xs) < 4:
+        return 1
+    xs.sort()
+    tiers, cur, counts = [xs[0]], xs[0], [1]
+    for x in xs[1:]:
+        if x - cur > tol:
+            tiers.append(x)
+            counts.append(1)
+            cur = x
+        else:
+            counts[-1] += 1
+    # A tier with only one or two rows is noise, not an indent level.
+    real = [c for c in counts if c >= 3]
+    return min(max(1, len(real)), 4)
+
+
+def archetype(path, max_rows=400):
+    """A COARSE table archetype: how specs sit relative to their conditions.
+
+    Deliberately blind to header wording, column order and which specs appear.
+    Those differ constantly inside one house style and are handled case by case
+    in a reader; what decides WHICH reader is the geometry:
+
+        matrix        spec names run across the header, rows are variants
+        banded        one spec spans several rows, one per condition/band
+        hierarchical  sub-rows indented beneath a parent label
+        flat          one row per spec, values in columns
+        keyvalue      label/value pairs with no column grid
+    """
     try:
         rows = dsmine.rows_for(path)
     except Exception as e:
-        return "ERROR", {"note": f"{type(e).__name__}"}
+        return "ERROR", {"note": type(e).__name__}
     if not rows:
         try:
             txt = dsmine.datasheet_text(path)
         except Exception:
             txt = ""
-        if not txt.strip():
-            return "NO-TEXT", {"note": "nothing extracted"}
-        return "NO-TABLE", {"note": f"{len(txt)} chars, no table rows"}
-
+        return ("NO-TEXT" if not txt.strip() else "NO-TABLE"), {}
     rows = rows[:max_rows]
-    feats = {"rows": len(rows)}
-    header_kind = None
-    label_pos = None
-    cond_kind = None
 
-    widths = Counter(len(c) for _p, c in rows if c)
-    feats["cols"] = widths.most_common(1)[0][0] if widths else 0
-
-    has_minmax = has_temp = has_symbol = has_units = has_cond = False
-    has_subport = band_in_cond = heading_above = centred_label = False
-    unit_first = value_first = False
-
-    for idx, (_p, cells) in enumerate(rows):
+    spec_rows = band_rows = wide_rows = 0
+    multi_band_blocks = 0
+    run = 0
+    matrix_hdr = False
+    for _p, cells in rows:
         toks = [str(c or "").strip() for c in cells]
         if not toks:
             continue
-        if any(_MIN.match(x) for x in toks) and any(_TYP.match(x) or
-                                                    _MAX.match(x)
-                                                    for x in toks):
-            has_minmax = True
-            if any(_PARAM.match(x) for x in toks[:1]):
-                header_kind = "param/min/typ/max"
-        if sum(1 for x in toks if _TEMP.match(x)) >= 2:
-            has_temp = True
-        if any(_SYMBOL.match(x) for x in toks):
-            has_symbol = True
-        if any(_UNITS.match(x) for x in toks):
-            has_units = True
-        if any(_COND.match(x) for x in toks):
-            has_cond = True
-        if any(_SUBPORT.match(x) for x in toks[:2]):
-            has_subport = True
-        bands = [x for x in toks[:3] if dsmine.parse_band_cell(x)]
-        if bands:
-            band_in_cond = True
-            # Where does this band row's name live?
-            own = _SPECWORD.search(toks[0] or "")
-            if own:
-                centred_label = True
-            else:
-                for back in range(1, 4):
-                    if idx - back < 0:
-                        break
-                    prev = rows[idx - back][1] or []
-                    if prev and _SPECWORD.search(str(prev[0] or "")) \
-                            and not any(dsmine.parse_band_cell(x)
-                                        for x in list(prev)[:3]):
-                        heading_above = True
-                        break
-        # spec names spread ACROSS a row is the column-oriented layout
+        if len(toks) >= 3:
+            wide_rows += 1
         if sum(1 for x in toks if _SPECWORD.search(x)) >= 3:
-            header_kind = header_kind or "spec-names-as-columns"
-        # "Gain 22 dB" vs "Gain dB 22"
-        joined = " ".join(toks[:4])
-        if re.search(r"[A-Za-z]\s+[-+]?\d+(?:\.\d+)?\s*(dB|dBm|GHz|MHz|ns)\b",
-                     joined):
-            value_first = True
-        if re.search(r"(dB|dBm|GHz|MHz|ns)\s+[-+]?\d+(?:\.\d+)?", joined):
-            unit_first = True
-
-    if header_kind is None:
-        if has_temp:
-            header_kind = "temperature-columns"
-        elif has_symbol:
-            header_kind = "symbol-row(Fc/F1-F2)"
-        elif has_minmax:
-            header_kind = "min/typ/max (no Parameter)"
+            matrix_hdr = True
+        has_band = any(dsmine.parse_band_cell(x) for x in toks[:3])
+        if has_band:
+            band_rows += 1
+            run += 1
         else:
-            header_kind = "no-header"
+            if run >= 2:
+                multi_band_blocks += 1
+            run = 0
+            if _SPECWORD.search(toks[0] or ""):
+                spec_rows += 1
+    if run >= 2:
+        multi_band_blocks += 1
 
-    if centred_label and heading_above:
-        label_pos = "mixed"
-    elif heading_above:
-        label_pos = "heading-above"
-    elif centred_label:
-        label_pos = "in-row"
+    levels = _indent_levels(path)
+
+    if matrix_hdr and band_rows <= 2:
+        kind = "matrix"
+    elif multi_band_blocks >= 2:
+        kind = "banded"
+    elif levels >= 2 and spec_rows >= 6:
+        kind = "hierarchical"
+    elif wide_rows >= 4:
+        kind = "flat"
     else:
-        label_pos = "col0"
+        kind = "keyvalue"
 
-    cond_kind = "band" if band_in_cond else ("cond-col" if has_cond else "none")
+    # Where the test conditions live -- the other thing a reader must know.
+    cond = ("in-rows" if multi_band_blocks >= 2 or band_rows >= 3
+            else "in-column" if _has_cond_column(rows)
+            else "in-label" if _cond_in_labels(rows)
+            else "none")
 
-    order = ("value-first" if value_first and not unit_first else
-             "unit-first" if unit_first and not value_first else
-             "both" if unit_first and value_first else "-")
+    return f"{kind}  (conditions {cond})", {
+        "kind": kind, "cond": cond, "indent_levels": levels,
+        "band_rows": band_rows, "blocks": multi_band_blocks,
+        "spec_rows": spec_rows}
 
-    sig = (f"{header_kind} | label:{label_pos} | cond:{cond_kind} | "
-           f"{order}" + (" | subports" if has_subport else "")
-           + (" | units-col" if has_units else ""))
-    feats.update({"header": header_kind, "label": label_pos, "cond": cond_kind,
-                  "order": order, "subports": has_subport,
-                  "units_col": has_units})
-    return sig, feats
+
+def _has_cond_column(rows):
+    for _p, cells in rows[:60]:
+        for c in cells[:4]:
+            if _COND.match(str(c or "").strip()):
+                return True
+    return False
+
+
+def _cond_in_labels(rows):
+    """Conditions written into the label itself: 'Gain @ 2 GHz', 'IL, 25C'."""
+    hits = 0
+    for _p, cells in rows:
+        first = str((cells or [""])[0] or "")
+        if _SPECWORD.search(first) and re.search(
+                r"@|\bat\b|,\s*\d|\d\s*(GHz|MHz|\u00b0?C)\b", first, re.I):
+            hits += 1
+            if hits >= 3:
+                return True
+    return False
 
 
 def vendor_dirs():
-    out = []
+    """One entry per vendor, with every physical folder that holds its files.
+
+    default_roots() returns several roots, and on a case-insensitive filesystem
+    "data\\datasheets" and "Data\\datasheets" are the SAME directory reached by
+    two different strings -- so every vendor was surveyed two or three times.
+    Deduped on the resolved, case-folded path, then merged by vendor name so a
+    vendor split across roots is still counted once.
+    """
+    byname, seen = {}, set()
     for root in dsmine.default_roots():
         r = Path(root)
-        if r.is_dir():
-            out += [d for d in sorted(r.iterdir()) if d.is_dir()]
-    return out
+        if not r.is_dir():
+            continue
+        try:
+            key = str(r.resolve()).casefold()
+        except OSError:
+            key = str(r).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        for d in sorted(r.iterdir()):
+            if not d.is_dir():
+                continue
+            try:
+                dk = str(d.resolve()).casefold()
+            except OSError:
+                dk = str(d).casefold()
+            if dk in seen:
+                continue
+            seen.add(dk)
+            byname.setdefault(d.name, []).append(d)
+    return [(name, dirs) for name, dirs in sorted(byname.items())]
 
 
-def files_in(d, limit=0):
-    fs = [f for f in d.rglob("*") if f.is_file() and f.suffix.lower() in EXTS]
+def files_in(dirs, limit=0):
+    fs, seen = [], set()
+    for d in dirs:
+        for f in d.rglob("*"):
+            if not (f.is_file() and f.suffix.lower() in EXTS):
+                continue
+            k = f.name.casefold()
+            if k in seen:          # the same file reached through two roots
+                continue
+            seen.add(k)
+            fs.append(f)
     if limit and len(fs) > limit:
         fs = random.sample(fs, limit)
     return sorted(fs)
@@ -213,22 +275,22 @@ def main(argv=None):
     random.seed(args.seed)
     dirs = vendor_dirs()
     if args.vendor:
-        dirs = [d for d in dirs if args.vendor.lower() in d.name.lower()]
+        dirs = [(n, ds) for n, ds in dirs if args.vendor.lower() in n.lower()]
     if not dirs:
         print("No vendor folders found under the datasheet library.")
         return 1
 
     rows_out = []
-    for d in dirs:
-        files = files_in(d, args.sample)
+    for name, dset in dirs:
+        files = files_in(dset, args.sample)
         if not files:
             continue
         print(f"\n{'=' * 76}")
-        print(f"  {d.name}   {len(files)} datasheet(s) sampled")
+        print(f"  {name}   {len(files)} datasheet(s) sampled")
         print(f"{'=' * 76}")
         groups = defaultdict(list)
         for i, f in enumerate(files, 1):
-            sig, _feats = fingerprint(f)
+            sig, _feats = archetype(f)
             groups[sig].append(f)
             if i % 200 == 0:
                 print(f"    ...{i}/{len(files)}")
@@ -246,7 +308,7 @@ def main(argv=None):
             if args.show:
                 print(f"        e.g. " + ", ".join(p.name for p in
                                                    hits[:args.show]))
-            rows_out.append({"vendor": d.name, "n": len(hits),
+            rows_out.append({"vendor": name, "n": len(hits),
                              "share_pct": f"{share:.1f}", "layout": sig,
                              "examples": ", ".join(p.name
                                                    for p in hits[:3])})
