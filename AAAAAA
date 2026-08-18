@@ -1,0 +1,20 @@
+I'm seeing those in:
+   42   14.0%  param/min/typ/max | label:in-row | cond:band | both | units-col
+are very very similar to
+    21    7.0%  param/min/typ/max | label:mixed | cond:band | both | units-col
+
+The only difference is the labeling, which can be dealt with on a case-by-case basis
+
+This table is also very similar to this:
+     11    3.7%  param/min/typ/max | label:col0 | cond:none | both | subports | units-col
+
+This one is only different because of the order of the columns. I dont care about that, that can also be dealt with on a case by case basis.
+
+
+Continuing, I see the same with:
+    33   11.0%  param/min/typ/max | label:col0 | cond:none | both | units-col
+
+and 
+     30   10.0%  param/min/typ/max | label:col0 | cond:cond-col | both | units-col
+
+These are the same exact type of table. I am more concerned about spacing, indentation, test conditioning stuff. The specs should be more positionally related.
