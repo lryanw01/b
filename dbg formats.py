@@ -30,7 +30,7 @@ import random
 import re
 import sys
 import zipfile
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -48,6 +48,9 @@ def _opt(name):
 dsmine = _opt("dsmine")
 partdb = _opt("partdb")
 
+_TRAITS = {}
+_LOWCONF = {}
+
 RF_CATEGORIES = ["amplifier", "mixer", "filter", "attenuator", "divider",
                  "coupler", "switch", "phase_shifter", "limiter", "multiplier",
                  "oscillator", "transformer", "termination", "equalizer",
@@ -58,7 +61,41 @@ _HDR_WORDS = re.compile(
     r"^(parameter|symbol|min|min\.|minimum|typ|typ\.|typical|max|max\.|maximum|"
     r"unit|units|conditions?|comments?|test|frequency|freq\.?)$", re.I)
 _VALUE_HDR = re.compile(r"^(min|typ|max)\.?$", re.I)
-_NUM = re.compile(r"^[-+\u2212]?\d+(?:\.\d+)?$")
+# "+-1" is a tolerance and a perfectly good value; rejecting it made every
+# gain-flatness and balance row look like text in a value column.
+_NUM = re.compile(r"^[-+\u2212\u00b1<>~]?\s*\d+(?:\.\d+)?$")
+# A table ends. Without a stop rule the parser kept appending every line to the
+# last table until the next header -- footnotes, the copyright block and the
+# page footer included -- and their words landed in whichever column they
+# happened to sit under. That, not vendor overflow, was most of what
+# "text-in-value-cols" was reporting.
+_END_OF_TABLE = re.compile(
+    r"^\s*(?:\[\d+\]|\d+\s*Unless|Rev\.|Page\s+\d|Information\s+furnished|"
+    r"One\s+Technology|P\.O\.\s*Box|Fax:|Phone:|www\.|\u00a9|Trademarks|"
+    r"Specifications\s+subject|All\s+rights)", re.I)
+
+
+def _looks_like_footer(cells):
+    joined = " ".join(c for c in cells if c.strip())
+    if _END_OF_TABLE.match(joined):
+        return True
+    words = joined.split()
+    if not words:
+        return False
+    # Footnote prose starts lower-case and carries no numbers. A section
+    # heading also has no numbers, but it is capitalised -- that is the whole
+    # difference, and it is reliable across every vendor seen so far.
+    numeric = any(_num(w) is not None for w in words)
+    if not numeric and len(words) >= 3 and words[0][:1].islower():
+        return True
+    if len(words) >= 10 and not numeric:
+        return True
+    return False
+
+
+_BAND_IN_TEXT = re.compile(
+    r"(?:DC|\d+(?:\.\d+)?)\s*(?:GHz|MHz|kHz)?\s*(?:-|\u2013|to)\s*"
+    r"\d+(?:\.\d+)?\s*(?:GHz|MHz|kHz)", re.I)
 _BAND = re.compile(
     r"^(DC|\d+(?:\.\d+)?)\s*(GHz|MHz|kHz)?\s*(?:-|\u2013|to)\s*"
     r"(\d+(?:\.\d+)?)\s*(GHz|MHz|kHz)?$", re.I)
@@ -66,7 +103,9 @@ _BAND = re.compile(
 
 def _num(s):
     s = str(s or "").strip().replace("\u2212", "-").replace(",", "")
-    return float(s) if _NUM.match(s) else None
+    if not _NUM.match(s):
+        return None
+    return float(re.sub(r"^[\u00b1<>~+]\s*", "", s) or 0)
 
 
 def page_words(page):
@@ -161,8 +200,16 @@ def parse_tables(path, pages=8):
                     if not bounds:
                         continue
                     cells = assign(line, bounds)
-                    if any(c.strip() for c in cells):
-                        rows.append(cells)
+                    if not any(c.strip() for c in cells):
+                        continue
+                    if _looks_like_footer(cells):
+                        # Everything after the footnote block belongs to the
+                        # page, not the table.
+                        if len(rows) >= 2:
+                            out.append(([t2 for _l, _r, t2 in bounds], rows))
+                        bounds, rows = None, []
+                        continue
+                    rows.append(cells)
                 if bounds and len(rows) >= 2:
                     out.append(([t for _l, _r, t in bounds], rows))
     except Exception:
@@ -194,7 +241,12 @@ def col_roles(headings):
         elif re.search(r"unit", s):
             roles.setdefault("unit", i)
         elif re.search(r"freq", s):
-            roles.setdefault("cond", i)     # a frequency column IS the key
+            # A FREQUENCY column is not a conditions column. Folding them into
+            # one role made every yellow table report a conditions column it
+            # does not have -- the yellow style has a Frequency column and no
+            # Test Conditions/Comments at all, and that absence is part of what
+            # identifies it.
+            roles.setdefault("freq", i)
     if "param" not in roles:
         roles["param"] = roles.get("symbol", 0)
     return roles
@@ -214,32 +266,107 @@ def group_records(headings, rows):
     pcol = roles["param"]
     vcols = [roles[k] for k in ("min", "typ", "max") if k in roles]
     if not vcols:
-        vcols = [i for i in range(len(headings))
-                 if i not in (pcol, roles.get("cond"), roles.get("unit"))]
+        skip = {pcol, roles.get("cond"), roles.get("freq"), roles.get("unit")}
+        vcols = [i for i in range(len(headings)) if i not in skip]
 
     def has_values(r):
         return any(_num(r[i]) is not None for i in vcols if i < len(r))
 
-    recs, pending = [], []
+    # A BAND ROW states a frequency range and no values, and every spec below
+    # it is measured over that range until the next one:
+    #
+    #     Frequency Range: 2 - 4 GHz
+    #     Gain            | 10 | 12 | 14 | dB
+    #     Noise Figure    |    | 3.5|    | dB
+    #     Frequency Range: 4 - 8 GHz
+    #     Gain            |  9 | 11 | 13 | dB
+    #
+    # So Gain has two value sets keyed by frequency, with no frequency COLUMN
+    # anywhere. Treated as an ordinary label the band row became a spec with no
+    # values and was discarded, taking the grouping with it -- the two Gains
+    # then looked like one spec measured twice for no stated reason.
+    recs, pending, band = [], [], ""
     for r in rows:
         name = r[pcol].strip() if pcol < len(r) else ""
+        joined = " ".join(c for c in r if c.strip())
+        no_values = not has_values(r)
+        bm = _BAND_IN_TEXT.search(joined)
+        if bm and no_values:
+            band = bm.group(0).strip()
+            continue
         if name:
-            recs.append({"name": name, "lines": pending + [r]})
+            recs.append({"name": name, "lines": pending + [r], "band": band})
             pending = []
         elif recs:
             recs[-1]["lines"].append(r)
         else:
             pending.append(r)
     if pending:
-        recs.append({"name": "", "lines": pending})
+        recs.append({"name": "", "lines": pending, "band": band})
 
+    ucol = roles.get("unit")
     for rec in recs:
         rec["values"] = [ln for ln in rec["lines"] if has_values(ln)]
+        # The unit is stated PER ROW -- a supply current in uA two rows above
+        # one in mA. Assuming one unit per spec key from the registry is a
+        # silent 1000x error of exactly the kind the MHz/GHz bugs were.
+        rec["units"] = [ln[ucol].strip() if ucol is not None and ucol < len(ln)
+                        else "" for ln in rec["values"]]
     # A lone line with no numbers is a section band, not a spec.
     return [r for r in recs if r["values"] or len(r["lines"]) > 1]
 
 
 # ==========================================================  classification
+# Formats are named for what they ARE, not for whose datasheet they came from
+# or what colour it was printed in. "ADI-bluegrey" told you nothing about how
+# to read the table and stopped meaning anything the moment a second vendor
+# used the same layout; "cond-col+sym | min-typ-max" says exactly what a reader
+# has to handle, and a Qorvo table with that structure is the same format.
+#
+# The name is built from the three facts that decide how a row is read:
+#   1. what carries the condition -- a conditions column, a frequency column,
+#      band rows, or nothing
+#   2. whether there is a separate symbol column
+#   3. what the value grid is -- min/typ/max, min/max, or a single column
+#
+# Punctuation ("Min" vs "Min.", "Unit" vs "Units") is still recorded, because
+# it identifies the house style reliably and is worth knowing -- but as a
+# reported dialect, not as the format's identity.
+DIALECTS = {
+    "terse": {"value_hdr": r"^(min|typ|max)$", "unit_hdr": r"^unit$"},
+    "dotted": {"value_hdr": r"^(min|typ|max)\.$", "unit_hdr": r"^units$"},
+}
+
+
+def dialect_of(headings):
+    """Header punctuation style, which tracks the vendor's house template."""
+    hs = [h.strip().lower() for h in headings]
+    for name, tpl in DIALECTS.items():
+        vals = sum(1 for h in hs if re.fullmatch(tpl["value_hdr"], h))
+        unit = any(re.fullmatch(tpl["unit_hdr"], h) for h in hs)
+        if vals >= 2 and unit:
+            return name
+    return "mixed"
+
+
+def format_name(roles, traits):
+    """A structural name for the table's layout."""
+    if "cond" in roles:
+        carrier = "cond-col"
+    elif "freq" in roles:
+        carrier = "freq-col"
+    elif any(x.startswith("band-") for x in traits):
+        carrier = "band-rows"
+    else:
+        carrier = "no-cond"
+    if "symbol" in roles:
+        carrier += "+sym"
+    grid = ("min-typ-max" if {"min", "typ", "max"} <= set(roles)
+            else "min-max" if {"min", "max"} <= set(roles)
+            else "single-col")
+    return f"{carrier} | {grid}"
+
+
 def classify(headings, rows):
     """(signature, facts) for one table, or None if it is not a spec table."""
     roles = col_roles(headings)
@@ -247,36 +374,166 @@ def classify(headings, rows):
     if len(recs) < 2:
         return None
 
-    multi = sum(1 for r in recs if len(r["values"]) > 1)
-    values = "multi-value" if multi >= 2 else "single-value"
+    order = "".join({"param": "P", "symbol": "S", "cond": "C", "freq": "F",
+                     "min": "M", "typ": "T", "max": "X", "unit": "U"}[k]
+                    for k in ("param", "symbol", "cond", "freq",
+                              "min", "typ", "max", "unit") if k in roles)
 
+    # Reported as DETAIL, never as the family key.
+    multi = sum(1 for r in recs if len(r["values"]) > 1)
+    # The same spec under two different band rows is two value sets, even
+    # though each of its own rows carries only one.
+    by_name = defaultdict(set)
+    for r in recs:
+        if r["name"]:
+            by_name[r["name"].strip().lower()].add(r.get("band", ""))
+    band_repeats = sum(1 for v in by_name.values() if len(v) > 1)
+    band_rows = any(r.get("band") for r in recs)
+    # Count where band text actually appears.
     cond_i = roles.get("cond")
+    vcols = [roles[k] for k in ("min", "typ", "max") if k in roles]
+    in_cond = shifted = 0
+    for r in recs:
+        for ln in r["lines"]:
+            if cond_i is not None and cond_i < len(ln) \
+                    and _BAND.match(ln[cond_i].strip()):
+                in_cond += 1
+            for vc in vcols:
+                if vc < len(ln) and _BAND_IN_TEXT.fullmatch(ln[vc].strip()):
+                    shifted += 1
+    band_in_cond = in_cond >= 2
+    band_shift = shifted >= 2
+
+    # A section row: a name, no values, but a condition that applies downward.
+    inherit_cond = 0
+    for r in recs:
+        first = r["lines"][0]
+        if not r["values"] and cond_i is not None and cond_i < len(first) \
+                and len(first[cond_i].strip()) > 3:
+            inherit_cond += 1
+
+    # A continuation line that carries only a short fragment and no value is a
+    # wrapped subscript, not a value set.
+    sym_i = roles.get("symbol")
+    subscript_wrap = 0
+    if sym_i is not None:
+        for r in recs:
+            for ln in r["lines"][1:]:
+                frag = ln[sym_i].strip() if sym_i < len(ln) else ""
+                others = [c for i, c in enumerate(ln)
+                          if i != sym_i and c.strip()]
+                if frag and not others and len(frag) <= 5:
+                    subscript_wrap += 1
+
+    # Non-numeric text sitting in a value column.
+    text_in_values = 0
+    for r in recs:
+        for ln in r["lines"]:
+            for vc in vcols:
+                cell = ln[vc].strip() if vc < len(ln) else ""
+                if cell and _num(cell) is None \
+                        and not re.fullmatch(r"[-\u2014\u2013\u2212+*]+", cell):
+                    text_in_values += 1
+
+    # How many label tiers: section rows, then named specs, then unnamed
+    # sub-rows that still carry their own values.
+    sections = sum(1 for r in recs if not r["values"] and r["name"])
+    subrows = sum(1 for r in recs if len(r["values"]) > 1)
+    depth = 1 + (1 if sections else 0) + (1 if subrows else 0)
+    values = ("multi-value" if multi >= 2 or band_repeats >= 2
+              else "single-value")
+    key_i = roles.get("freq", cond_i)
     banded = 0
-    if cond_i is not None:
+    if key_i is not None:
         for r in recs:
             for ln in r["values"]:
-                if cond_i < len(ln) and _BAND.match(ln[cond_i].strip()):
+                if key_i < len(ln) and _BAND.match(ln[key_i].strip()):
                     banded += 1
+    key = ("keyed-by-frequency" if banded >= 2 or band_repeats >= 2
+           or roles.get("freq") is not None
+           else "keyed-by-condition" if cond_i is not None
+           else "keyed-in-cell")
 
-    if values == "single-value":
-        key = "conditions-present" if cond_i is not None else "no-conditions"
-    elif banded >= 2:
-        key = "keyed-by-frequency"
-    elif cond_i is not None:
-        key = "keyed-by-condition"
-    else:
-        key = "keyed-in-cell"
+    # WHERE the band sits is the difference between the two styles, and it
+    # decides whether a reader may trust the value columns:
+    #
+    #   grey   | INSERTION LOSS | | 0.1 GHz to 12 GHz | | 2.1 | 2.4 | dB
+    #          band in the conditions column; Min/Typ/Max mean what they say.
+    #
+    #   yellow | Input Return Loss |             |  8 |  | dB
+    #          |                   | 20 - 30 GHz | 15 |  | dB
+    #          no conditions column, so the band occupies the Min slot and
+    #          shifts every value one column right. Reading Min positionally
+    #          there returns the band, and Typ returns what is actually Min.
+    # ---- traits ---------------------------------------------------------
+    # Binary flags could not express what these tables actually do. Each trait
+    # below is a separate thing a reader must handle, and they co-occur freely,
+    # so they are measured independently rather than collapsed into one label.
+    traits = []
 
-    # min/typ/max is ONE value set expressed three ways, not three sets.
-    grid = ("min/typ/max" if {"min", "typ", "max"} <= set(roles)
-            else "min/max" if {"min", "max"} <= set(roles)
-            else "single-column")
-    order = "".join(k[0].upper() for k in
-                    ("param", "symbol", "cond", "min", "typ", "max", "unit")
-                    if k in roles)
-    return (f"{values:<12} | {key:<19} | {grid}",
-            {"values": values, "key": key, "grid": grid, "roles": order,
-             "specs": len(recs), "multi": multi, "cols": len(headings)})
+    # 1. A SECTION row that carries a condition and no values. The condition
+    #    governs every spec beneath it:
+    #       INPUT LINEARITY | | 200 MHz to 40 GHz | | | |
+    #       1 dB Power Compression | P1dB | | | 27.5 | | dBm
+    #    P1dB is measured over 200 MHz to 40 GHz, and nothing in its own row
+    #    says so.
+    if inherit_cond >= 1:
+        traits.append("inherited-cond")
+
+    # 2. Where the band sits, which decides whether the value columns can be
+    #    trusted positionally.
+    if band_shift:
+        traits.append("band-shifts-values")
+    elif band_in_cond:
+        traits.append("band-in-cond-col")
+    elif band_rows:
+        traits.append("band-rows")
+
+    # 3. A subscript wrapped onto its own line: "I" then "DD" is I_DD, "V"
+    #    then "INL" is V_INL. Read as separate rows they are two meaningless
+    #    fragments; the second line has no value of its own.
+    if subscript_wrap >= 2:
+        traits.append("wrapped-subscripts")
+
+    # 4. Condition text overflowing INTO a value column:
+    #       Third-Order Intercept | IP3 | Two tone input | Δf = 1 MHz | 50 |
+    #    "Δf = 1 MHz" is in the Min slot. Positionally, Min reads as text and
+    #    the real value has moved right -- the same damage as band-shift, from
+    #    a different cause.
+    if text_in_values >= 2:
+        traits.append("text-in-value-cols")
+
+    # 5. Label depth: a flat table names each spec once; a nested one has a
+    #    section, then a spec, then a sub-condition under it.
+    if depth >= 3:
+        traits.append("3-level-labels")
+
+    # Traits are NOT part of the grouping key. They co-occur freely -- one
+    # ADRF6650 table has three of them -- so folding them into the signature
+    # turned seven tables into seven "formats". The format is the family and
+    # the column roles; the traits are what a reader for that format must cope
+    # with, and they are summarised per format instead.
+    # How cleanly the value columns parse. Low means the column boundaries are
+    # probably wrong, and everything derived from them is suspect -- worth
+    # knowing per table rather than discovering later as bad data.
+    cells = tot = 0
+    for r in recs:
+        for ln in r["values"]:
+            for vc in vcols:
+                c = ln[vc].strip() if vc < len(ln) else ""
+                if c:
+                    tot += 1
+                    cells += 1 if _num(c) is not None else 0
+    confidence = round(cells / tot, 2) if tot else 0.0
+
+    name = format_name(roles, traits)
+    dialect = dialect_of(headings)
+    return (f"{name:<28} | {dialect}",
+            {"format": name, "dialect": dialect, "roles": order,
+             "traits": traits, "confidence": confidence,
+             "values": values,
+             "key": key, "specs": len(recs), "multi": multi,
+             "cols": len(headings), "headings": list(headings)})
 
 
 # ==========================================================  survey
@@ -422,6 +679,13 @@ def main(argv=None):
                 if res is None:
                     continue
                 groups[res[0]].append(f)
+                # Value structure varies WITHIN a family, so it is summarised
+                # rather than used to split it.
+                if res[1].get("confidence", 1) < 0.8:
+                    _LOWCONF[res[0]] = _LOWCONF.get(res[0], 0) + 1
+                _TRAITS.setdefault(res[0], Counter()).update(
+                    res[1].get("traits") or [])
+                _TRAITS.setdefault(res[0], Counter())[res[1]["values"]] += 1
                 groups_all.setdefault((name, res[0]), []).append(f)
                 n_tables += 1
             if i % 100 == 0:
@@ -437,6 +701,14 @@ def main(argv=None):
             if share < a.min_share:
                 continue
             print(f"  {len(hits):>5} {share:>6.1f}%  {sig}")
+            lc = _LOWCONF.get(sig)
+            if lc:
+                print(f"        ! {lc} table(s) with poor column alignment "
+                      f"(<80% of value cells numeric)")
+            tr = _TRAITS.get(sig)
+            if tr:
+                print("        traits: " + ", ".join(
+                    f"{k} x{v}" for k, v in tr.most_common()))
             if a.show:
                 ex, seen = [], set()
                 for p in hits:
@@ -503,15 +775,29 @@ def main(argv=None):
         print(f"\n  written to {a.csv}")
 
     print("""
-  Layout string
-    single-value / multi-value   how many value sets a spec carries
-    keyed-by-frequency           the sets differ by a frequency band
-    keyed-by-condition           the sets differ by a stated test condition
-    keyed-in-cell                the discriminator sits inside a cell
-    min/typ/max                  ONE value set expressed three ways, not three
+  Format name -- what the table IS, not whose it is
+    cond-col        a Test Conditions/Comments column carries the condition
+    freq-col        a Frequency column carries it instead
+    band-rows       neither; a band row states it for the specs beneath
+    no-cond         no condition anywhere
+    +sym            a separate Symbol column
+    min-typ-max     the value grid (or min-max / single-col)
 
-  --show-table FILE.pdf prints the parsed grid, so the classification can be
-  checked against the datasheet itself.""")
+  dialect  header punctuation, which tracks the vendor's house template:
+    terse   "Min" "Typ" "Max" "Unit"        dotted  "Min." "Typ." "Max." "Units"
+  Recorded because it identifies the template reliably -- but a format is
+  named for its structure, so the same layout from another vendor is the same
+  format.
+
+  TRAITS are per-table and co-occur freely, so they are summarised under each
+  format rather than folded into its name:
+    inherited-cond       a section row's condition governs the specs beneath it
+    band-in-cond-col     band in the conditions column; values read positionally
+    band-shifts-values   band takes the Min slot and pushes values right
+    text-in-value-cols   condition text overflowed into a value column
+    wrapped-subscripts   a subscript on its own line ("I" then "DD" = I_DD)
+    3-level-labels       section, then spec, then sub-rows with their own values
+""")
     return 0
 
 
