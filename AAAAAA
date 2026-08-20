@@ -1,20 +1,88 @@
-I'm seeing those in:
-   42   14.0%  param/min/typ/max | label:in-row | cond:band | both | units-col
-are very very similar to
-    21    7.0%  param/min/typ/max | label:mixed | cond:band | both | units-col
+    "return_loss_db": 15.9,
+    "power_w": 12.0,
+    "return_loss_db_bands": [
+      {
+        "band_ghz": [
+          0.0,
+          18.0
+        ],
+        "unit": "dB",
+        "min": null,
+        "typ": 34.0,
+        "max": null,
+        "sub": null,
+        "row": "DC - 18 | 18 | 34"
+      },
 
-The only difference is the labeling, which can be dealt with on a case-by-case basis
 
-This table is also very similar to this:
-     11    3.7%  param/min/typ/max | label:col0 | cond:none | both | subports | units-col
+for a cable datasheet, the min is 18, the typ is 34, its getting it correct on the row, but not concluding the 18 is the min.
 
-This one is only different because of the order of the columns. I dont care about that, that can also be dealt with on a case by case basis.
+        "band_ghz": [
+          18.0,
+          40.0
+        ],
+        "unit": "dB",
+        "min": null,
+        "typ": 15.9,
+        "max": 24.0,
+        "sub": null,
+        "row": "Return Loss | dB | 18 - 40 | 15.9 | 24"
+
+and for the next spec (in the same boxes), it is able to see both of them in the row, but for some reason the units (which is the last col), is being moved immediately after the freq range. It is incorrectly assigning the values, 15.9 should be min, and 24 should be typ.
 
 
-Continuing, I see the same with:
-    33   11.0%  param/min/typ/max | label:col0 | cond:none | both | units-col
+  "insertion_loss_db": 2.48,
+    "insertion_loss_db_bands": [
+      {
+        "band_ghz": [
+          0.0,
+          6.0
+        ],
+        "unit": "dB",
+        "min": null,
+        "typ": 0.4,
+        "max": 0.87,
+        "sub": null,
+        "row": "DC - 6 | 0.4 | 0.87"
+      },
+      {
+        "band_ghz": [
+          6.0,
+          18.0
+        ],
+        "unit": "dB",
+        "min": null,
+        "typ": 0.85,
+        "max": 1.58,
+        "sub": null,
+        "row": "6 - 18 | 0.85 | 1.58"
+      },
+      {
+        "band_ghz": [
+          18.0,
+          26.5
+        ],
+        "unit": "dB",
+        "min": null,
+        "typ": 1.3,
+        "max": 1.93,
+        "sub": null,
+        "row": "Insertion Loss | dB | 18 - 26.5 | 1.3 | 1.93"
+      },
+      {
+        "band_ghz": [
+          26.5,
+          40.0
+        ],
+        "unit": "dB",
+        "min": null,
+        "typ": 1.7,
+        "max": 2.48,
+        "sub": null,
+        "row": "26.5 - 40 | 1.7 | 2.48"
+      }
+    ],
 
-and 
-     30   10.0%  param/min/typ/max | label:col0 | cond:cond-col | both | units-col
+For the insertion loss, its getting all of these correctly, but the row is in the same wrong order for 18-26.5 band. I think this is because the dB of the Units column at the end, is in between two subrows (still in the same larger row, but this larger row has 4 subrows for bands and specs, and this unit column value is horizontally between the 2-3 subrows), making it hard to parse its 
 
-These are the same exact type of table. I am more concerned about spacing, indentation, test conditioning stuff. The specs should be more positionally related.
+
